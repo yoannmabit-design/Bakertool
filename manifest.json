@@ -1,0 +1,21 @@
+{
+  "name": "Yoann's French Bakery",
+  "short_name": "Yoann's Bakery",
+  "description": "Application de gestion interne de production et coûts - Yoann's French Bakery Manila",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#fdf6ec",
+  "theme_color": "#1a1a1a",
+  "icons": [
+    {
+      "src": "logo.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "logo.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}
