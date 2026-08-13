@@ -78,16 +78,21 @@
     .placeholder { background: #faf5ed; border: 2px dashed #d9c6a3; border-radius: 10px; padding: 30px; text-align: center; color: #8a7860; max-width: 900px; }
 
     /* ===== Recettes / Production ===== */
+    #section-recettes { font-size: 1.15em; }
+    #section-recettes h1 { font-size: 1.6rem; }
+    #section-recettes h2 { font-size: 1.3rem !important; }
+    #section-recettes table { font-size: 1.05em; }
+    #section-recettes th, #section-recettes td { padding: 10px 8px; }
     .grille-quantites { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 10px; }
-    .champ-qte label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 0.85em; }
-    .champ-qte input { text-align: center; }
+    .champ-qte label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 1em; }
+    .champ-qte input { text-align: center; font-size: 1.1em; padding: 8px; }
     .onglets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 15px; max-width: 900px; }
-    .onglet-btn { background: #efe0c8; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 0.85em; color: #7a4a1f; font-weight: bold; }
+    .onglet-btn { background: #efe0c8; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-size: 1em; color: #7a4a1f; font-weight: bold; }
     .onglet-btn.actif { background: #7a4a1f; color: #fff; }
     .qte-cell { font-weight: bold; background: #f0e6d2 !important; }
-    .info-hydratation, .info-nb { margin-top: 10px; font-size: 0.85em; color: #6b5b45; }
+    .info-hydratation, .info-nb { margin-top: 10px; font-size: 1.05em; color: #6b5b45; }
     .supplement-tardif { margin-top: 20px; padding-top: 15px; border-top: 2px dashed #b05a2f; }
-    .supplement-tardif h3 { color: #b05a2f; margin-bottom: 10px; font-size: 1rem; }
+    .supplement-tardif h3 { color: #b05a2f; margin-bottom: 10px; font-size: 1.15rem; }
     .supplement-tardif .qte-cell { background: #fbe3d0 !important; }
     .carte-tardive { border: 2px dashed #b05a2f; background: #fff8ef; }
     .carte-tardive h2 { color: #b05a2f; }
@@ -104,15 +109,15 @@
 
     /* ===== Commandes / Analyse financière ===== */
     .toolbar-cmd { display: flex; gap: 8px; margin-bottom: 12px; max-width: 900px; }
-    .card-cmd { background: #ffffff; border-radius: 12px; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.04); border-left: 5px solid #7a4a1f; margin-bottom: 10px; max-width: 900px; }
-    .product-info-cmd { flex-grow: 1; padding-right: 8px; }
-    .product-name-cmd { font-weight: 700; font-size: 0.95rem; color: #3b2c1a; display: block; }
-    .product-costs-cmd { font-size: 0.72rem; color: #6b5b45; margin-top: 2px; }
-    .price-input-wrapper { margin-top: 4px; display: flex; align-items: center; gap: 4px; font-size: 0.72rem; color: #6b5b45; }
+    .card-cmd { background: #ffffff; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 2px 5px rgba(0,0,0,0.04); border-left: 5px solid #7a4a1f; margin-bottom: 10px; max-width: 900px; }
+    .product-name-cmd { font-weight: 700; font-size: 1rem; color: #3b2c1a; display: block; }
+    .stock-produit-discret { font-size: 0.7rem; color: #a89a86; }
     .price-input-cmd { width: 60px; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.75rem; text-align: center; }
-    .counter-group { display: flex; align-items: center; background: #efe0c8; border-radius: 8px; padding: 2px; border: 1px solid #7a4a1f; flex-shrink: 0; }
-    .btn-counter { background: #7a4a1f; color: white; border: none; width: 32px; height: 32px; border-radius: 6px; font-size: 1.1rem; font-weight: bold; cursor: pointer; }
-    .counter-value { width: 40px; text-align: center; font-weight: bold; font-size: 1rem; color: #7a4a1f; border: none; background: transparent; }
+    .counter-group { display: flex; align-items: center; background: #efe0c8; border-radius: 8px; padding: 2px; border: 1px solid #7a4a1f; flex-shrink: 0; width: fit-content; }
+    .btn-counter { background: #7a4a1f; color: white; border: none; width: 26px; height: 26px; border-radius: 6px; font-size: 1rem; font-weight: bold; cursor: pointer; }
+    .counter-value { width: 32px; text-align: center; font-weight: bold; font-size: 0.9rem; color: #7a4a1f; border: none; background: transparent; }
+    .liste-prix-vente { max-width: 900px; margin-top: 10px; }
+    .ligne-prix-vente { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px solid #e0d3bd; font-size: 0.85rem; }
     .finance-toggle { background: #1a1a1a; color: #fff; border: none; width: 100%; max-width: 900px; padding: 12px; border-radius: 10px; font-weight: bold; font-size: 0.9rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
     .finance-block { background: #fff; border-radius: 10px; padding: 12px; margin-top: 8px; border: 1px solid #e0d3bd; display: none; max-width: 900px; }
     .finance-block.ouvert { display: block; }
@@ -221,7 +226,8 @@
         <button class="btn" style="background:none; border:1px solid #b05a2f; color:#b05a2f;" onclick="reinitialiserTardif()">Réinitialiser commande tardive</button>
       </div>
 
-      <div class="carte">
+      <!-- Synthèse des Recettes de Base masquée à la demande : seule la recette du produit à fabriquer compte ici -->
+      <div class="carte" id="syntheseBasesWrapper" style="display:none;">
         <h2 style="color:#7a4a1f; margin-bottom:10px; font-size:1.1rem;">🫙 Synthèse des Recettes de Base</h2>
         <div id="syntheseBases"></div>
       </div>
@@ -416,6 +422,9 @@
         <div style="text-align:center; font-size:0.75rem; font-weight:bold; color:#6b5b45; margin-top:10px;">
           Taux de marge globale : <span id="finTauxMarge" style="color:#27ae60;">0 %</span>
         </div>
+
+        <h3 style="margin-top:15px; margin-bottom:6px; font-size:0.9rem; color:#7a4a1f;">Prix de revient & prix de vente par produit</h3>
+        <div class="liste-prix-vente" id="listePrixVente"></div>
       </div>
 
       <div class="footer-total">
@@ -1725,6 +1734,7 @@
         }
 
         let totalPcs = 0, totalCoutMatiere = 0, totalCA = 0;
+        let lignesPrixVente = '';
 
         liste.forEach(prod => {
             const qteBase = quantitesCommandes[prod.nom] || 0;
@@ -1741,22 +1751,22 @@
             card.className = 'card-cmd';
             const stockActuelProduit = stockProduits[prod.nom] || 0;
             card.innerHTML = `
-                <div class="product-info-cmd">
-                    <span class="product-name-cmd">${prod.nom}</span>
-                    <div class="product-costs-cmd">Revient: <strong>${formatPeso(coutUnitaire)}</strong>${qteTardif > 0 ? ` — <span style="color:#b05a2f;">+${qteTardif} tardif</span>` : ''}</div>
-                    <div class="price-input-wrapper">
-                        Prix Vente: ₱
-                        <input type="number" class="price-input-cmd" value="${prixVente}" step="0.5" onchange="changerPrixVenteCommande('${prod.nom.replace(/'/g, "\\'")}', parseFloat(this.value)||0)">
-                    </div>
-                    <div class="price-input-wrapper" style="margin-top:2px;">
-                        Stock produit fini:
-                        <input type="number" class="price-input-cmd" value="${stockActuelProduit}" step="1" onchange="corrigerStockProduit('${prod.nom.replace(/'/g, "\\'")}', parseFloat(this.value)||0)">
-                    </div>
-                </div>
+                <span class="product-name-cmd">${prod.nom}${qteTardif > 0 ? ` <span style="color:#b05a2f; font-size:0.75em; font-weight:normal;">(+${qteTardif} tardif)</span>` : ''}</span>
                 <div class="counter-group">
                     <button class="btn-counter" onclick="changerQteCommande('${prod.nom.replace(/'/g, "\\'")}', -1)">-</button>
                     <input type="number" class="counter-value" value="${qteBase}" onchange="saisirQteCommande('${prod.nom.replace(/'/g, "\\'")}', this.value)" min="0">
                     <button class="btn-counter" onclick="changerQteCommande('${prod.nom.replace(/'/g, "\\'")}', 1)">+</button>
+                </div>
+                <div class="stock-produit-discret">
+                    Stock: <input type="number" value="${stockActuelProduit}" step="1" style="width:45px; font-size:0.9em; padding:1px 2px; border:1px solid #e0d3bd; border-radius:3px;" onchange="corrigerStockProduit('${prod.nom.replace(/'/g, "\\'")}', parseFloat(this.value)||0)">
+                </div>
+            `;
+
+            lignesPrixVente += `
+                <div class="ligne-prix-vente">
+                    <span>${prod.nom}</span>
+                    <span>Revient: ${formatPeso(coutUnitaire)}</span>
+                    <span>Vente: ₱ <input type="number" class="price-input-cmd" value="${prixVente}" step="0.5" onchange="changerPrixVenteCommande('${prod.nom.replace(/'/g, "\\'")}', parseFloat(this.value)||0)"></span>
                 </div>
             `;
             conteneur.appendChild(card);
@@ -1771,6 +1781,7 @@
         document.getElementById('finCout').textContent = formatPeso(totalCoutMatiere);
         document.getElementById('finMarge').textContent = formatPeso(margeBrute);
         document.getElementById('finTauxMarge').textContent = tauxMarge.toFixed(1) + " %";
+        document.getElementById('listePrixVente').innerHTML = lignesPrixVente;
 
         if (typeof afficherDashboard === 'function') afficherDashboard(totalCA, totalCoutMatiere, margeBrute, tauxMarge, totalPcs, liste.length);
     }
