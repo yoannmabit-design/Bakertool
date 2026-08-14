@@ -175,6 +175,11 @@
       <h1>🏠 Tableau de Bord</h1>
       <p class="sous-titre">Résumé du jour — mis à jour en temps réel.</p>
 
+      <div class="carte" style="max-width:900px; max-height:33vh; overflow-y:auto;">
+        <h2 style="color:#7a4a1f; margin-bottom:10px; font-size:1.1rem;">📋 Résumé des commandes</h2>
+        <div id="resumeCommandes"></div>
+      </div>
+
       <div class="finance-grid" style="max-width:900px; margin-bottom:15px;">
         <div class="finance-card"><label>C.A. PRÉVU</label><span id="dashCA" style="color:#2563eb; font-size:1.3rem;">₱ 0</span></div>
         <div class="finance-card"><label>COÛT MATIÈRE</label><span id="dashCout" style="color:#c0392b; font-size:1.3rem;">₱ 0</span></div>
@@ -667,6 +672,36 @@
         } else {
             el.innerHTML = `<p style="color:#c0392b; font-weight:bold; font-size:0.95rem;">⚠️ ${enRupture.length} ingrédient(s) en stock bas : ${enRupture.map(i => i.nom).join(', ')}</p>`;
         }
+    }
+
+    // Résumé de tous les articles avec une quantité commandée > 0 (base + tardif), groupés par catégorie, triés A-Z.
+    function afficherResumeCommandes() {
+        const conteneur = document.getElementById('resumeCommandes');
+        if (!conteneur) return;
+
+        const categoriesResume = ['Pains', 'Viennoiseries', 'Autres'];
+        const parCategorie = {};
+
+        produitsVendables().forEach(f => {
+            if (!categoriesResume.includes(f.categorie)) return;
+            const qte = (quantitesCommandes[f.nom] || 0) + (quantitesTardif[f.nom] || 0);
+            if (qte <= 0) return;
+            if (!parCategorie[f.categorie]) parCategorie[f.categorie] = [];
+            parCategorie[f.categorie].push({ nom: f.nom, qte });
+        });
+
+        let html = '';
+        categoriesResume.forEach(cat => {
+            const items = parCategorie[cat];
+            if (!items || items.length === 0) return;
+            items.sort((a, b) => a.nom.localeCompare(b.nom));
+            html += `<div style="margin-bottom:10px;">
+                <div style="font-weight:bold; color:#7a4a1f; font-size:0.85rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">${cat}</div>
+                ${items.map(i => `<div style="display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px solid #f0e6d2; font-size:0.95rem;"><span>${i.nom}</span><span style="font-weight:bold; color:#7a4a1f;">${i.qte}</span></div>`).join('')}
+            </div>`;
+        });
+
+        conteneur.innerHTML = html || '<p style="color:#8a7860; font-size:0.85em;">Aucune commande pour l\'instant.</p>';
     }
 
     function afficherDashboard(totalCA, totalCoutMatiere, margeBrute, tauxMarge, totalPcs, nbProduits) {
@@ -1835,6 +1870,7 @@
         document.getElementById('listePrixVente').innerHTML = lignesPrixVente;
 
         if (typeof afficherDashboard === 'function') afficherDashboard(totalCA, totalCoutMatiere, margeBrute, tauxMarge, totalPcs, liste.length);
+        if (typeof afficherResumeCommandes === 'function') afficherResumeCommandes();
     }
 
     function changerQteCommande(nom, delta) {
