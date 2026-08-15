@@ -335,7 +335,7 @@ async function chargerParametres() {
 async function chargerProduits() {
   try {
     const [recettes, publies] = await Promise.all([
-      getDocs(collection(db, "recettes")),
+      getDocs(collection(db, "recettes", "fiches")),
       getDocs(collection(db, "boutique_produits"))
     ]);
 
