@@ -67,6 +67,10 @@
     background:transparent;border:1px solid var(--trait);color:var(--alerte);
     padding:9px 13px;border-radius:var(--r);cursor:pointer;font-size:14px;
   }
+  .option{
+    border:1px solid var(--trait);border-radius:var(--r);
+    padding:14px;margin-bottom:12px;background:#fff;
+  }
   .jours{display:flex;gap:8px;flex-wrap:wrap}
   .jours label{
     display:flex;align-items:center;gap:6px;font-size:14px;color:var(--encre);
@@ -130,10 +134,10 @@
     <section id="vueParams">
 
       <div class="carte">
-        <h2>Zones de livraison</h2>
-        <p class="aide">Le tarif forfaitaire proposé au client au moment de la commande. La course Lalamove reste déclenchée séparément.</p>
-        <div id="listeZones"></div>
-        <button class="mineur" id="btnAjoutZone">Ajouter une zone</button>
+        <h2>Points de retrait et de livraison</h2>
+        <p class="aide">Chaque option apparaît telle quelle au client. Laissez les jours vides si l'option est possible tous les jours.</p>
+        <div id="listeOptions"></div>
+        <button class="mineur" id="btnAjoutOption">Ajouter une option</button>
       </div>
 
       <div class="carte">
@@ -272,27 +276,101 @@ $("ongletParams").onclick   = () => ouvrir("params");
 $("ongletProduits").onclick = () => ouvrir("produits");
 
 /* ============================================================
-   4. ZONES DE LIVRAISON
+   4. POINTS DE RETRAIT ET DE LIVRAISON
    ============================================================ */
-function ajouterZone(nom = "", tarif = "") {
+function ajouterOption(o = {}) {
   const bloc = document.createElement("div");
-  bloc.className = "ligne zone";
+  bloc.className = "option";
   bloc.innerHTML = `
+    <div class="ligne">
+      <div>
+        <label>Nom affiché au client</label>
+        <input type="text" class="o-nom" placeholder="Legazpi Sunday Market">
+      </div>
+      <div style="max-width:230px">
+        <label>Type</label>
+        <select class="o-type">
+          <option value="retrait">Le client vient chercher</option>
+          <option value="livraison">Je fais livrer</option>
+        </select>
+      </div>
+      <button class="retirer" type="button">Retirer</button>
+    </div>
+
+    <div class="ligne">
+      <div style="max-width:150px">
+        <label>Tarif (₱)</label>
+        <input type="number" class="o-tarif" min="0" step="1" value="0">
+      </div>
+      <div>
+        <label class="bascule" style="margin-top:22px">
+          <input type="checkbox" class="o-variable"> Tarif confirmé après commande
+        </label>
+      </div>
+      <div>
+        <label class="bascule" style="margin-top:22px">
+          <input type="checkbox" class="o-adresse"> Demander l'adresse du client
+        </label>
+      </div>
+    </div>
+
     <div>
-      <label>Nom de la zone</label>
-      <input type="text" class="zone-nom" placeholder="Quezon City">
+      <label>Adresse ou précision affichée au client</label>
+      <input type="text" class="o-lieu" placeholder="Legazpi Street, Makati — 7h à 14h">
     </div>
-    <div style="max-width:150px">
-      <label>Tarif (₱)</label>
-      <input type="number" class="zone-tarif" min="0" step="1">
-    </div>
-    <button class="retirer" type="button">Retirer</button>`;
-  bloc.querySelector(".zone-nom").value   = nom;
-  bloc.querySelector(".zone-tarif").value = tarif;
-  bloc.querySelector(".retirer").onclick  = () => bloc.remove();
-  $("listeZones").appendChild(bloc);
+
+    <div style="margin-top:12px">
+      <label>Jours possibles <span style="opacity:.7">(aucun coché = tous les jours)</span></label>
+      <div class="jours o-jours"></div>
+    </div>`;
+
+  const zoneJours = bloc.querySelector(".o-jours");
+  JOURS.forEach((j, i) => {
+    const l = document.createElement("label");
+    l.innerHTML = `<input type="checkbox" value="${i}"> ${j.slice(0, 3)}`;
+    zoneJours.appendChild(l);
+  });
+
+  bloc.querySelector(".o-nom").value      = o.nom || "";
+  bloc.querySelector(".o-type").value     = o.type || "retrait";
+  bloc.querySelector(".o-tarif").value    = o.tarif ?? 0;
+  bloc.querySelector(".o-variable").checked = !!o.tarif_variable;
+  bloc.querySelector(".o-adresse").checked  = !!o.demander_adresse;
+  bloc.querySelector(".o-lieu").value     = o.lieu || "";
+  (o.jours || []).forEach(n => {
+    const c = zoneJours.querySelector(`input[value="${n}"]`);
+    if (c) c.checked = true;
+  });
+
+  // Un tarif confirmé après commande rend le montant fixe sans objet.
+  const tarif = bloc.querySelector(".o-tarif");
+  const variable = bloc.querySelector(".o-variable");
+  const majTarif = () => { tarif.disabled = variable.checked; };
+  variable.onchange = majTarif;
+  majTarif();
+
+  // Une livraison suppose presque toujours une adresse.
+  const type = bloc.querySelector(".o-type");
+  type.onchange = () => {
+    if (type.value === "livraison") bloc.querySelector(".o-adresse").checked = true;
+  };
+
+  bloc.querySelector(".retirer").onclick = () => bloc.remove();
+  $("listeOptions").appendChild(bloc);
 }
-$("btnAjoutZone").onclick = () => ajouterZone();
+$("btnAjoutOption").onclick = () => ajouterOption();
+
+function lireOptions() {
+  return [...document.querySelectorAll(".option")].map(b => ({
+    nom: b.querySelector(".o-nom").value.trim(),
+    type: b.querySelector(".o-type").value,
+    tarif: Number(b.querySelector(".o-tarif").value) || 0,
+    tarif_variable: b.querySelector(".o-variable").checked,
+    demander_adresse: b.querySelector(".o-adresse").checked,
+    lieu: b.querySelector(".o-lieu").value.trim(),
+    jours: [...b.querySelectorAll(".o-jours input:checked")].map(c => Number(c.value))
+  })).filter(o => o.nom);
+}
 
 /* ============================================================
    5. JOURS DE FERMETURE
@@ -317,9 +395,16 @@ async function chargerParametres() {
     if (s.exists()) d = s.data();
   } catch (e) { console.error(e); }
 
-  $("listeZones").innerHTML = "";
-  (d.zones_livraison || []).forEach(z => ajouterZone(z.nom, z.tarif));
-  if (!(d.zones_livraison || []).length) ajouterZone();
+  $("listeOptions").innerHTML = "";
+  let options = d.options_retrait;
+  if (!options) {
+    // Reprise de l'ancien format à zones de livraison.
+    options = (d.zones_livraison || []).map(z => ({
+      nom: z.nom, type: "livraison", tarif: z.tarif, demander_adresse: true
+    }));
+  }
+  options.forEach(o => ajouterOption(o));
+  if (!options.length) ajouterOption();
 
   $("delai").value    = d.delai_min_heures ?? 24;
   $("whatsapp").value = d.whatsapp || "";
@@ -470,16 +555,11 @@ $("btnEnregistrer").onclick = async () => {
 
   try {
     // --- Paramètres ---
-    const zones = [...document.querySelectorAll(".zone")].map(z => ({
-      nom: z.querySelector(".zone-nom").value.trim(),
-      tarif: Number(z.querySelector(".zone-tarif").value) || 0
-    })).filter(z => z.nom);
-
     const joursFermes = [...$("jours").querySelectorAll("input:checked")]
       .map(c => Number(c.value));
 
     await setDoc(doc(db, "parametres", "boutique"), {
-      zones_livraison: zones,
+      options_retrait: lireOptions(),
       creneaux: $("creneaux").value.split("\n").map(s => s.trim()).filter(Boolean),
       jours_fermes: joursFermes,
       delai_min_heures: Number($("delai").value) || 0,
