@@ -1,0 +1,2388 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Yoann's French Bakery - Gestion</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="logo.png" type="image/png">
+<link rel="apple-touch-icon" href="logo.png">
+<meta name="theme-color" content="#1a1a1a">
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { display: flex; height: 100vh; background-color: #fdf6ec; color: #3b2c1a; overflow: hidden; }
+
+    /* ===== Barre de navigation ===== */
+    nav {
+      width: 260px;
+      background-color: #1a1a1a;
+      color: #fdf6ec;
+      display: flex;
+      flex-direction: column;
+      padding: 15px 0;
+      flex-shrink: 0;
+      border-right: 3px solid #7a4a1f;
+    }
+
+    .app-title {
+      text-align: center;
+      padding: 0 10px 12px 10px;
+      border-bottom: 1px solid #333;
+      margin-bottom: 10px;
+      font-size: 0.95rem;
+      font-weight: bold;
+      color: #efe0c8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+
+    nav ul { list-style: none; }
+    nav li {
+      padding: 12px 15px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.9rem;
+      color: #d0c4b2;
+      transition: all 0.2s ease;
+    }
+    nav li:hover, nav li.active {
+      background-color: #7a4a1f;
+      color: #ffffff;
+      font-weight: bold;
+    }
+
+    /* ===== Zone de contenu ===== */
+    main { flex-grow: 1; height: 100vh; overflow-y: auto; background: #fdf6ec; padding: 20px; }
+    .section { display: none; }
+    .section.active { display: block; }
+
+    h1 { color: #7a4a1f; font-size: 1.4rem; margin-bottom: 5px; }
+    p.sous-titre { margin: 0 0 15px 0; color: #6b5b45; font-size: 0.85rem; }
+
+    .carte { background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); padding: 15px; max-width: 900px; margin-bottom: 20px; }
+
+    table { border-collapse: collapse; width: 100%; font-size: 0.9em; }
+    th, td { border: 1px solid #e0d3bd; padding: 8px; text-align: left; }
+    th { background: #7a4a1f; color: #fff; }
+    input[type="text"], input[type="number"], select { width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+
+    .btn { background: #7a4a1f; color: #fff; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 10px; margin-right: 5px; }
+    .btn-tri { background: #efe0c8; color: #7a4a1f; border: 1px solid #7a4a1f; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 0.85em; font-weight: bold; }
+    .btn-tri:hover { background: #7a4a1f; color: #fff; }
+    .btn-sup { background: #c0392b; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; }
+
+    .status-bar { background: #efe0c8; padding: 8px 12px; border-radius: 6px; margin-bottom: 15px; font-size: 0.85em; font-weight: bold; color: #7a4a1f; max-width: 900px; }
+    .toolbar-tri { margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+    .placeholder { background: #faf5ed; border: 2px dashed #d9c6a3; border-radius: 10px; padding: 30px; text-align: center; color: #8a7860; max-width: 900px; }
+
+    /* ==========================================================
+       MODES CONSULTATION / ÉDITION
+       Le mode consultation est le mode par défaut : aucun champ modifiable
+       à l'écran, donc aucune fausse manipulation possible.
+       ========================================================== */
+    .mode-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; max-width: 900px; }
+    .btn-mode { background: #efe0c8; color: #7a4a1f; border: 1px solid #7a4a1f; padding: 9px 16px; border-radius: 20px; font-weight: bold; font-size: 0.85rem; cursor: pointer; white-space: nowrap; }
+    .btn-mode:hover { background: #e4d0b0; }
+    .btn-mode.edition { background: #c0392b; color: #fff; border-color: #c0392b; }
+    .btn-mode.edition:hover { background: #a93226; }
+    .mode-info { font-size: 0.78rem; color: #8a7860; }
+
+    /* Bascule d'affichage pilotée par la classe .mode-edition posée sur la <section> */
+    .section .edition-only { display: none; }
+    .section.mode-edition .edition-only { display: block; }
+    .section.mode-edition .consultation-only { display: none; }
+
+    /* Tableaux en lecture seule : plus légers, sans bordures lourdes */
+    .table-lecture { font-size: 0.88rem; }
+    .table-lecture th { background: #7a4a1f; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.4px; padding: 7px 8px; }
+    .table-lecture td { padding: 7px 8px; border: none; border-bottom: 1px solid #f0e6d2; }
+    .table-lecture tbody tr:nth-child(even) { background: #faf5ed; }
+
+    /* Fiches techniques repliables (accordéon) */
+    .fiche-ligne { background: #fff; border: 1px solid #e0d3bd; border-radius: 8px; margin-bottom: 6px; max-width: 900px; overflow: hidden; }
+    .fiche-entete { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 11px 12px; cursor: pointer; }
+    .fiche-entete:hover { background: #faf5ed; }
+    .fiche-titre { font-weight: bold; color: #3b2c1a; font-size: 0.95rem; }
+    .fiche-meta { font-size: 0.8rem; color: #7a4a1f; font-weight: bold; white-space: nowrap; }
+    .fiche-corps { padding: 0 12px 12px 12px; border-top: 1px solid #f0e6d2; }
+    .titre-categorie { margin: 20px 0 8px 0; color: #7a4a1f; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; }
+
+    /* Blocs repliables (Outils, Import/Export, Sauvegarde...) */
+    .bloc-toggle { background: #efe0c8; color: #7a4a1f; border: 1px solid #d9c6a3; width: 100%; max-width: 900px; padding: 11px 14px; border-radius: 10px; font-weight: bold; font-size: 0.88rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
+    .bloc-toggle:hover { background: #e4d0b0; }
+    .bloc-repliable { display: none; }
+    .bloc-repliable.ouvert { display: block; }
+
+    /* ===== Recettes / Production ===== */
+    #section-recettes { font-size: 1.15em; }
+    #section-recettes h1 { font-size: 1.6rem; }
+    #section-recettes h2 { font-size: 1.3rem !important; }
+    #section-recettes table { font-size: 1.05em; }
+    #section-recettes th, #section-recettes td { padding: 10px 8px; }
+    .grille-quantites { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 10px; }
+    .champ-qte label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 1em; }
+    .champ-qte input { text-align: center; font-size: 1.1em; padding: 8px; }
+    .onglets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 15px; max-width: 900px; }
+    .onglet-btn { background: #efe0c8; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-size: 1em; color: #7a4a1f; font-weight: bold; }
+    .onglet-btn.actif { background: #7a4a1f; color: #fff; }
+    .qte-cell { font-weight: bold; background: #f0e6d2 !important; }
+    .info-hydratation, .info-nb { margin-top: 10px; font-size: 1.05em; color: #6b5b45; }
+    .supplement-tardif { margin-top: 20px; padding-top: 15px; border-top: 2px dashed #b05a2f; }
+    .supplement-tardif h3 { color: #b05a2f; margin-bottom: 10px; font-size: 1.15rem; }
+    .supplement-tardif .qte-cell { background: #fbe3d0 !important; }
+    .carte-tardive { border: 2px dashed #b05a2f; background: #fff8ef; }
+    .carte-tardive h2 { color: #b05a2f; }
+
+    /* ===== Sans Gluten ===== */
+    .btn-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; }
+    .btn-preset { padding: 10px 4px; background: #efe0c8; border: 1px solid #d9c6a3; border-radius: 8px; font-weight: 700; font-size: 0.9rem; color: #7a4a1f; text-align: center; cursor: pointer; }
+    .btn-preset.actif { background: #7a4a1f; color: #fff; }
+    .totals-summary { display: flex; justify-content: space-between; background: #faf5ed; padding: 10px 12px; border-radius: 8px; margin-top: 12px; font-size: 0.85rem; }
+    .val-droite { text-align: right; font-weight: 700; color: #7a4a1f; }
+    tr.highlight { background-color: #faf5ed; }
+    tr.highlight td { color: #b05a2f; font-weight: bold; }
+    .info-box { background-color: #eef6ef; border-left: 3px solid #2e7d32; padding: 10px; border-radius: 6px; font-size: 0.8rem; color: #1b4332; margin-top: 12px; line-height: 1.4; }
+
+    /* ===== Commandes / Analyse financière ===== */
+    .toolbar-cmd { display: flex; gap: 8px; margin-bottom: 12px; max-width: 900px; }
+    .card-cmd { background: #ffffff; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 2px 5px rgba(0,0,0,0.04); border-left: 5px solid #7a4a1f; margin-bottom: 10px; max-width: 900px; }
+    .product-name-cmd { font-weight: 700; font-size: 1rem; color: #3b2c1a; display: block; }
+    .stock-produit-discret { font-size: 0.7rem; color: #a89a86; }
+    .price-input-cmd { width: 60px; padding: 2px 4px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.75rem; text-align: center; }
+    .counter-group { display: flex; align-items: center; background: #efe0c8; border-radius: 8px; padding: 2px; border: 1px solid #7a4a1f; flex-shrink: 0; width: fit-content; }
+    .btn-counter { background: #7a4a1f; color: white; border: none; width: 26px; height: 26px; border-radius: 6px; font-size: 1rem; font-weight: bold; cursor: pointer; }
+    .counter-value { width: 32px; text-align: center; font-weight: bold; font-size: 0.9rem; color: #7a4a1f; border: none; background: transparent; }
+    .liste-prix-vente { max-width: 900px; margin-top: 10px; }
+    .ligne-prix-vente { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px solid #e0d3bd; font-size: 0.85rem; }
+    .finance-toggle { background: #1a1a1a; color: #fff; border: none; width: 100%; max-width: 900px; padding: 12px; border-radius: 10px; font-weight: bold; font-size: 0.9rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+    .finance-block { background: #fff; border-radius: 10px; padding: 12px; margin-top: 8px; border: 1px solid #e0d3bd; display: none; max-width: 900px; }
+    .finance-block.ouvert { display: block; }
+    .finance-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; text-align: center; }
+    .finance-card { background: #faf5ed; padding: 6px 2px; border-radius: 6px; border: 1px solid #e0d3bd; }
+    .finance-card label { font-size: 0.65rem; color: #6b5b45; display: block; font-weight: bold; margin-bottom: 2px; }
+    .finance-card span { font-size: 0.85rem; font-weight: bold; }
+    .footer-total { position: sticky; bottom: 0; background: #22313f; color: #ffffff; border-radius: 10px; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; font-size: 0.9rem; margin-top: 10px; max-width: 900px; }
+    .footer-total-val { font-size: 1.1rem; color: #efe0c8; }
+
+    /* ===== Mobile ===== */
+    @media (max-width: 768px) {
+      body { flex-direction: column; }
+      nav {
+        width: 100%;
+        height: auto;
+        padding: 6px 4px;
+        border-right: none;
+        border-bottom: 2px solid #7a4a1f;
+      }
+      .app-title { padding: 2px 0 6px 0; margin-bottom: 4px; font-size: 0.85rem; border-bottom: 1px solid #282828; }
+      nav ul { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; background: transparent; }
+      nav li { padding: 6px 2px; font-size: 0.7rem; justify-content: center; text-align: center; border-radius: 4px; background: #242424; white-space: normal; line-height: 1.1; }
+      nav li.active { background: #7a4a1f; }
+      main { padding: 12px; padding-bottom: 90px; }
+      .table-lecture { font-size: 0.82rem; }
+      .table-lecture td { padding: 6px 5px; }
+    }
+</style>
+
+<!-- Firebase SDK Compat Version -->
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<!-- SheetJS : lecture/écriture de fichiers CSV/Excel directement dans le navigateur -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+
+  <nav>
+    <div class="app-title">Yoann's French Bakery</div>
+    <ul>
+      <li class="tab-btn active" data-section="dashboard" onclick="showTab('dashboard', this)">🏠<br>Accueil</li>
+      <li class="tab-btn" data-section="recettes" onclick="showTab('recettes', this)">🍞<br>Recettes</li>
+      <li class="tab-btn" data-section="sans-gluten" onclick="showTab('sans-gluten', this)">🌾<br>Sans Gluten</li>
+      <li class="tab-btn" data-section="ingredients" onclick="showTab('ingredients', this)">🏷️<br>Ingrédients</li>
+      <li class="tab-btn" data-section="couts" onclick="showTab('couts', this)">💰<br>Coûts</li>
+      <li class="tab-btn" data-section="commandes" onclick="showTab('commandes', this)">📋<br>Commandes</li>
+    </ul>
+  </nav>
+
+  <main>
+
+    <!-- ============ ACCUEIL / TABLEAU DE BORD ============ -->
+    <section id="section-dashboard" class="section active">
+      <h1>🏠 Tableau de Bord</h1>
+      <p class="sous-titre">Résumé du jour — mis à jour en temps réel.</p>
+
+      <div class="carte" style="max-width:900px; max-height:33vh; overflow-y:auto;">
+        <h2 style="color:#7a4a1f; margin-bottom:10px; font-size:1.1rem;">📋 Résumé des commandes</h2>
+        <div id="resumeCommandes"></div>
+      </div>
+
+      <div class="finance-grid" style="max-width:900px; margin-bottom:15px;">
+        <div class="finance-card"><label>C.A. PRÉVU</label><span id="dashCA" style="color:#2563eb; font-size:1.3rem;">₱ 0</span></div>
+        <div class="finance-card"><label>COÛT MATIÈRE</label><span id="dashCout" style="color:#c0392b; font-size:1.3rem;">₱ 0</span></div>
+        <div class="finance-card"><label>MARGE BRUTE</label><span id="dashMarge" style="color:#27ae60; font-size:1.3rem;">₱ 0</span></div>
+      </div>
+
+      <div class="carte" style="max-width:900px;">
+        <div style="display:flex; justify-content:space-around; text-align:center; flex-wrap:wrap; gap:10px;">
+          <div><div style="font-size:1.6rem; font-weight:bold; color:#7a4a1f;" id="dashTotalPieces">0</div><div style="font-size:0.8rem; color:#6b5b45;">Pièces commandées</div></div>
+          <div><div style="font-size:1.6rem; font-weight:bold; color:#7a4a1f;" id="dashTauxMarge">0%</div><div style="font-size:0.8rem; color:#6b5b45;">Taux de marge</div></div>
+          <div><div style="font-size:1.6rem; font-weight:bold; color:#7a4a1f;" id="dashNbProduits">0</div><div style="font-size:0.8rem; color:#6b5b45;">Produits actifs</div></div>
+        </div>
+      </div>
+
+      <div class="carte" style="max-width:900px;" id="dashCarteStockBas">
+        <h2 style="color:#c0392b; margin-bottom:10px; font-size:1.1rem;">📝 Alertes Stock</h2>
+        <div id="dashStockBas"></div>
+        <button class="btn" style="background:#8a7860; margin-top:8px;" onclick="showTab('ingredients', document.querySelector('[data-section=ingredients]'))">Voir dans Ingrédients →</button>
+      </div>
+
+      <div class="carte" style="max-width:900px;">
+        <h2 style="color:#7a4a1f; margin-bottom:10px; font-size:1.1rem;">🛡️ Sauvegarde</h2>
+        <div id="dashBackupStatus" style="font-size:0.85rem; color:#6b5b45;">—</div>
+      </div>
+
+      <div class="carte" style="max-width:900px;">
+        <h2 style="color:#7a4a1f; margin-bottom:10px; font-size:1.1rem;">📈 Historique (30 derniers jours)</h2>
+        <p style="font-size:0.8rem; color:#6b5b45; margin-bottom:10px;">Un jour est ajouté à l'historique à chaque clic sur "Confirmer la production du jour" (onglet Commandes).</p>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead><tr><th>Date</th><th>Pièces</th><th>C.A.</th><th>Marge</th><th>Taux</th></tr></thead>
+            <tbody id="corpsHistorique"><tr><td colspan="5" style="text-align:center; color:#8a7860;">Chargement...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ RECETTES ============ -->
+    <section id="section-recettes" class="section">
+      <h1>🍞 Recettes — Production du Jour</h1>
+      <p class="sous-titre">Basé sur les fiches techniques de catégorie "Pains" (onglet Coûts). Indique les quantités à produire.</p>
+
+      <div class="carte">
+        <h2 style="color:#7a4a1f; margin-bottom:10px; font-size:1.1rem;">📋 Quantités à produire</h2>
+        <div class="grille-quantites" id="grilleQuantitesPains"></div>
+      </div>
+
+      <div class="carte carte-tardive">
+        <h2 style="margin-bottom:10px; font-size:1.1rem;">➕ Commande tardive</h2>
+        <div class="grille-quantites" id="grilleQuantitesTardif"></div>
+        <button class="btn" style="background:none; border:1px solid #b05a2f; color:#b05a2f;" onclick="reinitialiserTardif()">Réinitialiser commande tardive</button>
+      </div>
+
+      <div class="carte" id="syntheseBasesWrapper">
+        <h2 style="color:#7a4a1f; margin-bottom:10px; font-size:1.1rem;">🫙 Synthèse des Recettes de Base</h2>
+        <p class="sous-titre">Quantités totales à préparer (commande normale + tardive combinées).</p>
+        <div id="syntheseBases"></div>
+      </div>
+
+      <div class="onglets" id="ongletsPains"></div>
+      <div id="contenuOngletsPains"></div>
+    </section>
+
+    <!-- ============ SANS GLUTEN ============ -->
+    <section id="section-sans-gluten" class="section">
+      <h1>🌾 Production Pain Sans Gluten</h1>
+      <p class="sous-titre">Pâtons de <strong>475 g cru</strong> (~400 g cuit). Workflow indépendant des pains classiques.</p>
+
+      <div class="carte">
+        <h2 style="color:#7a4a1f; margin-bottom:12px; font-size:1.1rem;">⚙️ Réglages</h2>
+
+        <div style="margin-bottom:12px;">
+          <label style="display:block; font-weight:600; font-size:0.85rem; margin-bottom:4px;">Type de Pain :</label>
+          <select id="breadType" onchange="calculerSansGluten()">
+            <option value="neutre">Pain neutre</option>
+            <option value="fibres">Pain fibres</option>
+          </select>
+        </div>
+
+        <div style="margin-bottom:12px;">
+          <label style="display:block; font-weight:600; font-size:0.85rem; margin-bottom:4px;">Liant (Gommes) :</label>
+          <select id="gumType" onchange="calculerSansGluten()">
+            <option value="mix">Mix 50/50 (Guar + Xanthane)</option>
+            <option value="guar">100% Gomme de Guar</option>
+            <option value="xanthane">100% Gomme Xanthane</option>
+          </select>
+        </div>
+
+        <div style="margin-bottom:12px;">
+          <label style="display:block; font-weight:600; font-size:0.85rem; margin-bottom:4px;">Nombre de Pains :</label>
+          <input type="number" id="loafCount" value="4" min="1" inputmode="numeric" oninput="calculerSansGluten()">
+        </div>
+
+        <div class="btn-grid">
+          <div class="btn-preset" onclick="setLoaves(1)">1</div>
+          <div class="btn-preset" onclick="setLoaves(4)">4</div>
+          <div class="btn-preset" onclick="setLoaves(8)">8</div>
+          <div class="btn-preset" onclick="setLoaves(12)">12</div>
+        </div>
+
+        <div class="totals-summary">
+          <div>Cru : <strong id="totalDoughWeight" class="val-droite">1900</strong> g</div>
+          <div>Cuit : ~<strong id="totalBakedWeight" class="val-droite">1615</strong> g</div>
+        </div>
+      </div>
+
+      <div class="carte">
+        <h2 style="color:#7a4a1f; margin-bottom:12px; font-size:1.1rem;">🥣 À Peser (Pétrissage)</h2>
+        <table>
+          <thead><tr><th>Ingrédient</th><th style="text-align:right">Quantité</th></tr></thead>
+          <tbody>
+            <tr class="highlight"><td>📦 <strong>Premix Sec</strong></td><td class="val-droite" id="premixWeight">0 g</td></tr>
+            <tr><td>💧 Eau tiède (~35°C)</td><td class="val-droite" id="waterWeight">0 g</td></tr>
+            <tr><td>🌿 Psyllium blond</td><td class="val-droite" id="psylliumWeight">0 g</td></tr>
+            <tr><td>🍞 Levure sèche</td><td class="val-droite" id="yeastWeight">0 g</td></tr>
+            <tr><td>🫒 Huile neutre/olive</td><td class="val-droite" id="oilWeight">0 g</td></tr>
+            <tr><td>🍯 Miel / Sucre</td><td class="val-droite" id="honeyWeight">0 g</td></tr>
+            <tr><td>🍏 Vinaigre cidre</td><td class="val-droite" id="vinegarWeight">0 g</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="carte">
+        <h2 style="color:#7a4a1f; margin-bottom:12px; font-size:1.1rem;">🪣 Seau de Premix (<span id="bucketWeightTitle">2,55 kg</span>)</h2>
+        <table>
+          <thead><tr><th>Composition</th><th style="text-align:center">%</th><th style="text-align:right">Seau</th><th style="text-align:right">Fournée</th></tr></thead>
+          <tbody id="premixDetailTable"></tbody>
+        </table>
+        <div class="info-box">
+          💡 <strong>Procédé :</strong> Diluer le Psyllium dans l'eau tiède (5 min). Ajouter la levure/miel. Verser le Premix et mélanger 3-5 min. Mouler à 475 g.
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ INGRÉDIENTS ============ -->
+    <section id="section-ingredients" class="section">
+      <h1>🏷️ Ingrédients & Prix (₱)</h1>
+      <div class="status-bar" id="statusBar">🔄 Connexion à Firebase...</div>
+
+      <div class="mode-bar">
+        <button class="btn-mode" id="btnModeIngredients" onclick="basculerMode('ingredients')">🔒 Consultation</button>
+        <span class="mode-info" id="infoModeIngredients">Lecture seule — clique pour modifier</span>
+      </div>
+
+      <div class="toolbar-tri">
+        <span style="font-size:0.85em; font-weight:bold; color:#6b5b45;">Trier :</span>
+        <button class="btn-tri" onclick="trierAlphabetique()">🔤 A-Z</button>
+        <button class="btn-tri" onclick="trierPrix('asc')">📈 Prix +</button>
+        <button class="btn-tri" onclick="trierPrix('desc')">📉 Prix −</button>
+      </div>
+
+      <div class="carte">
+        <!-- Vue lecture seule (mode consultation) -->
+        <div class="consultation-only" id="vueLectureIngredients"></div>
+
+        <!-- Vue éditable (mode édition) -->
+        <div class="edition-only">
+          <div style="overflow-x:auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Ingrédient</th>
+                  <th>Unité</th>
+                  <th>Prix (₱)</th>
+                  <th>Fournisseur</th>
+                  <th>Contact</th>
+                  <th>Stock</th>
+                  <th>Stock bas</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="corpsTableau"></tbody>
+            </table>
+          </div>
+          <button class="btn" onclick="ajouterLigne()">+ Ajouter un ingrédient</button>
+          <button class="btn" style="background:#27ae60;" onclick="sauvegarderCloud()">☁️ Enregistrer sur Firebase</button>
+        </div>
+      </div>
+
+      <div class="carte" id="carteReappro">
+        <h2 style="color:#c0392b; margin-bottom:10px; font-size:1.1rem;">📝 Liste de Réapprovisionnement</h2>
+        <div id="listeReappro"></div>
+      </div>
+
+      <button class="bloc-toggle" onclick="toggleBloc('outilsIngredients', 'iconeOutilsIngredients')">
+        <span>⚙️ Outils & maintenance (import, export, sauvegardes)</span>
+        <span id="iconeOutilsIngredients">▼</span>
+      </button>
+      <div class="bloc-repliable" id="outilsIngredients">
+
+        <div class="carte" style="margin-top:8px;">
+          <h2 style="color:#7a4a1f; margin-bottom:8px; font-size:1rem;">📥📤 Import / Export Excel</h2>
+          <p style="font-size:0.78rem; color:#6b5b45; margin-bottom:10px;">
+            Colonnes reconnues : <strong>Item</strong>, <strong>prix par kilo</strong>, <strong>prix unitaire</strong>, <strong>Fournisseur</strong>, <strong>Contact</strong>.
+            L'import fusionne (met à jour l'existant, ajoute le nouveau, ne supprime rien) et bascule la page en mode édition — rien n'est envoyé sur Firebase avant ton clic sur "Enregistrer".
+          </p>
+          <input type="file" id="fichierImportIngredients" accept=".csv,.xlsx,.xls" style="display:none;" onchange="importerIngredients(event)">
+          <button class="btn" style="background:#2980b9;" onclick="document.getElementById('fichierImportIngredients').click()">📥 Importer (CSV/Excel)</button>
+          <button class="btn" style="background:#2980b9;" onclick="exporterIngredients()">📤 Exporter en Excel</button>
+          <div id="statusImportIngredients" style="margin-top:10px; font-size:0.85em; font-weight:bold; color:#7a4a1f;"></div>
+        </div>
+
+        <div class="carte">
+          <h2 style="color:#7a4a1f; margin-bottom:8px; font-size:1rem;">🛡️ Sauvegarde Automatique</h2>
+          <p style="font-size:0.78rem; color:#6b5b45; margin-bottom:10px;">
+            Une copie des Ingrédients et des Fiches Techniques est enregistrée une fois par jour dans un emplacement séparé des données actives.
+          </p>
+          <div class="status-bar" id="statusBackup">🔄 Vérification des sauvegardes...</div>
+          <button class="btn" style="background:#16a34a;" onclick="sauvegarderBackupManuel()">💾 Sauvegarder maintenant</button>
+          <button class="btn" style="background:#8a7860;" onclick="afficherListeBackups()">📜 Voir les sauvegardes</button>
+          <div id="listeBackups" style="margin-top:10px;"></div>
+        </div>
+
+        <div class="carte">
+          <h2 style="color:#8a7860; margin-bottom:8px; font-size:1rem;">🧰 Dépannage</h2>
+          <p style="font-size:0.78rem; color:#6b5b45; margin-bottom:6px;">À utiliser uniquement si ta liste est vide par erreur.</p>
+          <button class="btn" style="background:#8a7860;" onclick="chargerListeParDefaut()" id="btnListeParDefaut">Charger la liste par défaut (13 ingrédients génériques)</button>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ============ COÛTS / FICHES TECHNIQUES ============ -->
+    <section id="section-couts" class="section">
+      <h1>💰 Fiches Techniques & Prix de Revient</h1>
+      <div class="status-bar" id="statusBarCouts">🔄 Synchronisation avec Firebase...</div>
+
+      <div class="mode-bar">
+        <button class="btn-mode" id="btnModeCouts" onclick="basculerMode('couts')">🔒 Consultation</button>
+        <span class="mode-info" id="infoModeCouts">Lecture seule — clique pour modifier</span>
+      </div>
+
+      <div class="edition-only" style="max-width:900px; margin-bottom:6px;">
+        <button class="btn" onclick="ajouterFiche()">+ Nouvelle fiche</button>
+        <button class="btn" style="background:#27ae60;" onclick="sauvegarderFichesCloud()">☁️ Enregistrer les fiches</button>
+      </div>
+
+      <div id="conteneurFichesParCategorie" style="margin-top:10px;"></div>
+
+      <button class="bloc-toggle" onclick="toggleBloc('outilsCouts', 'iconeOutilsCouts')">
+        <span>⚙️ Import / Export Excel — Fiches Techniques</span>
+        <span id="iconeOutilsCouts">▼</span>
+      </button>
+      <div class="bloc-repliable" id="outilsCouts">
+        <div class="carte" style="margin-top:8px;">
+          <p style="font-size:0.78rem; color:#6b5b45; margin-bottom:10px;">
+            Une ligne par ingrédient. Colonnes : <strong>Fiche</strong>, <strong>Catégorie</strong>, <strong>Vendable</strong>, <strong>Pièces</strong>, <strong>Type</strong> (Brut/Composite), <strong>Ingrédient</strong>, <strong>Quantité (g)</strong>, <strong>Farine</strong>.
+            L'import fusionne par nom de fiche et crée automatiquement les ingrédients bruts manquants (prix à 0). Rien n'est envoyé sur Firebase avant ton clic sur "Enregistrer".
+          </p>
+          <input type="file" id="fichierImportFiches" accept=".csv,.xlsx,.xls" style="display:none;" onchange="importerFichesTechniques(event)">
+          <button class="btn" style="background:#2980b9;" onclick="document.getElementById('fichierImportFiches').click()">📥 Importer (CSV/Excel)</button>
+          <button class="btn" style="background:#2980b9;" onclick="exporterFichesTechniques()">📤 Exporter en Excel</button>
+          <div id="statusImportFiches" style="margin-top:10px; font-size:0.85em; font-weight:bold; color:#7a4a1f;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ COMMANDES ============ -->
+    <section id="section-commandes" class="section">
+      <h1>📋 Commandes & Analyse Financière</h1>
+      <p class="sous-titre">Toutes les fiches techniques vendables (Pains, Viennoiseries, Autres) alimentent cette page.</p>
+      <div class="status-bar" id="statusBarCommandes">🔄 Synchronisation avec Firebase...</div>
+
+      <div class="toolbar-cmd">
+        <button class="btn-tri" onclick="trierCommandes('az')">Produit A-Z</button>
+        <button class="btn-tri" onclick="trierCommandes('qte')">Quantité ▼</button>
+      </div>
+
+      <button class="btn" style="background:#16a34a; font-size:1rem; padding:14px 20px; width:100%; max-width:900px; margin-bottom:15px; box-shadow:0 2px 8px rgba(22,163,74,0.3);" onclick="confirmerProductionDuJour()">✅ Confirmer la production du jour (déduit le stock matières premières)</button>
+
+      <div id="conteneurCartesCommandes"></div>
+
+      <button class="finance-toggle" onclick="toggleFinance()">
+        <span>📊 Analyse Financière & Marges</span>
+        <span id="toggleIconFinance">▼</span>
+      </button>
+      <div class="finance-block" id="financeBlock">
+        <div class="finance-grid">
+          <div class="finance-card"><label>C.A. PRÉVU</label><span id="finCA" style="color:#2563eb;">₱ 0</span></div>
+          <div class="finance-card"><label>COÛT MAT.</label><span id="finCout" style="color:#c0392b;">₱ 0</span></div>
+          <div class="finance-card"><label>MARGE BRUTE</label><span id="finMarge" style="color:#27ae60;">₱ 0</span></div>
+        </div>
+        <div style="text-align:center; font-size:0.75rem; font-weight:bold; color:#6b5b45; margin-top:10px;">
+          Taux de marge globale : <span id="finTauxMarge" style="color:#27ae60;">0 %</span>
+        </div>
+
+        <h3 style="margin-top:15px; margin-bottom:6px; font-size:0.9rem; color:#7a4a1f;">Prix de revient & prix de vente par produit</h3>
+        <div class="liste-prix-vente" id="listePrixVente"></div>
+      </div>
+
+      <div class="footer-total">
+        <span>TOTAL PIÈCES</span>
+        <div>
+          <span class="footer-total-val" id="totalPiecesCommandes">0</span>
+          <span style="font-size:0.7rem; color:#cbd5e1; display:block; text-align:right;" id="totalCoutCommandes">Matière: ₱ 0,00</span>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+<script>
+    /* ==========================================================
+       INITIALISATION FIREBASE — une seule fois pour toute l'appli
+       ========================================================== */
+    const firebaseConfig = {
+      apiKey: "AIzaSyDuq8KS8M_Z8U7BlSp6MvE-6Y9OYYaDujE",
+      authDomain: "bakertools-ae124.firebaseapp.com",
+      projectId: "bakertools-ae124",
+      storageBucket: "bakertools-ae124.firebasestorage.app",
+      messagingSenderId: "978584667113",
+      appId: "1:978584667113:web:868cc89788aff27717c178",
+      measurementId: "G-KQNS7J2NPX"
+    };
+
+    let db = null;
+    try {
+        firebase.initializeApp(firebaseConfig);
+        db = firebase.firestore();
+        db.enablePersistence().catch(() => console.log("Mode hors-ligne actif."));
+    } catch (err) {
+        console.error("Firebase indisponible : ", err.message);
+        // On continue quand même — les sections qui ne dépendent pas de Firebase (Sans Gluten...) doivent fonctionner.
+    }
+
+    /* ==========================================================
+       MODES CONSULTATION / ÉDITION (Ingrédients et Coûts)
+       - Consultation = mode par défaut, aucun champ modifiable affiché.
+       - Édition = affichage des champs + boutons d'enregistrement.
+       - En édition, la synchronisation temps réel Firestore est mise en PAUSE
+         sur la page concernée : sans ça, une synchro arrivant pendant la saisie
+         redessinerait le tableau et effacerait le travail en cours.
+       ========================================================== */
+    const modesPages = { ingredients: 'consultation', couts: 'consultation' };
+    let dirtyIngredients = false; // modifications faites à l'écran mais pas encore envoyées sur Firebase
+    let dirtyFiches = false;
+
+    function estEnEdition(page) { return modesPages[page] === 'edition'; }
+
+    function basculerMode(page) {
+        if (estEnEdition(page)) {
+            const dirty = page === 'ingredients' ? dirtyIngredients : dirtyFiches;
+            if (dirty && !confirm("⚠️ Des modifications ne sont pas encore enregistrées sur Firebase.\n\nRepasser en consultation quand même ?\n(les modifications restent affichées, mais seront perdues à la prochaine synchronisation)")) return;
+            modesPages[page] = 'consultation';
+        } else {
+            modesPages[page] = 'edition';
+        }
+        appliquerMode(page);
+    }
+
+    function appliquerMode(page) {
+        const estCouts = page === 'couts';
+        const section = document.getElementById(estCouts ? 'section-couts' : 'section-ingredients');
+        const btn = document.getElementById(estCouts ? 'btnModeCouts' : 'btnModeIngredients');
+        if (!section || !btn) return;
+        const edition = estEnEdition(page);
+
+        section.classList.toggle('mode-edition', edition);
+        btn.classList.toggle('edition', edition);
+        btn.textContent = edition ? '✏️ Édition — cliquer pour verrouiller' : '🔒 Consultation';
+
+        if (estCouts) afficherFichesCouts(); else afficherTableauIngredients();
+        majIndicateursMode();
+    }
+
+    function forcerModeEdition(page) {
+        if (!estEnEdition(page)) { modesPages[page] = 'edition'; appliquerMode(page); }
+    }
+
+    function majIndicateursMode() {
+        const textes = {
+            ingredients: { el: 'infoModeIngredients', dirty: dirtyIngredients },
+            couts: { el: 'infoModeCouts', dirty: dirtyFiches }
+        };
+        Object.keys(textes).forEach(page => {
+            const el = document.getElementById(textes[page].el);
+            if (!el) return;
+            if (!estEnEdition(page)) {
+                el.innerHTML = 'Lecture seule — clique pour modifier';
+            } else if (textes[page].dirty) {
+                el.innerHTML = '<span style="color:#c0392b; font-weight:bold;">⚠️ Modifications non enregistrées</span>';
+            } else {
+                el.innerHTML = 'Modifications possibles — pense à enregistrer';
+            }
+        });
+    }
+
+    // Blocs repliables génériques (Outils, Import/Export...)
+    function toggleBloc(idBloc, idIcone) {
+        const bloc = document.getElementById(idBloc);
+        if (!bloc) return;
+        const ouvert = bloc.classList.toggle('ouvert');
+        const icone = document.getElementById(idIcone);
+        if (icone) icone.textContent = ouvert ? '▲' : '▼';
+    }
+
+    // Filet de sécurité : avertit si on ferme l'appli avec des modifications non enregistrées.
+    window.addEventListener('beforeunload', (e) => {
+        if (dirtyIngredients || dirtyFiches) { e.preventDefault(); e.returnValue = ''; }
+    });
+
+    /* ==========================================================
+       NAVIGATION
+       ========================================================== */
+    function showTab(sectionId, element) {
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('section-' + sectionId).classList.add('active');
+      element.classList.add('active');
+
+      // Reverrouille automatiquement les pages quittées — sauf si des modifications
+      // sont en attente d'enregistrement (on ne masque jamais un travail non sauvegardé).
+      if (sectionId !== 'ingredients' && estEnEdition('ingredients') && !dirtyIngredients) {
+          modesPages.ingredients = 'consultation'; appliquerMode('ingredients');
+      }
+      if (sectionId !== 'couts' && estEnEdition('couts') && !dirtyFiches) {
+          modesPages.couts = 'consultation'; appliquerMode('couts');
+      }
+    }
+
+    /* ==========================================================
+       SECTION INGRÉDIENTS
+       ========================================================== */
+    const ingredientsParDefaut = [
+        { nom: "Farine de blé", type: "kg", prix: 45 },
+        { nom: "Farine de seigle", type: "kg", prix: 55 },
+        { nom: "Farine complète", type: "kg", prix: 50 },
+        { nom: "Farine", type: "kg", prix: 45 },
+        { nom: "Beurre", type: "kg", prix: 380 },
+        { nom: "Sucre", type: "kg", prix: 60 },
+        { nom: "Œufs", type: "unite", prix: 8 },
+        { nom: "Levure", type: "kg", prix: 250 },
+        { nom: "Sel", type: "kg", prix: 25 },
+        { nom: "Huile d'olive", type: "kg", prix: 400 },
+        { nom: "Noix", type: "kg", prix: 600 },
+        { nom: "Olives", type: "kg", prix: 350 },
+        { nom: "Mix de graines", type: "kg", prix: 200 }
+    ];
+
+    let listeIngredients = [];
+    let sensAlphabetique = true;
+
+    function chargerIngredients() {
+        if (!db) {
+            listeIngredients = ingredientsParDefaut;
+            document.getElementById('statusBar').textContent = "⚠️ Firebase indisponible — données par défaut (non sauvegardées)";
+            afficherTableauIngredients();
+            return;
+        }
+        db.collection("ingredients").doc("master").onSnapshot((doc) => {
+            // Pause de la synchro pendant l'édition : ne jamais écraser une saisie en cours.
+            if (estEnEdition('ingredients')) {
+                document.getElementById('statusBar').textContent = "⏸️ Mode édition — synchronisation en pause (ta saisie est protégée)";
+                return;
+            }
+            if (doc.exists && doc.data().items && doc.data().items.length > 0) {
+                listeIngredients = doc.data().items;
+                dirtyIngredients = false;
+                document.getElementById('statusBar').textContent = "✅ Synchronisé en temps réel avec le Cloud Firebase";
+            } else {
+                // IMPORTANT : on n'écrit JAMAIS automatiquement sur Firebase ici.
+                // Un "doc.exists === false" peut être un faux négatif temporaire (cache local vidé, connexion
+                // pas encore établie) — écrire une liste par défaut dans ce cas écraserait de vraies données.
+                listeIngredients = [];
+                document.getElementById('statusBar').textContent = "⚠️ Aucune donnée trouvée sur Firebase pour l'instant (ou connexion en cours) — rien n'a été modifié ni écrasé.";
+            }
+            afficherTableauIngredients();
+        }, (err) => {
+            document.getElementById('statusBar').textContent = "⚡ Mode Hors-Ligne (données locales)";
+        });
+    }
+
+    // Point d'entrée unique : choisit la vue lecture ou la vue édition selon le mode actif.
+    function afficherTableauIngredients() {
+        if (typeof afficherFichesCouts === 'function' && fichesTechniques.length > 0) {
+            afficherFichesCouts(); // les coûts des fiches dépendent des prix des ingrédients
+        }
+        if (typeof afficherCommandes === 'function') afficherCommandes();
+
+        if (estEnEdition('ingredients')) construireTableauIngredientsEdition();
+        else construireVueLectureIngredients();
+
+        afficherListeReappro();
+        majIndicateursMode();
+    }
+
+    // Vue compacte, non modifiable : Nom · Prix · Fournisseur · Stock.
+    function construireVueLectureIngredients() {
+        const el = document.getElementById('vueLectureIngredients');
+        if (!el) return;
+        if (listeIngredients.length === 0) {
+            el.innerHTML = '<p style="color:#8a7860; font-size:0.85em;">Aucun ingrédient chargé pour l\'instant.</p>';
+            return;
+        }
+        const lignes = listeIngredients.map((item, index) => {
+            const unite = item.type === 'kg' ? '₱/kg' : '₱/u.';
+            const stock = item.stockActuel || 0;
+            return `<tr>
+                <td style="${item.stockBas ? 'color:#c0392b; font-weight:bold;' : ''}">${item.nom}</td>
+                <td style="text-align:right; white-space:nowrap;"><strong>${(item.prix || 0).toLocaleString('fr-FR')}</strong> <span style="color:#8a7860; font-size:0.85em;">${unite}</span></td>
+                <td style="color:#6b5b45;">${item.fournisseur || '—'}</td>
+                <td style="text-align:right; white-space:nowrap; color:${stock < 0 ? '#c0392b' : '#3b2c1a'};">${stock.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} ${item.type === 'kg' ? 'kg' : 'u.'}</td>
+                <td style="text-align:center;"><input type="checkbox" style="width:auto; cursor:pointer;" ${item.stockBas ? 'checked' : ''} onchange="toggleStockBas(${index}, this.checked)" title="Signaler un stock bas (enregistré aussitôt)"></td>
+            </tr>`;
+        }).join('');
+
+        const nbStockBas = listeIngredients.filter(i => i.stockBas).length;
+        el.innerHTML = `
+            <div style="overflow-x:auto;">
+              <table class="table-lecture">
+                <thead><tr><th>Ingrédient</th><th style="text-align:right;">Prix</th><th>Fournisseur</th><th style="text-align:right;">Stock</th><th style="text-align:center;">Alerte</th></tr></thead>
+                <tbody>${lignes}</tbody>
+              </table>
+            </div>
+            <p style="font-size:0.75rem; color:#8a7860; margin-top:10px;">
+              ${listeIngredients.length} ingrédient(s)${nbStockBas > 0 ? ` — <span style="color:#c0392b; font-weight:bold;">${nbStockBas} en stock bas</span>` : ''} · la colonne "Alerte" reste cochable en consultation, elle s'enregistre toute seule.
+            </p>`;
+    }
+
+    function construireTableauIngredientsEdition() {
+        const corps = document.getElementById('corpsTableau');
+        if (!corps) return;
+        corps.innerHTML = '';
+        listeIngredients.forEach((item, index) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><input type="text" value="${item.nom}" onchange="modifierIngredient(${index}, 'nom', this.value)"></td>
+                <td>
+                    <select onchange="modifierIngredient(${index}, 'type', this.value)">
+                        <option value="kg" ${item.type === 'kg' ? 'selected' : ''}>₱ / kg</option>
+                        <option value="unite" ${item.type === 'unite' ? 'selected' : ''}>₱ / unité</option>
+                    </select>
+                </td>
+                <td><input type="number" step="0.01" value="${item.prix}" onchange="modifierIngredient(${index}, 'prix', parseFloat(this.value) || 0)"></td>
+                <td><input type="text" value="${item.fournisseur || ''}" onchange="modifierIngredient(${index}, 'fournisseur', this.value)"></td>
+                <td><input type="text" value="${item.contact || ''}" onchange="modifierIngredient(${index}, 'contact', this.value)"></td>
+                <td><input type="number" step="0.01" value="${item.stockActuel || 0}" style="width:70px;" onchange="modifierIngredient(${index}, 'stockActuel', parseFloat(this.value) || 0)"> <span style="font-size:0.7em; color:#6b5b45;">${item.type === 'kg' ? 'kg' : 'u.'}</span></td>
+                <td style="text-align:center;"><input type="checkbox" style="width:auto;" ${item.stockBas ? 'checked' : ''} onchange="toggleStockBas(${index}, this.checked)"></td>
+                <td><button class="btn-sup" onclick="supprimerIngredient(${index})">X</button></td>
+            `;
+            corps.appendChild(tr);
+        });
+    }
+
+    function trierAlphabetique() {
+        listeIngredients.sort((a, b) => sensAlphabetique ? a.nom.localeCompare(b.nom) : b.nom.localeCompare(a.nom));
+        sensAlphabetique = !sensAlphabetique;
+        afficherTableauIngredients();
+    }
+
+    function trierPrix(ordre) {
+        listeIngredients.sort((a, b) => ordre === 'asc' ? a.prix - b.prix : b.prix - a.prix);
+        afficherTableauIngredients();
+    }
+
+    function modifierIngredient(index, champ, valeur) {
+        listeIngredients[index][champ] = valeur;
+        dirtyIngredients = true;
+        majIndicateursMode();
+    }
+
+    function ajouterLigne() {
+        listeIngredients.push({ nom: "Nouvel Ingrédient", type: "kg", prix: 0, fournisseur: '', contact: '', stockBas: false });
+        dirtyIngredients = true;
+        afficherTableauIngredients();
+    }
+
+    // Seule action modifiable en consultation : signaler un stock bas. C'est un geste quotidien,
+    // sans risque (aucune donnée écrasée) et enregistré immédiatement — pas besoin du mode édition.
+    function toggleStockBas(index, valeur) {
+        listeIngredients[index].stockBas = valeur;
+        if (!estEnEdition('ingredients')) construireVueLectureIngredients(); // met à jour la coche et le compteur
+        afficherListeReappro();
+        if (db) sauvegarderCloud(true);
+    }
+
+    // Double sécurité : la suppression n'existe qu'en mode édition ET demande confirmation.
+    function supprimerIngredient(index) {
+        const nom = listeIngredients[index] ? listeIngredients[index].nom : '';
+        if (!confirm('Supprimer l\'ingrédient "' + nom + '" de la base ?')) return;
+        listeIngredients.splice(index, 1);
+        dirtyIngredients = true;
+        afficherTableauIngredients();
+    }
+
+    // Essaie d'extraire un numéro de téléphone du champ "Contact" pour proposer un lien WhatsApp direct.
+    function extraireTelephone(contact) {
+        if (!contact) return null;
+        const chiffres = contact.replace(/[^0-9+]/g, '');
+        return chiffres.length >= 7 ? chiffres.replace(/^0/, '63') : null; // heuristique simple, préfixe PH par défaut si commence par 0
+    }
+
+    function genererMessageFournisseur(fournisseur, idSafe) {
+        const enRupture = listeIngredients.filter(i => i.stockBas && ((i.fournisseur || '').trim() || 'Fournisseur non renseigné') === fournisseur);
+        const listeNoms = enRupture.map(i => '- ' + i.nom).join('\n');
+        const message = `Bonjour ${fournisseur !== 'Fournisseur non renseigné' ? fournisseur : ''},\n\nJe souhaiterais commander :\n${listeNoms}\n\nMerci,\nYoann's French Bakery`;
+
+        const conteneur = document.getElementById(idSafe);
+        if (!conteneur) return;
+
+        const contactAvecTel = enRupture.find(i => extraireTelephone(i.contact));
+        const tel = contactAvecTel ? extraireTelephone(contactAvecTel.contact) : null;
+        const lienWhatsApp = tel ? `https://wa.me/${tel}?text=${encodeURIComponent(message)}` : null;
+
+        conteneur.style.display = 'block';
+        conteneur.innerHTML = `
+            <textarea readonly style="width:100%; min-height:110px; padding:8px; border-radius:6px; border:1px solid #d9c6a3; font-size:0.85em; font-family:inherit;">${message}</textarea>
+            <div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;">
+                <button class="btn-tri" onclick="copierMessage(this)">📋 Copier le texte</button>
+                ${lienWhatsApp ? `<a href="${lienWhatsApp}" target="_blank" class="btn-tri" style="text-decoration:none; background:#25D366; color:#fff; border-color:#25D366;">💬 Ouvrir WhatsApp</a>` : '<span style="font-size:0.75em; color:#8a7860;">Aucun numéro reconnu dans les contacts — copie le texte pour l\'envoyer manuellement.</span>'}
+            </div>
+        `;
+    }
+
+    function copierMessage(btn) {
+        const textarea = btn.parentElement.previousElementSibling;
+        textarea.select();
+        try {
+            navigator.clipboard.writeText(textarea.value).then(() => {
+                const original = btn.textContent;
+                btn.textContent = '✅ Copié !';
+                setTimeout(() => { btn.textContent = original; }, 1500);
+            });
+        } catch (e) {
+            document.execCommand('copy'); // solution de repli pour anciens navigateurs
+        }
+    }
+
+    function afficherListeReappro() {
+        const conteneur = document.getElementById('listeReappro');
+        const carte = document.getElementById('carteReappro');
+        if (!conteneur) return;
+
+        const enRupture = listeIngredients.filter(i => i.stockBas);
+        if (enRupture.length === 0) {
+            carte.style.display = 'none';
+            conteneur.innerHTML = '';
+            afficherDashboardStock(enRupture);
+            return;
+        }
+        carte.style.display = 'block';
+
+        const parFournisseur = {};
+        enRupture.forEach(ing => {
+            const four = (ing.fournisseur || '').trim() || 'Fournisseur non renseigné';
+            if (!parFournisseur[four]) parFournisseur[four] = [];
+            parFournisseur[four].push(ing);
+        });
+
+        conteneur.innerHTML = '';
+        Object.keys(parFournisseur).sort().forEach(four => {
+            const bloc = document.createElement('div');
+            bloc.style.cssText = 'margin-bottom:12px; padding:10px; background:#fbe3d0; border-radius:8px; border-left:4px solid #c0392b;';
+            const items = parFournisseur[four].map(ing =>
+                `<li>${ing.nom}${ing.contact ? ` <span style="color:#6b5b45; font-size:0.85em;">(${ing.contact})</span>` : ''}</li>`
+            ).join('');
+            const idSafe = 'msg-' + four.replace(/[^a-zA-Z0-9]/g, '');
+            bloc.innerHTML = `
+                <strong style="color:#7a4a1f;">${four}</strong><ul style="margin:6px 0 8px 18px;">${items}</ul>
+                <button class="btn-tri" onclick="genererMessageFournisseur('${four.replace(/'/g, "\\'")}', '${idSafe}')">📤 Générer le message</button>
+                <div id="${idSafe}" style="display:none; margin-top:8px;"></div>
+            `;
+            conteneur.appendChild(bloc);
+        });
+
+        afficherDashboardStock(enRupture);
+    }
+
+    function sauvegarderCloud(silencieux) {
+        if (!db) { alert("Firebase indisponible — impossible d'enregistrer pour le moment."); return; }
+        db.collection("ingredients").doc("master").set({ items: listeIngredients })
+            .then(() => {
+                dirtyIngredients = false;
+                majIndicateursMode();
+                if (!silencieux) alert("Données synchronisées sur tous vos appareils !");
+            })
+            .catch((err) => alert("Erreur d'enregistrement : " + err.message));
+    }
+
+    // Action manuelle uniquement — jamais appelée automatiquement.
+    function chargerListeParDefaut() {
+        if (listeIngredients.length > 0) {
+            if (!confirm("Ta liste contient déjà " + listeIngredients.length + " ingrédient(s). Remplacer par la liste par défaut (13 ingrédients génériques) ? Cette action écrasera ta liste actuelle une fois enregistrée.")) return;
+        } else {
+            if (!confirm("Charger la liste par défaut (13 ingrédients génériques) ? Rien ne sera enregistré sur Firebase tant que tu ne cliques pas sur \"Enregistrer sur Firebase\".")) return;
+        }
+        listeIngredients = JSON.parse(JSON.stringify(ingredientsParDefaut));
+        dirtyIngredients = true;
+        forcerModeEdition('ingredients');
+        afficherTableauIngredients();
+    }
+
+    /* ==========================================================
+       TABLEAU DE BORD
+       ========================================================== */
+    function afficherDashboardStock(enRupture) {
+        const el = document.getElementById('dashStockBas');
+        if (!el) return;
+        if (!enRupture || enRupture.length === 0) {
+            el.innerHTML = '<p style="color:#27ae60; font-weight:bold; font-size:0.9rem;">✅ Aucune alerte — tous les stocks sont bons.</p>';
+        } else {
+            el.innerHTML = `<p style="color:#c0392b; font-weight:bold; font-size:0.95rem;">⚠️ ${enRupture.length} ingrédient(s) en stock bas : ${enRupture.map(i => i.nom).join(', ')}</p>`;
+        }
+    }
+
+    // Résumé de tous les articles avec une quantité commandée > 0 (base + tardif), groupés par catégorie, triés A-Z.
+    function afficherResumeCommandes() {
+        const conteneur = document.getElementById('resumeCommandes');
+        if (!conteneur) return;
+
+        const categoriesResume = ['Pains', 'Viennoiseries', 'Autres'];
+        const parCategorie = {};
+
+        produitsVendables().forEach(f => {
+            if (!categoriesResume.includes(f.categorie)) return;
+            const qte = (quantitesCommandes[f.nom] || 0) + (quantitesTardif[f.nom] || 0);
+            if (qte <= 0) return;
+            if (!parCategorie[f.categorie]) parCategorie[f.categorie] = [];
+            parCategorie[f.categorie].push({ nom: f.nom, qte });
+        });
+
+        let html = '';
+        categoriesResume.forEach(cat => {
+            const items = parCategorie[cat];
+            if (!items || items.length === 0) return;
+            items.sort((a, b) => a.nom.localeCompare(b.nom));
+            html += `<div style="margin-bottom:10px;">
+                <div style="font-weight:bold; color:#7a4a1f; font-size:0.85rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">${cat}</div>
+                ${items.map(i => `<div style="display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px solid #f0e6d2; font-size:0.95rem;"><span>${i.nom}</span><span style="font-weight:bold; color:#7a4a1f;">${i.qte}</span></div>`).join('')}
+            </div>`;
+        });
+
+        conteneur.innerHTML = html || '<p style="color:#8a7860; font-size:0.85em;">Aucune commande pour l\'instant.</p>';
+    }
+
+    function afficherDashboard(totalCA, totalCoutMatiere, margeBrute, tauxMarge, totalPcs, nbProduits) {
+        const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+        set('dashCA', formatPeso(totalCA));
+        set('dashCout', formatPeso(totalCoutMatiere));
+        set('dashMarge', formatPeso(margeBrute));
+        set('dashTotalPieces', totalPcs);
+        set('dashTauxMarge', tauxMarge.toFixed(1) + '%');
+        set('dashNbProduits', nbProduits);
+
+        const backupEl = document.getElementById('dashBackupStatus');
+        if (backupEl) {
+            let derniere = null;
+            try { derniere = localStorage.getItem('bakery-derniere-sauvegarde'); } catch (e) {}
+            backupEl.textContent = derniere === dateDuJour()
+                ? "✅ Sauvegarde à jour (" + derniere + ")"
+                : "⚠️ Pas encore de sauvegarde aujourd'hui — elle se fera automatiquement dans quelques secondes.";
+        }
+    }
+
+    function chargerHistorique() {
+        const corps = document.getElementById('corpsHistorique');
+        if (!corps) return;
+        if (!db) {
+            corps.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#8a7860;">Firebase indisponible</td></tr>';
+            return;
+        }
+        db.collection("historique").orderBy("date", "desc").limit(30).get()
+            .then((snapshot) => {
+                if (snapshot.empty) {
+                    corps.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#8a7860;">Aucun historique pour l\'instant — clique sur "Confirmer la production du jour" (onglet Commandes) pour commencer.</td></tr>';
+                    return;
+                }
+                corps.innerHTML = '';
+                snapshot.forEach((doc) => {
+                    const d = doc.data();
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${d.date}</td>
+                        <td>${d.totalPieces}</td>
+                        <td>${formatPeso(d.totalCA)}</td>
+                        <td>${formatPeso(d.margeBrute)}</td>
+                        <td>${(d.tauxMarge || 0).toFixed(1)}%</td>
+                    `;
+                    corps.appendChild(tr);
+                });
+            })
+            .catch((err) => { corps.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#c0392b;">Erreur : ' + err.message + '</td></tr>'; });
+    }
+
+    /* ==========================================================
+       IMPORT / EXPORT EXCEL — INGRÉDIENTS
+       ========================================================== */
+
+    // Normalise un en-tête de colonne pour un matching tolérant : minuscule, sans accents, sans espaces/ponctuation.
+    function normaliserEntete(str) {
+        return (str || '').toString()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // retire les accents
+            .toLowerCase().replace(/[^a-z0-9]/g, '');
+    }
+
+    // Parse un nombre au format FR (virgule décimale) ou EN (point) indifféremment.
+    function parseNombre(val) {
+        if (val === null || val === undefined || val === '') return null;
+        const nombre = parseFloat(String(val).replace(',', '.'));
+        return isNaN(nombre) ? null : nombre;
+    }
+
+    function importerIngredients(event) {
+        const fichier = event.target.files[0];
+        if (!fichier) return;
+        const statusEl = document.getElementById('statusImportIngredients');
+        statusEl.textContent = "⏳ Lecture du fichier...";
+
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const premiereFeuille = workbook.Sheets[workbook.SheetNames[0]];
+                const lignes = XLSX.utils.sheet_to_json(premiereFeuille, { defval: '' });
+
+                if (lignes.length === 0) {
+                    statusEl.textContent = "⚠️ Le fichier semble vide.";
+                    return;
+                }
+
+                // Repère quelle colonne correspond à quoi, une seule fois, à partir des en-têtes de la 1ère ligne.
+                const entetes = Object.keys(lignes[0]);
+                const trouverColonne = (candidats) => entetes.find(e => candidats.includes(normaliserEntete(e)));
+
+                const colNom = trouverColonne(['item', 'nom', 'ingredient', 'ingredients']);
+                const colPrixKg = trouverColonne(['prixparkilo', 'prixkg', 'prixkilo']);
+                const colPrixUnite = trouverColonne(['prixunitaire', 'prixunite']);
+                const colFournisseur = trouverColonne(['fournisseur', 'supplier']);
+                const colContact = trouverColonne(['contact']);
+
+                if (!colNom) {
+                    statusEl.textContent = "❌ Colonne du nom introuvable (attendu : Item, Nom, ou Ingrédient).";
+                    return;
+                }
+
+                let ajoutes = 0, misAJour = 0, ignores = 0;
+
+                lignes.forEach(ligne => {
+                    const nom = (ligne[colNom] || '').toString().trim();
+                    if (!nom) { ignores++; return; }
+
+                    const prixKg = colPrixKg ? parseNombre(ligne[colPrixKg]) : null;
+                    const prixUnite = colPrixUnite ? parseNombre(ligne[colPrixUnite]) : null;
+
+                    let type, prix;
+                    if (prixKg !== null) { type = 'kg'; prix = prixKg; }
+                    else if (prixUnite !== null) { type = 'unite'; prix = prixUnite; }
+                    else { type = 'kg'; prix = 0; } // ni prix/kg ni prix/unité renseigné : on garde la ligne quand même, prix à 0.
+
+                    const fournisseur = colFournisseur ? (ligne[colFournisseur] || '').toString().trim() : '';
+                    const contact = colContact ? (ligne[colContact] || '').toString().trim() : '';
+
+                    const existant = listeIngredients.find(i => i.nom.trim().toLowerCase() === nom.toLowerCase());
+                    if (existant) {
+                        existant.type = type;
+                        existant.prix = prix;
+                        if (fournisseur) existant.fournisseur = fournisseur;
+                        if (contact) existant.contact = contact;
+                        misAJour++;
+                    } else {
+                        listeIngredients.push({ nom, type, prix, fournisseur, contact });
+                        ajoutes++;
+                    }
+                });
+
+                // L'import bascule la page en édition : sinon le bouton "Enregistrer" resterait masqué
+                // et l'import ne pourrait jamais être confirmé.
+                dirtyIngredients = true;
+                forcerModeEdition('ingredients');
+                afficherTableauIngredients();
+                statusEl.textContent = `✅ Import terminé : ${ajoutes} ajouté(s), ${misAJour} mis à jour${ignores > 0 ? `, ${ignores} ligne(s) ignorée(s) (nom vide)` : ''}. Vérifie la liste puis clique sur "Enregistrer sur Firebase" pour confirmer.`;
+            } catch (err) {
+                statusEl.textContent = "❌ Erreur de lecture du fichier : " + err.message;
+            }
+            event.target.value = ''; // permet de réimporter le même fichier si besoin
+        };
+        reader.readAsArrayBuffer(fichier);
+    }
+
+    function exporterIngredients() {
+        const donnees = listeIngredients.map(item => ({
+            "Item": item.nom,
+            "prix par kilo": item.type === 'kg' ? item.prix : '',
+            "prix unitaire": item.type === 'unite' ? item.prix : '',
+            "Fournisseur": item.fournisseur || '',
+            "Contact": item.contact || ''
+        }));
+        const feuille = XLSX.utils.json_to_sheet(donnees);
+        const classeur = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(classeur, feuille, "Ingrédients");
+        XLSX.writeFile(classeur, "ingredients.xlsx");
+    }
+
+    /* ==========================================================
+       SAUVEGARDE AUTOMATIQUE — Ingrédients + Fiches Techniques
+       ========================================================== */
+    function dateDuJour() {
+        const d = new Date();
+        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+
+    function ecrireBackup(silencieux) {
+        if (!db) {
+            if (!silencieux) alert("Firebase indisponible — impossible de sauvegarder pour le moment.");
+            return;
+        }
+        const id = dateDuJour();
+        db.collection("backups").doc(id).set({
+            ingredients: listeIngredients,
+            fiches: fichesTechniques,
+            horodatage: new Date().toISOString()
+        }).then(() => {
+            try { localStorage.setItem('bakery-derniere-sauvegarde', id); } catch (e) {}
+            const statusEl = document.getElementById('statusBackup');
+            if (statusEl) statusEl.textContent = "✅ Dernière sauvegarde : " + id;
+            const dashEl = document.getElementById('dashBackupStatus');
+            if (dashEl) dashEl.textContent = "✅ Sauvegarde à jour (" + id + ")";
+            if (!silencieux) alert("Sauvegarde effectuée (" + id + ").");
+        }).catch((err) => {
+            if (!silencieux) alert("Erreur de sauvegarde : " + err.message);
+        });
+    }
+
+    function sauvegarderBackupManuel() { ecrireBackup(false); }
+
+    // Appelée une fois au démarrage : ne sauvegarde que si aucune sauvegarde n'a encore été faite aujourd'hui.
+    function verifierBackupAutomatique() {
+        if (!db) {
+            document.getElementById('statusBackup').textContent = "⚠️ Firebase indisponible — sauvegarde automatique en pause";
+            return;
+        }
+        let derniere = null;
+        try { derniere = localStorage.getItem('bakery-derniere-sauvegarde'); } catch (e) {}
+        const aujourdHui = dateDuJour();
+        if (derniere === aujourdHui) {
+            document.getElementById('statusBackup').textContent = "✅ Dernière sauvegarde : " + aujourdHui;
+            return;
+        }
+        // Attend que les ingrédients ET les fiches soient chargés avant de sauvegarder, sinon on sauvegarderait du vide.
+        if (listeIngredients.length === 0 && fichesTechniques.length === 0) return;
+        ecrireBackup(true);
+    }
+
+    function afficherListeBackups() {
+        if (!db) { alert("Firebase indisponible — impossible de consulter les sauvegardes pour le moment."); return; }
+        const conteneur = document.getElementById('listeBackups');
+        conteneur.innerHTML = '⏳ Chargement des sauvegardes...';
+        db.collection("backups").orderBy("horodatage", "desc").limit(30).get()
+            .then((snapshot) => {
+                if (snapshot.empty) {
+                    conteneur.innerHTML = '<p style="color:#8a7860; font-size:0.85em;">Aucune sauvegarde disponible pour l\'instant.</p>';
+                    return;
+                }
+                conteneur.innerHTML = '';
+                snapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const ligne = document.createElement('div');
+                    ligne.style.cssText = 'display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:#faf5ed; border-radius:6px; margin-bottom:4px; font-size:0.85em;';
+                    ligne.innerHTML = `
+                        <span>${doc.id} — ${(data.ingredients || []).length} ingrédient(s), ${(data.fiches || []).length} fiche(s)</span>
+                        <button class="btn-tri" onclick="restaurerBackup('${doc.id}')">Restaurer</button>
+                    `;
+                    conteneur.appendChild(ligne);
+                });
+            })
+            .catch((err) => { conteneur.innerHTML = '❌ Erreur : ' + err.message; });
+    }
+
+    function restaurerBackup(id) {
+        if (!confirm("Charger la sauvegarde du " + id + " ? Elle remplacera les données affichées à l'écran (Ingrédients et Fiches Techniques), mais rien ne sera enregistré sur Firebase tant que tu ne cliques pas sur les boutons \"Enregistrer\".")) return;
+        db.collection("backups").doc(id).get().then((doc) => {
+            if (!doc.exists) { alert("Sauvegarde introuvable."); return; }
+            const data = doc.data();
+            listeIngredients = data.ingredients || [];
+            fichesTechniques = data.fiches || [];
+            dirtyIngredients = true;
+            dirtyFiches = true;
+            // Les deux pages passent en édition : les données affichées ne sont pas celles du Cloud,
+            // il faut une action explicite pour les valider.
+            forcerModeEdition('ingredients');
+            forcerModeEdition('couts');
+            afficherTableauIngredients();
+            afficherFichesCouts();
+            alert("Sauvegarde du " + id + " chargée à l'écran. Vérifie les données, puis clique sur \"Enregistrer sur Firebase\" (Ingrédients) et \"Enregistrer les fiches\" (Coûts) pour confirmer.");
+        }).catch((err) => alert("Erreur : " + err.message));
+    }
+
+    /* ==========================================================
+       SECTION FICHES TECHNIQUES / PRIX DE REVIENT
+       Affichage en accordéon : une ligne par fiche, dépliée au clic.
+       En consultation, le détail est en lecture seule ; en édition, ce sont les champs habituels.
+       ========================================================== */
+    const CATEGORIES = ["Recette de Base", "Pains", "Viennoiseries", "Autres"];
+
+    let fichesTechniques = [];
+    let fichesOuvertes = {}; // { nomFiche: true } — quelles fiches sont dépliées à l'écran
+
+    function chargerFiches() {
+        if (!db) {
+            fichesTechniques = [];
+            document.getElementById('statusBarCouts').textContent = "⚠️ Firebase indisponible — fiches non chargées";
+            afficherFichesCouts();
+            afficherRecettesPains();
+            if (typeof afficherCommandes === 'function') afficherCommandes();
+            return;
+        }
+        db.collection("recettes").doc("fiches").onSnapshot((doc) => {
+            // Pause de la synchro pendant l'édition : ne jamais écraser une saisie en cours.
+            if (estEnEdition('couts')) {
+                document.getElementById('statusBarCouts').textContent = "⏸️ Mode édition — synchronisation en pause (ta saisie est protégée)";
+                return;
+            }
+            if (doc.exists && doc.data().items) {
+                // Compatibilité : les anciennes fiches n'ont pas de categorie/vendable/type de ligne.
+                fichesTechniques = doc.data().items.map(f => ({
+                    nom: f.nom,
+                    categorie: f.categorie || "Autres",
+                    vendable: f.vendable !== undefined ? f.vendable : true,
+                    nbPieces: f.nbPieces || 1,
+                    modeSaisie: f.modeSaisie || 'pieces', // 'pieces' (saisie directe) ou 'poids' (calcul auto depuis le poids/pièce)
+                    poidsPiece: f.poidsPiece || 0,
+                    ingredients: (f.ingredients || []).map(ing => ({
+                        type: ing.type || "brut",
+                        nom: ing.nom,
+                        qte: ing.qte,
+                        farine: ing.farine || false
+                    }))
+                }));
+                dirtyFiches = false;
+                document.getElementById('statusBarCouts').textContent = "✅ " + fichesTechniques.length + " fiches chargées";
+            } else {
+                fichesTechniques = [];
+            }
+            afficherFichesCouts();
+            afficherRecettesPains();
+            if (typeof afficherCommandes === 'function') afficherCommandes();
+        }, (err) => {
+            document.getElementById('statusBarCouts').textContent = "⚡ Mode Hors-Ligne (données locales)";
+        });
+    }
+
+    // Calcule le coût d'une fiche : total, coût par gramme (pour usage composite),
+    // et coût unitaire (si vendable). "visited" protège contre les références circulaires.
+    function calculerCoutFiche(fiche, visited) {
+        visited = visited || new Set();
+        if (!fiche || visited.has(fiche.nom)) {
+            return { total: 0, coutParGramme: 0, coutUnitaire: 0, poidsTotal: 0, cycle: true };
+        }
+        const visitedEtendu = new Set(visited);
+        visitedEtendu.add(fiche.nom);
+
+        let total = 0;
+        let poidsTotal = 0;
+
+        (fiche.ingredients || []).forEach(ing => {
+            poidsTotal += ing.qte || 0;
+            if (ing.type === 'composite') {
+                const sousFiche = fichesTechniques.find(f => f.nom === ing.nom);
+                if (sousFiche) {
+                    const sousCout = calculerCoutFiche(sousFiche, visitedEtendu);
+                    total += (ing.qte || 0) * sousCout.coutParGramme;
+                }
+            } else {
+                const m = masterIngredientsPourCouts().find(mi => mi.nom.toLowerCase().trim() === (ing.nom || '').toLowerCase().trim());
+                const prix = m ? m.prix : 0;
+                const type = m ? m.type : 'kg';
+                total += type === 'kg' ? ((ing.qte || 0) / 1000) * prix : (ing.qte || 0) * prix;
+            }
+        });
+
+        const coutParGramme = poidsTotal > 0 ? total / poidsTotal : 0;
+        const coutUnitaire = (fiche.vendable && fiche.nbPieces > 0) ? total / fiche.nbPieces : 0;
+
+        return { total, coutParGramme, coutUnitaire, poidsTotal };
+    }
+
+    // Réutilise la base d'ingrédients bruts déjà chargée dans l'onglet Ingrédients (state partagé).
+    function masterIngredientsPourCouts() {
+        return listeIngredients;
+    }
+
+    function toggleFiche(nom) {
+        fichesOuvertes[nom] = !fichesOuvertes[nom];
+        afficherFichesCouts();
+    }
+
+    function afficherFichesCouts() {
+        const conteneur = document.getElementById('conteneurFichesParCategorie');
+        if (!conteneur) return;
+        conteneur.innerHTML = '';
+        const edition = estEnEdition('couts');
+
+        if (fichesTechniques.length === 0) {
+            conteneur.innerHTML = '<p style="color:#8a7860; font-size:0.85em;">Aucune fiche technique pour l\'instant.</p>';
+            majIndicateursMode();
+            return;
+        }
+
+        CATEGORIES.forEach(cat => {
+            const fichesCat = fichesTechniques
+                .map((f, idx) => ({ f, idx }))
+                .filter(({ f }) => f.categorie === cat);
+
+            if (fichesCat.length === 0) return;
+
+            const titre = document.createElement('div');
+            titre.className = 'titre-categorie';
+            titre.textContent = cat + ' · ' + fichesCat.length;
+            conteneur.appendChild(titre);
+
+            fichesCat.forEach(({ f: prod, idx: pIdx }) => {
+                conteneur.appendChild(construireLigneFiche(prod, pIdx, edition));
+            });
+        });
+
+        majIndicateursMode();
+    }
+
+    // Une ligne d'accordéon : entête cliquable (nom + coût), corps déplié à la demande.
+    function construireLigneFiche(prod, pIdx, edition) {
+        const ligne = document.createElement('div');
+        ligne.className = 'fiche-ligne';
+        const ouvert = !!fichesOuvertes[prod.nom];
+
+        // Si le mode "poids par pièce" est actif, on recalcule nbPieces à partir du poids total de la recette.
+        if (prod.modeSaisie === 'poids') {
+            const poidsTotalActuel = (prod.ingredients || []).reduce((acc, ing) => acc + (ing.qte || 0), 0);
+            prod.nbPieces = (prod.poidsPiece > 0) ? poidsTotalActuel / prod.poidsPiece : 0;
+        }
+
+        const cout = calculerCoutFiche(prod);
+        const resume = prod.vendable
+            ? `₱ ${cout.coutUnitaire.toFixed(2)} / pièce`
+            : `₱ ${cout.coutParGramme.toFixed(4)} / g`;
+
+        const entete = document.createElement('div');
+        entete.className = 'fiche-entete';
+        entete.innerHTML = `
+            <span class="fiche-titre">${ouvert ? '▾' : '▸'} ${prod.nom}${!prod.vendable ? ' <span style="font-weight:normal; color:#8a7860; font-size:0.8em;">base</span>' : ''}</span>
+            <span class="fiche-meta">${resume}</span>`;
+        entete.onclick = () => toggleFiche(prod.nom);
+        ligne.appendChild(entete);
+
+        if (ouvert) {
+            const corps = document.createElement('div');
+            corps.className = 'fiche-corps';
+            if (edition) corps.appendChild(construireBlocFiche(prod, pIdx));
+            else corps.innerHTML = construireDetailFicheLecture(prod, cout);
+            ligne.appendChild(corps);
+        }
+        return ligne;
+    }
+
+    // Détail en lecture seule : liste des ingrédients et chiffres clés, aucun champ modifiable.
+    function construireDetailFicheLecture(prod, cout) {
+        const lignes = (prod.ingredients || []).map(ing => {
+            const label = ing.type === 'composite'
+                ? `${ing.nom} <span style="color:#8a7860; font-size:0.85em;">(base)</span>`
+                : ing.nom + (ing.farine ? ' <span style="color:#8a7860; font-size:0.85em;">(farine)</span>' : '');
+            return `<tr><td>${label}</td><td style="text-align:right; white-space:nowrap;">${(ing.qte || 0).toLocaleString('fr-FR')} g</td></tr>`;
+        }).join('');
+
+        const infoPieces = prod.vendable
+            ? `${Math.round((prod.nbPieces || 0) * 10) / 10} pièce(s) par recette`
+            : `Recette de base (non vendable)`;
+
+        return `
+            <table class="table-lecture" style="margin-top:10px;">
+              <tbody>${lignes || '<tr><td style="color:#8a7860;">Aucun ingrédient renseigné.</td></tr>'}</tbody>
+            </table>
+            <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px; font-size:0.8rem; color:#6b5b45; margin-top:10px;">
+              <span>${infoPieces}</span>
+              <span>Poids total : ${cout.poidsTotal.toFixed(0)} g</span>
+              <span style="font-weight:bold; color:#7a4a1f;">Coût recette : ₱ ${cout.total.toFixed(2)}</span>
+            </div>`;
+    }
+
+    function listeIngredientsDisponiblesOptions(pIdx, ligneType, ligneNom) {
+        if (ligneType === 'composite') {
+            const basesDisponibles = fichesTechniques.filter((f, i) => !f.vendable && i !== pIdx);
+            return basesDisponibles.map(f =>
+                `<option value="${f.nom}" ${f.nom === ligneNom ? 'selected' : ''}>${f.nom} (base)</option>`
+            ).join('');
+        }
+        return masterIngredientsPourCouts().map(m =>
+            `<option value="${m.nom}" ${m.nom === ligneNom ? 'selected' : ''}>${m.nom} (${m.prix} ₱/${m.type})</option>`
+        ).join('');
+    }
+
+    // Contenu éditable d'une fiche (affiché uniquement en mode édition, dans le corps de l'accordéon).
+    function construireBlocFiche(prod, pIdx) {
+        const bloc = document.createElement('div');
+        bloc.className = 'produit-bloc';
+        bloc.style.paddingTop = '10px';
+
+        let lignesHTML = '';
+        prod.ingredients.forEach((ing, iIdx) => {
+            lignesHTML += `
+                <tr>
+                    <td style="width:90px;">
+                        <select onchange="modifierTypeIngredFiche(${pIdx}, ${iIdx}, this.value)">
+                            <option value="brut" ${ing.type === 'brut' ? 'selected' : ''}>Brut</option>
+                            <option value="composite" ${ing.type === 'composite' ? 'selected' : ''}>Composite</option>
+                        </select>
+                    </td>
+                    <td>
+                        <select onchange="modifierIngredFicheNom(${pIdx}, ${iIdx}, this.value)">
+                            ${listeIngredientsDisponiblesOptions(pIdx, ing.type, ing.nom)}
+                        </select>
+                    </td>
+                    <td style="width:110px;">
+                        <input type="number" step="0.1" value="${ing.qte}" onchange="modifierIngredFicheQte(${pIdx}, ${iIdx}, parseFloat(this.value)||0)"> g
+                    </td>
+                    <td style="width:60px; text-align:center;">
+                        ${ing.type === 'brut' ? `<label style="font-size:0.7em; display:block;"><input type="checkbox" style="width:auto;" ${ing.farine ? 'checked' : ''} onchange="modifierIngredFicheFarine(${pIdx}, ${iIdx}, this.checked)"> Farine</label>` : ''}
+                    </td>
+                    <td style="width:50px;"><button class="btn-sup" onclick="supprimerIngredFiche(${pIdx}, ${iIdx})">X</button></td>
+                </tr>
+            `;
+        });
+
+        const optionsCategorie = CATEGORIES.map(c => `<option value="${c}" ${c === prod.categorie ? 'selected' : ''}>${c}</option>`).join('');
+
+        const blocPiecesOuPoids = !prod.vendable ? '' : `
+            <select style="width:auto; font-size:0.8em;" onchange="modifierFicheModeSaisie(${pIdx}, this.value)">
+                <option value="pieces" ${prod.modeSaisie !== 'poids' ? 'selected' : ''}>Nombre de pièces</option>
+                <option value="poids" ${prod.modeSaisie === 'poids' ? 'selected' : ''}>Poids par pièce</option>
+            </select>
+            ${prod.modeSaisie === 'poids'
+                ? `<label style="font-size:0.85em;">Poids/pièce (g): <input type="number" min="1" style="width:70px; display:inline-block;" value="${prod.poidsPiece}" onchange="modifierFichePoidsPiece(${pIdx}, parseFloat(this.value)||0)"></label>
+                   <span style="font-size:0.85em; color:#7a4a1f; font-weight:bold;">→ ${prod.nbPieces.toFixed(1)} pièce(s)</span>`
+                : `<label style="font-size:0.85em;">Pièces: <input type="number" min="1" style="width:70px; display:inline-block;" value="${prod.nbPieces}" onchange="modifierFicheNbPieces(${pIdx}, parseInt(this.value)||1)"></label>`
+            }
+        `;
+
+        const cout = calculerCoutFiche(prod);
+
+        bloc.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
+                <input type="text" value="${prod.nom}" style="flex-grow:1; min-width:150px; font-weight:bold; font-size:1.05em; border:1px solid #ccc; padding:5px; border-radius:4px;" onchange="modifierFicheNom(${pIdx}, this.value)">
+                <select style="width:auto;" onchange="modifierFicheCategorie(${pIdx}, this.value)">${optionsCategorie}</select>
+                <label style="font-size:0.85em; display:flex; align-items:center; gap:4px;">
+                    <input type="checkbox" style="width:auto;" ${prod.vendable ? 'checked' : ''} onchange="modifierFicheVendable(${pIdx}, this.checked)"> Vendable
+                </label>
+                ${blocPiecesOuPoids}
+                <button class="btn-dup" style="background:#2980b9; color:#fff; border:none; padding:6px 10px; border-radius:4px; cursor:pointer;" onclick="dupliquerFiche(${pIdx})">📋</button>
+                <button class="btn-sup" onclick="supprimerFiche(${pIdx})">🗑️</button>
+            </div>
+
+            <div style="overflow-x:auto;">
+              <table>
+                <thead><tr><th>Type</th><th>Ingrédient</th><th>Qté (g)</th><th>Farine</th><th></th></tr></thead>
+                <tbody>${lignesHTML}</tbody>
+              </table>
+            </div>
+            <button class="btn" style="background:#efe0c8; color:#7a4a1f; border:1px solid #7a4a1f; font-size:0.85em; padding:6px 10px;" onclick="ajouterIngredFiche(${pIdx})">+ Ajouter un ingrédient</button>
+
+            <div style="display:flex; justify-content:space-between; font-weight:bold; margin-top:8px; font-size:0.9em; flex-wrap:wrap; gap:6px;">
+                <span>Coût total recette : ₱ ${cout.total.toFixed(2)}</span>
+                ${prod.vendable
+                    ? `<span>Coût matière / pièce : <span style="background:#e8f8f5; color:#27ae60; padding:4px 8px; border-radius:4px;">₱ ${cout.coutUnitaire.toFixed(2)}</span></span>`
+                    : `<span>Poids total : ${cout.poidsTotal.toFixed(0)} g — Coût / g : <span style="background:#e8f8f5; color:#27ae60; padding:4px 8px; border-radius:4px;">₱ ${cout.coutParGramme.toFixed(4)}</span></span>`
+                }
+            </div>
+        `;
+        return bloc;
+    }
+
+    // Toute modification marque la page comme "non enregistrée" (indicateur rouge + garde-fou à la sortie).
+    function marquerFichesModifiees() { dirtyFiches = true; }
+
+    function modifierFicheNom(pIdx, val) {
+        const ancien = fichesTechniques[pIdx].nom;
+        if (fichesOuvertes[ancien]) { delete fichesOuvertes[ancien]; fichesOuvertes[val] = true; } // garde la fiche dépliée après renommage
+        fichesTechniques[pIdx].nom = val;
+        marquerFichesModifiees();
+        afficherFichesCouts();
+    }
+    function modifierFicheCategorie(pIdx, val) { fichesTechniques[pIdx].categorie = val; marquerFichesModifiees(); afficherFichesCouts(); }
+    function modifierFicheVendable(pIdx, val) { fichesTechniques[pIdx].vendable = val; marquerFichesModifiees(); afficherFichesCouts(); }
+    function modifierFicheNbPieces(pIdx, val) { fichesTechniques[pIdx].nbPieces = val; marquerFichesModifiees(); afficherFichesCouts(); }
+    function modifierFicheModeSaisie(pIdx, val) { fichesTechniques[pIdx].modeSaisie = val; marquerFichesModifiees(); afficherFichesCouts(); }
+    function modifierFichePoidsPiece(pIdx, val) { fichesTechniques[pIdx].poidsPiece = val; marquerFichesModifiees(); afficherFichesCouts(); }
+    function modifierTypeIngredFiche(pIdx, iIdx, val) {
+        fichesTechniques[pIdx].ingredients[iIdx].type = val;
+        // Aligne le nom stocké avec la première option que le menu déroulant affichera réellement.
+        if (val === 'composite') {
+            const basesDisponibles = fichesTechniques.filter((f, i) => !f.vendable && i !== pIdx);
+            fichesTechniques[pIdx].ingredients[iIdx].nom = basesDisponibles.length > 0 ? basesDisponibles[0].nom : '';
+        } else {
+            fichesTechniques[pIdx].ingredients[iIdx].nom = listeIngredients.length > 0 ? listeIngredients[0].nom : '';
+        }
+        marquerFichesModifiees();
+        afficherFichesCouts();
+    }
+    function modifierIngredFicheNom(pIdx, iIdx, val) { fichesTechniques[pIdx].ingredients[iIdx].nom = val; marquerFichesModifiees(); afficherFichesCouts(); }
+    function modifierIngredFicheQte(pIdx, iIdx, val) { fichesTechniques[pIdx].ingredients[iIdx].qte = val; marquerFichesModifiees(); afficherFichesCouts(); }
+    function modifierIngredFicheFarine(pIdx, iIdx, val) { fichesTechniques[pIdx].ingredients[iIdx].farine = val; marquerFichesModifiees(); afficherFichesCouts(); }
+
+    function dupliquerFiche(pIdx) {
+        const source = fichesTechniques[pIdx];
+        const copie = JSON.parse(JSON.stringify(source));
+        copie.nom = source.nom + " (Copie)";
+        fichesTechniques.splice(pIdx + 1, 0, copie);
+        fichesOuvertes[copie.nom] = true; // la copie s'ouvre pour être renommée tout de suite
+        marquerFichesModifiees();
+        afficherFichesCouts();
+    }
+
+    function ajouterFiche() {
+        const nouvelle = { nom: "Nouvelle fiche", categorie: "Autres", vendable: true, nbPieces: 1, modeSaisie: 'pieces', poidsPiece: 0, ingredients: [] };
+        fichesTechniques.push(nouvelle);
+        fichesOuvertes[nouvelle.nom] = true;
+        marquerFichesModifiees();
+        afficherFichesCouts();
+    }
+
+    function supprimerFiche(pIdx) {
+        if (confirm('Supprimer définitivement la fiche "' + fichesTechniques[pIdx].nom + '" ?')) {
+            delete fichesOuvertes[fichesTechniques[pIdx].nom];
+            fichesTechniques.splice(pIdx, 1);
+            marquerFichesModifiees();
+            afficherFichesCouts();
+        }
+    }
+
+    function ajouterIngredFiche(pIdx) {
+        fichesTechniques[pIdx].ingredients.push({ type: 'brut', nom: listeIngredients.length > 0 ? listeIngredients[0].nom : '', qte: 0, farine: false });
+        marquerFichesModifiees();
+        afficherFichesCouts();
+    }
+
+    function supprimerIngredFiche(pIdx, iIdx) {
+        fichesTechniques[pIdx].ingredients.splice(iIdx, 1);
+        marquerFichesModifiees();
+        afficherFichesCouts();
+    }
+
+    function sauvegarderFichesCloud() {
+        if (!db) { alert("Firebase indisponible — impossible d'enregistrer pour le moment."); return; }
+        db.collection("recettes").doc("fiches").set({ items: fichesTechniques })
+            .then(() => {
+                dirtyFiches = false;
+                majIndicateursMode();
+                alert("Fiches techniques enregistrées et synchronisées !");
+            })
+            .catch((err) => alert("Erreur d'enregistrement : " + err.message));
+    }
+
+    /* ==========================================================
+       IMPORT / EXPORT EXCEL — FICHES TECHNIQUES
+       ========================================================== */
+    function parseBooleen(val) {
+        const v = normaliserEntete(val);
+        return v === 'oui' || v === 'true' || v === '1' || v === 'x' || v === 'yes';
+    }
+
+    function exporterFichesTechniques() {
+        const lignes = [];
+        fichesTechniques.forEach(f => {
+            if (!f.ingredients || f.ingredients.length === 0) {
+                // Fiche sans ingrédient : on l'exporte quand même sur une ligne, pour ne pas la perdre.
+                lignes.push({
+                    "Fiche": f.nom, "Catégorie": f.categorie, "Vendable": f.vendable ? "Oui" : "Non",
+                    "Mode": f.modeSaisie === 'poids' ? "Poids" : "Pièces", "Poids/pièce (g)": f.poidsPiece || '',
+                    "Pièces": f.nbPieces, "Type": '', "Ingrédient": '', "Quantité (g)": '', "Farine": ''
+                });
+                return;
+            }
+            f.ingredients.forEach(ing => {
+                lignes.push({
+                    "Fiche": f.nom,
+                    "Catégorie": f.categorie,
+                    "Vendable": f.vendable ? "Oui" : "Non",
+                    "Mode": f.modeSaisie === 'poids' ? "Poids" : "Pièces",
+                    "Poids/pièce (g)": f.poidsPiece || '',
+                    "Pièces": f.nbPieces,
+                    "Type": ing.type === 'composite' ? "Composite" : "Brut",
+                    "Ingrédient": ing.nom,
+                    "Quantité (g)": ing.qte,
+                    "Farine": ing.farine ? "Oui" : "Non"
+                });
+            });
+        });
+        const feuille = XLSX.utils.json_to_sheet(lignes);
+        const classeur = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(classeur, feuille, "Fiches Techniques");
+        XLSX.writeFile(classeur, "fiches-techniques.xlsx");
+    }
+
+    function importerFichesTechniques(event) {
+        const fichier = event.target.files[0];
+        if (!fichier) return;
+        const statusEl = document.getElementById('statusImportFiches');
+        statusEl.textContent = "⏳ Lecture du fichier...";
+
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const premiereFeuille = workbook.Sheets[workbook.SheetNames[0]];
+                const lignes = XLSX.utils.sheet_to_json(premiereFeuille, { defval: '' });
+
+                if (lignes.length === 0) {
+                    statusEl.textContent = "⚠️ Le fichier semble vide.";
+                    return;
+                }
+
+                const entetes = Object.keys(lignes[0]);
+                const trouverColonne = (candidats) => entetes.find(e => candidats.includes(normaliserEntete(e)));
+
+                const colFiche = trouverColonne(['fiche', 'nom', 'produit']);
+                const colCategorie = trouverColonne(['categorie']);
+                const colVendable = trouverColonne(['vendable']);
+                const colPieces = trouverColonne(['pieces', 'nbpieces']);
+                const colMode = trouverColonne(['mode']);
+                const colPoidsPiece = trouverColonne(['poidspieceg', 'poidspiece']);
+                const colType = trouverColonne(['type']);
+                const colIngredient = trouverColonne(['ingredient', 'ingredients']);
+                const colQte = trouverColonne(['quantiteg', 'quantite', 'qte', 'qteg']);
+                const colFarine = trouverColonne(['farine']);
+
+                if (!colFiche) {
+                    statusEl.textContent = "❌ Colonne \"Fiche\" introuvable.";
+                    return;
+                }
+
+                // Regroupe les lignes par nom de fiche, dans l'ordre d'apparition.
+                const groupes = {};
+                const ordreGroupes = [];
+                lignes.forEach(ligne => {
+                    const nomFiche = (ligne[colFiche] || '').toString().trim();
+                    if (!nomFiche) return;
+                    if (!groupes[nomFiche]) { groupes[nomFiche] = []; ordreGroupes.push(nomFiche); }
+                    groupes[nomFiche].push(ligne);
+                });
+
+                let ingredientsAutoCrees = 0, fichesAjoutees = 0, fichesMisesAJour = 0;
+
+                ordreGroupes.forEach(nomFiche => {
+                    const lignesFiche = groupes[nomFiche];
+                    const premiere = lignesFiche[0];
+
+                    const categorie = colCategorie ? (premiere[colCategorie] || 'Autres').toString().trim() : 'Autres';
+                    const vendable = colVendable ? parseBooleen(premiere[colVendable]) : true;
+                    const modeSaisie = colMode && normaliserEntete(premiere[colMode]) === 'poids' ? 'poids' : 'pieces';
+                    const poidsPiece = colPoidsPiece ? (parseNombre(premiere[colPoidsPiece]) || 0) : 0;
+                    const nbPieces = colPieces ? (parseNombre(premiere[colPieces]) || 1) : 1;
+
+                    const ingredients = [];
+                    lignesFiche.forEach(ligne => {
+                        const nomIngredient = colIngredient ? (ligne[colIngredient] || '').toString().trim() : '';
+                        if (!nomIngredient) return; // ligne "fiche vide" sans ingrédient réel
+
+                        const type = colType && normaliserEntete(ligne[colType]) === 'composite' ? 'composite' : 'brut';
+                        const qte = colQte ? (parseNombre(ligne[colQte]) || 0) : 0;
+                        const farine = colFarine ? parseBooleen(ligne[colFarine]) : false;
+
+                        // Auto-création de l'ingrédient brut manquant dans la base Ingrédients.
+                        if (type === 'brut') {
+                            const existeDeja = listeIngredients.find(i => i.nom.trim().toLowerCase() === nomIngredient.toLowerCase());
+                            if (!existeDeja) {
+                                listeIngredients.push({ nom: nomIngredient, type: 'kg', prix: 0, fournisseur: '', contact: '', stockBas: false });
+                                ingredientsAutoCrees++;
+                            }
+                        }
+
+                        ingredients.push({ type, nom: nomIngredient, qte, farine });
+                    });
+
+                    const ficheExistante = fichesTechniques.find(f => f.nom.trim().toLowerCase() === nomFiche.toLowerCase());
+                    if (ficheExistante) {
+                        ficheExistante.categorie = categorie;
+                        ficheExistante.vendable = vendable;
+                        ficheExistante.modeSaisie = modeSaisie;
+                        ficheExistante.poidsPiece = poidsPiece;
+                        ficheExistante.nbPieces = nbPieces;
+                        ficheExistante.ingredients = ingredients;
+                        fichesMisesAJour++;
+                    } else {
+                        fichesTechniques.push({ nom: nomFiche, categorie, vendable, modeSaisie, poidsPiece, nbPieces, ingredients });
+                        fichesAjoutees++;
+                    }
+                });
+
+                // L'import bascule la page en édition pour rendre le bouton "Enregistrer" accessible.
+                dirtyFiches = true;
+                forcerModeEdition('couts');
+                afficherFichesCouts();
+                if (ingredientsAutoCrees > 0) { dirtyIngredients = true; afficherTableauIngredients(); }
+
+                statusEl.textContent = `✅ Import terminé : ${fichesAjoutees} fiche(s) ajoutée(s), ${fichesMisesAJour} mise(s) à jour${ingredientsAutoCrees > 0 ? `, ${ingredientsAutoCrees} ingrédient(s) brut(s) créé(s) automatiquement (prix à 0 — à compléter dans l'onglet Ingrédients)` : ''}. Vérifie puis enregistre (fiches + ingrédients si besoin).`;
+            } catch (err) {
+                statusEl.textContent = "❌ Erreur de lecture du fichier : " + err.message;
+            }
+            event.target.value = '';
+        };
+        reader.readAsArrayBuffer(fichier);
+    }
+
+    /* ==========================================================
+       SECTION RECETTES — PRODUCTION DU JOUR
+       ========================================================== */
+    let quantitesTardif = {};  // { nomFiche: quantité supplémentaire } — synchronisé Firebase (voir chargerCommandes)
+    let ongletActifPains = null;
+
+    function fichesPains() {
+        return fichesTechniques.filter(f => f.categorie === 'Pains' && f.vendable);
+    }
+
+    // Taux d'hydratation : farines = lignes brutes cochées "Farine", eau = ligne(s) brute(s) nommée(s) "Eau".
+    function calculerHydratation(fiche) {
+        let eau = 0, farines = 0;
+        (fiche.ingredients || []).forEach(ing => {
+            if (ing.type !== 'brut') return;
+            if ((ing.nom || '').trim().toLowerCase() === 'eau') eau += ing.qte || 0;
+            if (ing.farine) farines += ing.qte || 0;
+        });
+        return farines > 0 ? (eau / farines) * 100 : 0;
+    }
+
+    function afficherRecettesPains() {
+        const fiches = fichesPains();
+
+        // --- Grille des quantités normales (= mêmes données que l'onglet Commandes) ---
+        const grille = document.getElementById('grilleQuantitesPains');
+        if (fiches.length === 0) {
+            grille.innerHTML = '<p style="color:#8a7860; font-size:0.85em;">Aucune fiche technique en catégorie "Pains" pour l\'instant — ajoutes-en dans l\'onglet Coûts.</p>';
+        } else {
+            grille.innerHTML = '';
+            fiches.forEach(f => {
+                const val = quantitesCommandes[f.nom] || 0;
+                const div = document.createElement('div');
+                div.className = 'champ-qte';
+                div.innerHTML = `<label>${f.nom}</label><input type="number" min="0" step="1" value="${val}" onchange="modifierQtePain('${f.nom.replace(/'/g, "\\'")}', parseFloat(this.value)||0)">`;
+                grille.appendChild(div);
+            });
+        }
+
+        // --- Grille des quantités tardives ---
+        const grilleT = document.getElementById('grilleQuantitesTardif');
+        grilleT.innerHTML = '';
+        fiches.forEach(f => {
+            const val = quantitesTardif[f.nom] || 0;
+            const div = document.createElement('div');
+            div.className = 'champ-qte';
+            div.innerHTML = `<label>${f.nom}</label><input type="number" min="0" step="1" value="${val}" onchange="modifierQteTardif('${f.nom.replace(/'/g, "\\'")}', parseFloat(this.value)||0)">`;
+            grilleT.appendChild(div);
+        });
+
+        // --- Onglets par pain ---
+        const conteneurOnglets = document.getElementById('ongletsPains');
+        conteneurOnglets.innerHTML = '';
+        if (!ongletActifPains || !fiches.find(f => f.nom === ongletActifPains)) {
+            ongletActifPains = fiches.length > 0 ? fiches[0].nom : null;
+        }
+        fiches.forEach(f => {
+            const btn = document.createElement('button');
+            btn.className = 'onglet-btn' + (f.nom === ongletActifPains ? ' actif' : '');
+            btn.textContent = f.nom;
+            btn.onclick = () => { ongletActifPains = f.nom; afficherRecettesPains(); };
+            conteneurOnglets.appendChild(btn);
+        });
+
+        // --- Contenu de l'onglet actif ---
+        const contenu = document.getElementById('contenuOngletsPains');
+        contenu.innerHTML = '';
+        if (ongletActifPains) {
+            const ficheActive = fiches.find(f => f.nom === ongletActifPains);
+            if (ficheActive) contenu.appendChild(construireDetailPain(ficheActive));
+        }
+
+        // --- Synthèse des Recettes de Base ---
+        afficherSyntheseBases(fiches);
+    }
+
+    // Modifie la quantité "normale" : écrit directement dans quantitesCommandes (partagé avec l'onglet Commandes).
+    function modifierQtePain(nom, val) {
+        quantitesCommandes[nom] = Math.max(0, val);
+        sauvegarderCommandesCloud();
+        afficherRecettesPains();
+        if (typeof afficherCommandes === 'function') afficherCommandes();
+    }
+
+    function modifierQteTardif(nom, val) {
+        quantitesTardif[nom] = Math.max(0, val);
+        sauvegarderCommandesCloud();
+        afficherRecettesPains();
+        if (typeof afficherCommandes === 'function') afficherCommandes();
+    }
+    function reinitialiserTardif() {
+        quantitesTardif = {};
+        sauvegarderCommandesCloud();
+        afficherRecettesPains();
+        if (typeof afficherCommandes === 'function') afficherCommandes();
+    }
+
+    // Le facteur d'échelle repose sur nbPieces : la fiche telle qu'écrite produit "nbPieces" pièces.
+    function construireDetailPain(fiche) {
+        const div = document.createElement('div');
+        div.className = 'carte';
+
+        const qte = quantitesCommandes[fiche.nom] || 0;
+        const qteT = quantitesTardif[fiche.nom] || 0;
+        const facteur = fiche.nbPieces > 0 ? qte / fiche.nbPieces : 0;
+        const facteurT = fiche.nbPieces > 0 ? qteT / fiche.nbPieces : 0;
+
+        let lignes = '';
+        (fiche.ingredients || []).forEach(ing => {
+            const label = ing.type === 'composite' ? `${ing.nom} (base)` : ing.nom;
+            const qteCalc = Math.ceil((ing.qte || 0) * facteur);
+            lignes += `<tr><td>${label}</td><td class="qte-cell">${qteCalc} g</td></tr>`;
+        });
+
+        const hydratation = calculerHydratation(fiche);
+
+        let lignesTardif = '';
+        if (qteT > 0) {
+            (fiche.ingredients || []).forEach(ing => {
+                const label = ing.type === 'composite' ? `${ing.nom} (base)` : ing.nom;
+                const qteCalc = Math.ceil((ing.qte || 0) * facteurT);
+                lignesTardif += `<tr><td>${label}</td><td class="qte-cell">${qteCalc} g</td></tr>`;
+            });
+        }
+
+        div.innerHTML = `
+            <h2 style="color:#7a4a1f; margin-bottom:10px;">${fiche.nom}</h2>
+            <table>
+                <thead><tr><th>Ingrédient</th><th>Quantité à peser</th></tr></thead>
+                <tbody>${lignes}</tbody>
+            </table>
+            <div class="info-hydratation">💧 Taux d'hydratation : ${hydratation.toFixed(1).replace('.', ',')}%</div>
+            <div class="info-nb">Quantité commandée : ${qte} pièce(s)</div>
+            ${qteT > 0 ? `
+                <div class="supplement-tardif">
+                    <h3>➕ Supplément commande tardive (${qteT} pièce(s))</h3>
+                    <table>
+                        <thead><tr><th>Ingrédient</th><th>Quantité supplémentaire</th></tr></thead>
+                        <tbody>${lignesTardif}</tbody>
+                    </table>
+                </div>` : ''}
+        `;
+        return div;
+    }
+
+    // Empile, à TOUS les niveaux d'imbrication, la quantité nécessaire de chaque Recette de Base composite.
+    function accumulerBasesRecursif(fiche, facteur, accumulateur, visited) {
+        if (!fiche || facteur <= 0 || visited.has(fiche.nom)) return;
+        const visitedEtendu = new Set(visited);
+        visitedEtendu.add(fiche.nom);
+
+        (fiche.ingredients || []).forEach(ing => {
+            if (ing.type === 'composite' && ing.nom) {
+                const qteNecessaire = (ing.qte || 0) * facteur;
+                accumulateur[ing.nom] = (accumulateur[ing.nom] || 0) + qteNecessaire;
+
+                const sousFiche = fichesTechniques.find(f => f.nom === ing.nom);
+                if (sousFiche) {
+                    const poidsTotalSousFiche = (sousFiche.ingredients || []).reduce((acc, i) => acc + (i.qte || 0), 0);
+                    if (poidsTotalSousFiche > 0) {
+                        const sousFacteur = qteNecessaire / poidsTotalSousFiche;
+                        accumulerBasesRecursif(sousFiche, sousFacteur, accumulateur, visitedEtendu);
+                    }
+                }
+            }
+        });
+    }
+
+    function afficherSyntheseBases(fichesPainsListe) {
+        const basesNormal = {}, basesTardif = {};
+
+        fichesPainsListe.forEach(f => {
+            const qte = quantitesCommandes[f.nom] || 0;
+            const qteT = quantitesTardif[f.nom] || 0;
+            const facteur = f.nbPieces > 0 ? qte / f.nbPieces : 0;
+            const facteurT = f.nbPieces > 0 ? qteT / f.nbPieces : 0;
+
+            if (facteur > 0) accumulerBasesRecursif(f, facteur, basesNormal, new Set());
+            if (facteurT > 0) accumulerBasesRecursif(f, facteurT, basesTardif, new Set());
+        });
+
+        const conteneur = document.getElementById('syntheseBases');
+        conteneur.innerHTML = '';
+
+        const noms = Array.from(new Set([...Object.keys(basesNormal), ...Object.keys(basesTardif)]));
+        // Le Levain est mis en avant en premier, en plus gros, s'il est présent.
+        noms.sort((a, b) => {
+            const aLevain = a.trim().toLowerCase() === 'levain' ? -1 : 0;
+            const bLevain = b.trim().toLowerCase() === 'levain' ? -1 : 0;
+            return aLevain - bLevain;
+        });
+
+        if (noms.length === 0) {
+            conteneur.innerHTML = '<p style="color:#8a7860; font-size:0.85em;">Aucune Recette de Base n\'est encore référencée (ajoute des lignes "Composite" dans tes fiches, onglet Coûts).</p>';
+            return;
+        }
+
+        noms.forEach(nomBase => {
+            const estLevain = nomBase.trim().toLowerCase() === 'levain';
+            const ficheBase = fichesTechniques.find(f => f.nom === nomBase);
+            const totalTardif = Math.ceil(basesTardif[nomBase] || 0);
+            const totalGlobal = Math.ceil(basesNormal[nomBase] || 0) + totalTardif;
+            if (totalGlobal <= 0) return;
+
+            const bloc = document.createElement('div');
+
+            // Le Levain n'affiche que le total, en gros — pas de détail de sous-recette.
+            if (estLevain) {
+                bloc.style.cssText = 'margin-bottom:18px; padding:14px; background:#7a4a1f; border-radius:10px; box-shadow:0 2px 6px rgba(0,0,0,0.15);';
+                bloc.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center; font-weight:bold; color:#fff;">
+                        <span style="font-size:1.5rem;">🌾 ${nomBase}</span>
+                        <span style="font-size:1.5rem;">${totalGlobal.toLocaleString('fr-FR')} g</span>
+                    </div>
+                    ${totalTardif > 0 ? `<div style="color:#ffd8c2; font-size:0.95rem; margin-top:2px;">dont ${totalTardif} g tardif</div>` : ''}
+                `;
+                conteneur.appendChild(bloc);
+                return;
+            }
+
+            bloc.style.cssText = 'margin-bottom:15px; padding:10px; background:#f0e6d2; border-radius:8px;';
+
+            let detailHTML;
+            if (ficheBase) {
+                const coutBase = calculerCoutFiche(ficheBase);
+                const facteurBase = coutBase.poidsTotal > 0 ? totalGlobal / coutBase.poidsTotal : 0;
+                const hydratationBase = calculerHydratation(ficheBase);
+
+                let lignesBase = '';
+                (ficheBase.ingredients || []).forEach(ing => {
+                    const label = ing.type === 'composite' ? `${ing.nom} (base)` : ing.nom;
+                    const qteCalc = Math.ceil((ing.qte || 0) * facteurBase);
+                    lignesBase += `<tr><td>${label}</td><td class="qte-cell">${qteCalc} g</td></tr>`;
+                });
+
+                detailHTML = `
+                    <table style="margin-top:8px;">
+                        <thead><tr><th>Ingrédient</th><th>Quantité à peser</th></tr></thead>
+                        <tbody>${lignesBase}</tbody>
+                    </table>
+                    <div class="info-hydratation">💧 Taux d'hydratation : ${hydratationBase.toFixed(1).replace('.', ',')}%</div>
+                `;
+            } else {
+                detailHTML = `<p style="color:#c0392b; font-size:0.85em; margin-top:8px;">⚠️ Aucune fiche "Recette de Base" nommée "${nomBase}" trouvée — vérifie l'onglet Coûts.</p>`;
+            }
+
+            bloc.innerHTML = `
+                <div style="display:flex; justify-content:space-between; font-weight:bold;">
+                    <span>${nomBase}</span>
+                    <span>${totalGlobal.toLocaleString('fr-FR')} g ${totalTardif > 0 ? `(dont ${totalTardif} g tardif)` : ''}</span>
+                </div>
+                ${detailHTML}
+            `;
+            conteneur.appendChild(bloc);
+        });
+    }
+
+    /* ==========================================================
+       SECTION SANS GLUTEN — calculateur indépendant
+       ========================================================== */
+    const recettesSansGluten = {
+        neutre: {
+            premix: 220, psyllium: 10, water: 231, yeast: 4, oil: 7, honey: 3, vinegar: 0,
+            bucketTotal: 2547.5,
+            flours: [
+                { name: "Farine de Riz", pct: 39.25, bucket: 1000 },
+                { name: "Fécule (Tapioca / Potato)", pct: 34.35, bucket: 875 },
+                { name: "Farine de Jowar", pct: 24.53, bucket: 625 },
+                { name: "Sel fin", pct: 1.37, bucket: 35 }
+            ]
+        },
+        fibres: {
+            premix: 200, psyllium: 11, water: 247, yeast: 4, oil: 7, honey: 3, vinegar: 3,
+            bucketTotal: 3703.7,
+            flours: [
+                { name: "Farine de Riz complet", pct: 27, bucket: 1000 },
+                { name: "Fécule (Tapioca / Potato)", pct: 18, bucket: 666.7 },
+                { name: "Farine de Bajra", pct: 22.5, bucket: 833.3 },
+                { name: "Farine de Ragi / Besan", pct: 22.5, bucket: 833.3 },
+                { name: "Graines (Lin, Sésame...)", pct: 9, bucket: 333.3 },
+                { name: "Sel fin", pct: 1.4, bucket: 51.9 }
+            ]
+        }
+    };
+
+    function sauvegarderPrefsSansGluten() {
+        try {
+            localStorage.setItem('psg_breadType', document.getElementById('breadType').value);
+            localStorage.setItem('psg_gumType', document.getElementById('gumType').value);
+            localStorage.setItem('psg_loafCount', document.getElementById('loafCount').value);
+        } catch (e) {}
+    }
+
+    function chargerPrefsSansGluten() {
+        try {
+            if (localStorage.getItem('psg_breadType')) document.getElementById('breadType').value = localStorage.getItem('psg_breadType');
+            if (localStorage.getItem('psg_gumType')) document.getElementById('gumType').value = localStorage.getItem('psg_gumType');
+            if (localStorage.getItem('psg_loafCount')) document.getElementById('loafCount').value = localStorage.getItem('psg_loafCount');
+        } catch (e) {}
+    }
+
+    function setLoaves(count) {
+        document.getElementById('loafCount').value = count;
+        calculerSansGluten();
+    }
+
+    function calculerSansGluten() {
+        const type = document.getElementById('breadType').value;
+        const gumOption = document.getElementById('gumType').value;
+        const count = parseFloat(document.getElementById('loafCount').value) || 0;
+        const rec = recettesSansGluten[type];
+
+        const totalDough = count * 475;
+        const totalBaked = Math.round(totalDough * 0.85);
+
+        document.getElementById('totalDoughWeight').innerText = totalDough;
+        document.getElementById('totalBakedWeight').innerText = totalBaked;
+        document.getElementById('bucketWeightTitle').innerText = rec.bucketTotal === 2547.5 ? "2,55 kg" : "3,70 kg";
+
+        const premixTotal = rec.premix * count;
+        document.getElementById('premixWeight').innerText = premixTotal.toFixed(0) + " g";
+        document.getElementById('waterWeight').innerText = (rec.water * count).toFixed(0) + " g";
+        document.getElementById('psylliumWeight').innerText = (rec.psyllium * count).toFixed(1) + " g";
+        document.getElementById('yeastWeight').innerText = (rec.yeast * count).toFixed(1) + " g";
+        document.getElementById('oilWeight').innerText = (rec.oil * count).toFixed(1) + " g";
+        document.getElementById('honeyWeight').innerText = (rec.honey * count).toFixed(1) + " g";
+        document.getElementById('vinegarWeight').innerText = (rec.vinegar * count).toFixed(1) + " g";
+
+        let premixComp = [...rec.flours];
+
+        if (type === 'neutre') {
+            if (gumOption === 'mix') {
+                premixComp.push({ name: "Guar (50%)", pct: 0.25, bucket: 6.25 });
+                premixComp.push({ name: "Xanthane (50%)", pct: 0.25, bucket: 6.25 });
+            } else if (gumOption === 'guar') {
+                premixComp.push({ name: "Guar (100%)", pct: 0.5, bucket: 12.5 });
+            } else if (gumOption === 'xanthane') {
+                premixComp.push({ name: "Xanthane (100%)", pct: 0.5, bucket: 12.5 });
+            }
+        } else {
+            if (gumOption === 'mix') {
+                premixComp.push({ name: "Guar (50%)", pct: 0.25, bucket: 9.25 });
+                premixComp.push({ name: "Xanthane (50%)", pct: 0.25, bucket: 9.25 });
+            } else if (gumOption === 'guar') {
+                premixComp.push({ name: "Guar (100%)", pct: 0.5, bucket: 18.5 });
+            } else if (gumOption === 'xanthane') {
+                premixComp.push({ name: "Xanthane (100%)", pct: 0.5, bucket: 18.5 });
+            }
+        }
+
+        const tbody = document.getElementById('premixDetailTable');
+        tbody.innerHTML = '';
+        premixComp.forEach(item => {
+            const row = document.createElement('tr');
+            const usedInBatch = (premixTotal * (item.bucket / rec.bucketTotal)).toFixed(1);
+            row.innerHTML = `
+                <td>${item.name}</td>
+                <td style="text-align:center">${item.pct.toFixed(1)}%</td>
+                <td style="text-align:right; font-weight:600">${item.bucket.toFixed(0)} g</td>
+                <td style="text-align:right; color:#b05a2f; font-weight:700">${usedInBatch} g</td>
+            `;
+            tbody.appendChild(row);
+        });
+
+        document.querySelectorAll('.btn-preset').forEach(btn => {
+            btn.classList.toggle('actif', parseInt(btn.textContent) === count);
+        });
+
+        sauvegarderPrefsSansGluten();
+    }
+
+    /* ==========================================================
+       SECTION COMMANDES & ANALYSE FINANCIÈRE
+       ========================================================== */
+    let quantitesCommandes = {};
+    let prixVenteCommandes = {};
+    let stockProduits = {}; // { nomFiche: quantité en stock (produits finis) }
+    let triCommandes = 'az';
+    let financeOuvert = false;
+
+    function formatPeso(nombre) {
+        return "₱ " + (nombre || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function chargerCommandes() {
+        if (!db) {
+            document.getElementById('statusBarCommandes').textContent = "⚠️ Firebase indisponible — quantités non synchronisées";
+            afficherCommandes();
+            if (typeof afficherRecettesPains === 'function') afficherRecettesPains();
+            return;
+        }
+        db.collection("production").doc("ordre_du_jour_quantites").onSnapshot((doc) => {
+            if (doc.exists) {
+                const data = doc.data();
+                quantitesCommandes = data.values || {};
+                prixVenteCommandes = data.prices || {};
+                quantitesTardif = data.tardif || {};
+                stockProduits = data.stockProduits || {};
+                document.getElementById('statusBarCommandes').textContent = "✅ Synchronisé en temps réel avec le Cloud Firebase";
+            }
+            afficherCommandes();
+            if (typeof afficherRecettesPains === 'function') afficherRecettesPains();
+        }, (err) => {
+            document.getElementById('statusBarCommandes').textContent = "⚡ Mode Hors-Ligne (données locales)";
+        });
+    }
+
+    function produitsVendables() {
+        return fichesTechniques.filter(f => f.vendable);
+    }
+
+    function afficherCommandes() {
+        const conteneur = document.getElementById('conteneurCartesCommandes');
+        conteneur.innerHTML = '';
+
+        let liste = [...produitsVendables()];
+        if (triCommandes === 'az') {
+            liste.sort((a, b) => a.nom.localeCompare(b.nom));
+        } else if (triCommandes === 'qte') {
+            const totalQte = (nom) => (quantitesCommandes[nom] || 0) + (quantitesTardif[nom] || 0);
+            liste.sort((a, b) => totalQte(b.nom) - totalQte(a.nom));
+        }
+
+        if (liste.length === 0) {
+            conteneur.innerHTML = '<p style="color:#8a7860; font-size:0.85em;">Aucune fiche technique vendable pour l\'instant — ajoutes-en dans l\'onglet Coûts.</p>';
+        }
+
+        let totalPcs = 0, totalCoutMatiere = 0, totalCA = 0;
+        let lignesPrixVente = '';
+
+        liste.forEach(prod => {
+            const qteBase = quantitesCommandes[prod.nom] || 0;
+            const qteTardif = quantitesTardif[prod.nom] || 0;
+            const qte = qteBase + qteTardif; // l'analyse commerciale compte aussi les ajouts tardifs — ce sont des ventes.
+            const prixVente = prixVenteCommandes[prod.nom] || 0;
+            const coutUnitaire = calculerCoutFiche(prod).coutUnitaire;
+
+            totalPcs += qte;
+            totalCoutMatiere += coutUnitaire * qte;
+            totalCA += prixVente * qte;
+
+            const card = document.createElement('div');
+            card.className = 'card-cmd';
+            const stockActuelProduit = stockProduits[prod.nom] || 0;
+            card.innerHTML = `
+                <span class="product-name-cmd">${prod.nom}${qteTardif > 0 ? ` <span style="color:#b05a2f; font-size:0.75em; font-weight:normal;">(+${qteTardif} tardif)</span>` : ''}</span>
+                <div class="counter-group">
+                    <button class="btn-counter" onclick="changerQteCommande('${prod.nom.replace(/'/g, "\\'")}', -1)">-</button>
+                    <input type="number" class="counter-value" value="${qteBase}" onchange="saisirQteCommande('${prod.nom.replace(/'/g, "\\'")}', this.value)" min="0">
+                    <button class="btn-counter" onclick="changerQteCommande('${prod.nom.replace(/'/g, "\\'")}', 1)">+</button>
+                </div>
+                <div class="stock-produit-discret">
+                    Stock: <input type="number" value="${stockActuelProduit}" step="1" style="width:45px; font-size:0.9em; padding:1px 2px; border:1px solid #e0d3bd; border-radius:3px;" onchange="corrigerStockProduit('${prod.nom.replace(/'/g, "\\'")}', parseFloat(this.value)||0)">
+                </div>
+            `;
+
+            lignesPrixVente += `
+                <div class="ligne-prix-vente">
+                    <span>${prod.nom}</span>
+                    <span>Revient: ${formatPeso(coutUnitaire)}</span>
+                    <span>Vente: ₱ <input type="number" class="price-input-cmd" value="${prixVente}" step="0.5" onchange="changerPrixVenteCommande('${prod.nom.replace(/'/g, "\\'")}', parseFloat(this.value)||0)"></span>
+                </div>
+            `;
+            conteneur.appendChild(card);
+        });
+
+        const margeBrute = totalCA - totalCoutMatiere;
+        const tauxMarge = totalCA > 0 ? (margeBrute / totalCA) * 100 : 0;
+
+        document.getElementById('totalPiecesCommandes').textContent = totalPcs;
+        document.getElementById('totalCoutCommandes').textContent = "Matière : " + formatPeso(totalCoutMatiere);
+        document.getElementById('finCA').textContent = formatPeso(totalCA);
+        document.getElementById('finCout').textContent = formatPeso(totalCoutMatiere);
+        document.getElementById('finMarge').textContent = formatPeso(margeBrute);
+        document.getElementById('finTauxMarge').textContent = tauxMarge.toFixed(1) + " %";
+        document.getElementById('listePrixVente').innerHTML = lignesPrixVente;
+
+        if (typeof afficherDashboard === 'function') afficherDashboard(totalCA, totalCoutMatiere, margeBrute, tauxMarge, totalPcs, liste.length);
+        if (typeof afficherResumeCommandes === 'function') afficherResumeCommandes();
+    }
+
+    function changerQteCommande(nom, delta) {
+        const actuelle = quantitesCommandes[nom] || 0;
+        const nouvelle = Math.max(0, actuelle + delta);
+        const deltaReel = nouvelle - actuelle; // tient compte du plafonnement à 0
+        quantitesCommandes[nom] = nouvelle;
+        stockProduits[nom] = (stockProduits[nom] || 0) - deltaReel; // une commande en plus = une pièce vendue en moins au stock
+        sauvegarderCommandesCloud();
+        afficherCommandes();
+    }
+
+    function saisirQteCommande(nom, val) {
+        const actuelle = quantitesCommandes[nom] || 0;
+        const nouvelle = Math.max(0, parseInt(val) || 0);
+        const deltaReel = nouvelle - actuelle;
+        quantitesCommandes[nom] = nouvelle;
+        stockProduits[nom] = (stockProduits[nom] || 0) - deltaReel;
+        sauvegarderCommandesCloud();
+        afficherCommandes();
+    }
+
+    function changerPrixVenteCommande(nom, val) {
+        prixVenteCommandes[nom] = Math.max(0, val);
+        sauvegarderCommandesCloud();
+        afficherCommandes();
+    }
+
+    function corrigerStockProduit(nom, val) {
+        stockProduits[nom] = val;
+        sauvegarderCommandesCloud();
+        afficherCommandes();
+    }
+
+    /* ==========================================================
+       CONFIRMATION DE PRODUCTION DU JOUR
+       ========================================================== */
+    function accumulerConsommationBrute(fiche, facteur, accumulateur, visited) {
+        if (!fiche || facteur <= 0 || visited.has(fiche.nom)) return;
+        const visitedEtendu = new Set(visited);
+        visitedEtendu.add(fiche.nom);
+
+        (fiche.ingredients || []).forEach(ing => {
+            if (ing.type === 'composite') {
+                const sousFiche = fichesTechniques.find(f => f.nom === ing.nom);
+                if (sousFiche) {
+                    const poidsTotalSousFiche = (sousFiche.ingredients || []).reduce((acc, i) => acc + (i.qte || 0), 0);
+                    if (poidsTotalSousFiche > 0) {
+                        const qteNecessaire = (ing.qte || 0) * facteur;
+                        const sousFacteur = qteNecessaire / poidsTotalSousFiche;
+                        accumulerConsommationBrute(sousFiche, sousFacteur, accumulateur, visitedEtendu);
+                    }
+                }
+            } else {
+                const nom = ing.nom;
+                accumulateur[nom] = (accumulateur[nom] || 0) + (ing.qte || 0) * facteur;
+            }
+        });
+    }
+
+    function confirmerProductionDuJour() {
+        const produits = produitsVendables().filter(f => (quantitesCommandes[f.nom] || 0) + (quantitesTardif[f.nom] || 0) > 0);
+        if (produits.length === 0) {
+            alert("Aucune quantité renseignée en Commandes pour l'instant — rien à confirmer.");
+            return;
+        }
+
+        const accumulateur = {}; // { nomIngredientBrut: quantité totale nécessaire, en grammes ou en unités }
+        produits.forEach(f => {
+            const qte = (quantitesCommandes[f.nom] || 0) + (quantitesTardif[f.nom] || 0);
+            if (f.nbPieces > 0) {
+                const facteur = qte / f.nbPieces;
+                accumulerConsommationBrute(f, facteur, accumulateur, new Set());
+            }
+        });
+
+        // Message de confirmation détaillé avant toute déduction (action irréversible sans re-saisie manuelle).
+        const recap = Object.keys(accumulateur).map(nom => {
+            const ing = listeIngredients.find(i => i.nom.trim().toLowerCase() === nom.trim().toLowerCase());
+            const uniteFinale = ing && ing.type === 'kg' ? (accumulateur[nom] / 1000).toFixed(2) + ' kg' : accumulateur[nom].toFixed(1) + ' unité(s)';
+            return `• ${nom} : ${uniteFinale}${!ing ? ' ⚠️ introuvable dans la base Ingrédients' : ''}`;
+        }).join('\n');
+
+        const confirmation = confirm(
+            "Confirmer la production du jour ?\n\nCeci va déduire du stock :\n" + recap +
+            "\n\nEt ajouter les quantités produites au stock des produits finis.\n\nCette action ne peut pas être annulée automatiquement."
+        );
+        if (!confirmation) return;
+
+        // Déduction du stock des ingrédients bruts.
+        Object.keys(accumulateur).forEach(nom => {
+            const ing = listeIngredients.find(i => i.nom.trim().toLowerCase() === nom.trim().toLowerCase());
+            if (ing) {
+                const aDeduire = ing.type === 'kg' ? accumulateur[nom] / 1000 : accumulateur[nom];
+                ing.stockActuel = (ing.stockActuel || 0) - aDeduire;
+            }
+        });
+
+        // Ajout au stock des produits finis.
+        produits.forEach(f => {
+            const qte = (quantitesCommandes[f.nom] || 0) + (quantitesTardif[f.nom] || 0);
+            stockProduits[f.nom] = (stockProduits[f.nom] || 0) + qte;
+        });
+
+        // Instantané pour l'historique quotidien : CA, coût matière, marge, détail par produit.
+        let totalCAJour = 0, totalCoutJour = 0, totalPiecesJour = 0;
+        const detailProduits = produits.map(f => {
+            const qte = (quantitesCommandes[f.nom] || 0) + (quantitesTardif[f.nom] || 0);
+            const prixVente = prixVenteCommandes[f.nom] || 0;
+            const coutUnitaire = calculerCoutFiche(f).coutUnitaire;
+            totalCAJour += prixVente * qte;
+            totalCoutJour += coutUnitaire * qte;
+            totalPiecesJour += qte;
+            return { nom: f.nom, qte, prixVente, coutUnitaire };
+        });
+        const margeJour = totalCAJour - totalCoutJour;
+        const tauxMargeJour = totalCAJour > 0 ? (margeJour / totalCAJour) * 100 : 0;
+
+        if (db) {
+            db.collection("historique").doc(dateDuJour()).set({
+                date: dateDuJour(),
+                horodatage: new Date().toISOString(),
+                totalCA: totalCAJour,
+                totalCoutMatiere: totalCoutJour,
+                margeBrute: margeJour,
+                tauxMarge: tauxMargeJour,
+                totalPieces: totalPiecesJour,
+                produits: detailProduits
+            }).then(() => { if (typeof chargerHistorique === 'function') chargerHistorique(); })
+              .catch((err) => console.log("Erreur enregistrement historique : " + err.message));
+        }
+
+        afficherTableauIngredients();
+        afficherCommandes();
+
+        if (db) {
+            sauvegarderCloud(true); // silencieux : une seule alerte de confirmation en fin d'opération
+            sauvegarderCommandesCloud();
+            alert("Production confirmée : stock des ingrédients déduit, stock des produits finis mis à jour, et enregistré sur Firebase.");
+        } else {
+            alert("Production confirmée localement — Firebase indisponible, pense à enregistrer manuellement une fois la connexion rétablie.");
+        }
+    }
+
+    function trierCommandes(mode) { triCommandes = mode; afficherCommandes(); }
+
+    function toggleFinance() {
+        financeOuvert = !financeOuvert;
+        document.getElementById('financeBlock').classList.toggle('ouvert', financeOuvert);
+        document.getElementById('toggleIconFinance').textContent = financeOuvert ? '▲' : '▼';
+    }
+
+    function sauvegarderCommandesCloud() {
+        if (!db) return; // pas d'alerte bloquante ici : la saisie de quantités doit rester fluide même hors-ligne
+        db.collection("production").doc("ordre_du_jour_quantites").set({
+            values: quantitesCommandes,
+            prices: prixVenteCommandes,
+            tardif: quantitesTardif,
+            stockProduits: stockProduits
+        }).catch((err) => console.log("Erreur de sauvegarde : " + err.message));
+    }
+
+    /* ==========================================================
+       DÉMARRAGE
+       ========================================================== */
+    window.addEventListener('DOMContentLoaded', () => {
+        appliquerMode('ingredients'); // consultation par défaut
+        appliquerMode('couts');
+        chargerIngredients();
+        chargerFiches();
+        chargerCommandes();
+        chargerPrefsSansGluten();
+        calculerSansGluten();
+        chargerHistorique();
+        // Laisse le temps aux données Firestore (ingrédients + fiches) de se charger avant de vérifier la sauvegarde du jour.
+        setTimeout(verifierBackupAutomatique, 3000);
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js');
+    }
+</script>
+
+</body>
+</html>
