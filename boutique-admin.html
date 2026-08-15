@@ -332,26 +332,39 @@ async function chargerParametres() {
   });
 }
 
+/* Les fiches produits vivent dans UN document : recettes/fiches,
+   avec un tableau "items". Chaque item porte nom, categorie, ingredients… */
+function identifiant(nom) {
+  return nom.toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
 async function chargerProduits() {
   try {
-    const [recettes, publies] = await Promise.all([
-      getDocs(collection(db, "recettes", "fiches")),
+    const [fiches, publies] = await Promise.all([
+      getDoc(doc(db, "recettes", "fiches")),
       getDocs(collection(db, "boutique_produits"))
     ]);
 
     const dejaPublies = {};
     publies.forEach(s => dejaPublies[s.id] = s.data());
 
+    const donnees = fiches.exists() ? fiches.data() : {};
+    const items = donnees.items || donnees.fiches || [];
+
     produits = [];
-    recettes.forEach(s => {
-      const r = s.data();
-      const p = dejaPublies[s.id] || {};
+    items.forEach(it => {
+      const nom = it.nom || it.produit || it.name;
+      if (!nom) return;
+      const id = identifiant(nom);
+      const p  = dejaPublies[id] || {};
       produits.push({
-        id: s.id,
-        nom: r.nom || r.name || s.id,
-        categorie: r.categorie || r.category || "Sans catégorie",
-        publie: !!dejaPublies[s.id],
-        prix: p.prix_vente ?? r.prixVente ?? r.prix_vente ?? 0,
+        id,
+        nom,
+        categorie: it.categorie || it.category || "Sans catégorie",
+        publie: !!dejaPublies[id],
+        prix: p.prix_vente ?? it.prixVente ?? it.prix_vente ?? it.prix ?? 0,
         description: p.description_client || "",
         photo: p.photo_url || "",
         disponible: p.disponible !== false
@@ -360,6 +373,12 @@ async function chargerProduits() {
 
     produits.sort((a, b) =>
       a.categorie.localeCompare(b.categorie) || a.nom.localeCompare(b.nom));
+
+    if (!produits.length) {
+      $("listeProduits").innerHTML =
+        '<div class="vide">Aucune fiche trouvée dans recettes/fiches.</div>';
+      return;
+    }
     afficherProduits();
   } catch (e) {
     console.error(e);
