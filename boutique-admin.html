@@ -342,30 +342,13 @@ function identifiant(nom) {
 
 async function chargerProduits() {
   try {
-    const [fiches, tarifs, publies] = await Promise.all([
+    const [fiches, publies] = await Promise.all([
       getDoc(doc(db, "recettes", "fiches")),
-      getDoc(doc(db, "production", "ordre_du_jour_quantites")),
       getDocs(collection(db, "boutique_produits"))
     ]);
 
     const dejaPublies = {};
     publies.forEach(s => dejaPublies[s.id] = s.data());
-
-    // Table de prix de l'ERP. Le document peut ranger les valeurs à la racine
-    // ou dans un champ imbriqué ; on parcourt donc toute la structure.
-    const prixERP = {};
-    function collecter(objet) {
-      Object.entries(objet || {}).forEach(([cle, valeur]) => {
-        if (valeur && typeof valeur === "object" && !Array.isArray(valeur)) {
-          collecter(valeur);
-        } else {
-          const n = Number(String(valeur).replace(/[^\d.,-]/g, "").replace(",", "."));
-          if (Number.isFinite(n) && n > 0) prixERP[identifiant(cle)] = n;
-        }
-      });
-    }
-    if (tarifs.exists()) collecter(tarifs.data());
-    console.log("Prix trouvés dans l'ERP :", prixERP);
 
     const donnees = fiches.exists() ? fiches.data() : {};
     const items = donnees.items || donnees.fiches || [];
@@ -381,7 +364,7 @@ async function chargerProduits() {
         nom,
         categorie: it.categorie || it.category || "Sans catégorie",
         publie: !!dejaPublies[id],
-        prix: p.prix_vente ?? prixERP[id] ?? it.prixVente ?? it.prix ?? 0,
+        prix: p.prix_vente ?? it.prixVente ?? it.prix ?? 0,
         description: p.description_client || "",
         photo: p.photo_url || "",
         disponible: p.disponible !== false
@@ -390,9 +373,6 @@ async function chargerProduits() {
 
     produits.sort((a, b) =>
       a.categorie.localeCompare(b.categorie) || a.nom.localeCompare(b.nom));
-
-    const sansPrix = produits.filter(p => !p.prix).map(p => p.nom);
-    if (sansPrix.length) console.log("Produits sans prix trouvé :", sansPrix);
 
     if (!produits.length) {
       $("listeProduits").innerHTML =
