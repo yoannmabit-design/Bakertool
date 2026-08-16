@@ -1235,14 +1235,14 @@
             }
             if (doc.exists && doc.data().items) {
                 // Compatibilité : les anciennes fiches n'ont pas de categorie/vendable/type de ligne.
-                fichesTechniques = doc.data().items.map(f => ({
+              fichesTechniques = doc.data().items.map(f => Object.assign({}, f, {
                     nom: f.nom,
                     categorie: f.categorie || "Autres",
                     vendable: f.vendable !== undefined ? f.vendable : true,
                     nbPieces: f.nbPieces || 1,
                     modeSaisie: f.modeSaisie || 'pieces', // 'pieces' (saisie directe) ou 'poids' (calcul auto depuis le poids/pièce)
                     poidsPiece: f.poidsPiece || 0,
-                    ingredients: (f.ingredients || []).map(ing => ({
+                   ingredients: (f.ingredients || []).map(ing => Object.assign({}, ing, {
                         type: ing.type || "brut",
                         nom: ing.nom,
                         qte: ing.qte,
