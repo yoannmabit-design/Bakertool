@@ -235,6 +235,22 @@
       </div>
 
       <div class="carte">
+        <h2>Mode vacances</h2>
+        <p class="aide">Le catalogue reste visible, mais la commande est fermée. Vos clients voient votre message à la place du panier.</p>
+        <label class="bascule" style="margin-bottom:14px">
+          <input type="checkbox" id="vacancesActif"> Boutique fermée
+        </label>
+        <div>
+          <label for="vacancesMessage">Message affiché</label>
+          <textarea id="vacancesMessage" placeholder="We are away until 5 September. Orders will reopen then — thank you!"></textarea>
+        </div>
+        <div style="margin-top:14px">
+          <label for="vacancesImage">Image (nom du fichier ou adresse) — facultatif</label>
+          <input type="text" id="vacancesImage" placeholder="vacances.jpg">
+        </div>
+      </div>
+
+      <div class="carte">
         <h2>Message d'accueil</h2>
         <p class="aide">Affiché en haut de la boutique. Laissez vide pour n'afficher que le catalogue.</p>
         <textarea id="accueil" placeholder="Commandes prises jusqu'à 18h pour le lendemain matin."></textarea>
@@ -490,6 +506,11 @@ async function chargerParametres() {
   $("creneaux").value = (d.creneaux || []).join("\n");
   $("accueil").value  = d.message_accueil || "";
 
+  const vac = d.vacances || {};
+  $("vacancesActif").checked  = !!vac.actif;
+  $("vacancesMessage").value  = vac.message || "";
+  $("vacancesImage").value    = vac.image || "";
+
   const pay = d.paiement || {};
   const g = pay.gcash  || { nom: pay.gcash_nom, numero: pay.gcash_numero };
   const m = pay.maya   || {};
@@ -531,7 +552,12 @@ async function chargerProduits() {
     ]);
 
     const dejaPublies = {};
-    publies.forEach(s => dejaPublies[s.id] = s.data());
+    const ancienParNom = {};   // reprise des anciens documents publiés sous leur nom
+    publies.forEach(s => {
+      const d = s.data();
+      dejaPublies[s.id] = d;
+      if (d.nom) ancienParNom[identifiant(d.nom)] = d;
+    });
 
     const donnees = fiches.exists() ? fiches.data() : {};
     const items = donnees.items || donnees.fiches || [];
@@ -543,12 +569,16 @@ async function chargerProduits() {
       if (!nom) return;
       const id = (it.id || "").trim();
       if (!id) { sansCode.push(nom); return; }   // sans code, pas de publication
-      const p  = dejaPublies[id] || {};
+      // À défaut de document au code, on reprend l'ancien publié sous le nom :
+      // prix, description et photo sont ainsi conservés lors de la migration.
+      const ancien = ancienParNom[identifiant(nom)];
+      const p = dejaPublies[id] || ancien || {};
+      const dejaSousCode = !!dejaPublies[id];
       produits.push({
         id,
         nom,
         categorie: it.categorie || it.category || "Sans catégorie",
-        publie: !!dejaPublies[id],
+        publie: dejaSousCode || !!ancien,
         prix: p.prix_vente ?? it.prixVente ?? it.prix ?? 0,
         description: p.description_client || "",
         photo: p.photo_url || "",
@@ -742,6 +772,11 @@ $("btnEnregistrer").onclick = async () => {
       email: $("email").value.trim(),
       messenger: $("messenger").value.trim().replace(/^.*m\.me\//, ""),
       message_accueil: $("accueil").value.trim(),
+      vacances: {
+        actif: $("vacancesActif").checked,
+        message: $("vacancesMessage").value.trim(),
+        image: $("vacancesImage").value.trim()
+      },
       paiement: {
         gcash: {
           nom: $("gcashNom").value.trim(),
