@@ -67,6 +67,16 @@
     background:transparent;border:1px solid var(--trait);color:var(--alerte);
     padding:9px 13px;border-radius:var(--r);cursor:pointer;font-size:14px;
   }
+  .alerte{
+    background:#f6e2de;border:1px solid #e4c3bc;color:#6d2419;
+    border-radius:var(--r);padding:13px 15px;font-size:14px;margin-bottom:14px;
+  }
+  .alerte b{display:block;margin-bottom:5px}
+  .alerte ul{margin:6px 0 10px;padding-left:20px}
+  .alerte button{
+    background:#8c2f22;color:#fff;border:none;padding:9px 15px;
+    border-radius:var(--r);font-size:14px;cursor:pointer;
+  }
   .option,.cadre{
     border:1px solid var(--trait);border-radius:var(--r);
     padding:14px;margin-bottom:12px;background:#fff;
@@ -84,6 +94,10 @@
   .produit.publie{border-left:4px solid var(--ok)}
   .produit .tete{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
   .produit .nom{font-weight:600;flex:1;min-width:150px}
+  .produit .code{
+    font-family:ui-monospace,monospace;font-size:12px;
+    background:#efe6d8;color:var(--encre-doux);padding:2px 7px;border-radius:3px;
+  }
   .produit .cat{font-size:12px;color:var(--encre-doux);text-transform:uppercase;letter-spacing:.05em}
   .produit .detail{margin-top:14px;padding-top:14px;border-top:1px dashed var(--trait)}
   .produit .detail[hidden]{display:none}
@@ -233,6 +247,8 @@
       <div class="carte">
         <h2>Produits en vente</h2>
         <p class="aide">Cochez ce qui doit apparaître dans la boutique. Les fiches techniques et les coûts de revient restent privés — seuls les champs ci-dessous sont publiés.</p>
+        <div id="sansCode"></div>
+        <div id="orphelins"></div>
         <input type="text" class="recherche" id="recherche" placeholder="Rechercher un produit…">
         <div id="listeProduits"><div class="vide">Chargement…</div></div>
       </div>
@@ -275,6 +291,8 @@ const db   = getFirestore(app);
 const $ = (id) => document.getElementById(id);
 const JOURS = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
 
+let orphelins = [];
+let sansCode  = [];
 let produits = [];   // { id, nom, categorie, publie, prix, description, photo, disponible }
 
 /* ============================================================
@@ -519,10 +537,12 @@ async function chargerProduits() {
     const items = donnees.items || donnees.fiches || [];
 
     produits = [];
+    sansCode = [];
     items.forEach(it => {
       const nom = it.nom || it.produit || it.name;
       if (!nom) return;
-      const id = identifiant(nom);
+      const id = (it.id || "").trim();
+      if (!id) { sansCode.push(nom); return; }   // sans code, pas de publication
       const p  = dejaPublies[id] || {};
       produits.push({
         id,
@@ -532,9 +552,16 @@ async function chargerProduits() {
         prix: p.prix_vente ?? it.prixVente ?? it.prix ?? 0,
         description: p.description_client || "",
         photo: p.photo_url || "",
-        disponible: p.disponible !== false
+        disponible: p.disponible !== false,
+        mode_stock: p.mode_stock || "illimite",
+        stock: p.stock ?? 0
       });
     });
+
+    // Un produit renommé laisse derrière lui son ancien document publié.
+    orphelins = Object.entries(dejaPublies)
+      .filter(([id]) => !produits.some(p => p.id === id))
+      .map(([id, d]) => ({ id, nom: d.nom || id }));
 
     produits.sort((a, b) =>
       a.categorie.localeCompare(b.categorie) || a.nom.localeCompare(b.nom));
@@ -555,7 +582,48 @@ async function chargerProduits() {
 /* ============================================================
    7. AFFICHAGE DES PRODUITS
    ============================================================ */
+function afficherOrphelins() {
+  const zone = $("orphelins");
+  if (!orphelins.length) { zone.innerHTML = ""; return; }
+
+  zone.innerHTML = `
+    <div class="alerte">
+      <b>${orphelins.length} produit(s) encore en vente ne correspondent plus à aucune fiche</b>
+      Ils viennent sans doute d'un renommage : la boutique affiche encore l'ancien nom.
+      <ul>${orphelins.map(o => "<li>" + o.nom + " <code>" + o.id + "</code></li>").join("")}</ul>
+      <button id="btnOrphelins">Les retirer de la boutique</button>
+    </div>`;
+
+  $("btnOrphelins").onclick = async () => {
+    if (!confirm("Retirer " + orphelins.length +
+      " produit(s) de la boutique ?\n\nLes fiches techniques ne sont pas touchées.")) return;
+    try {
+      for (const o of orphelins) await deleteDoc(doc(db, "boutique_produits", o.id));
+      orphelins = [];
+      afficherOrphelins();
+      etat("Anciens produits retirés.", "ok");
+    } catch (e) {
+      console.error(e);
+      etat("Le retrait a échoué.", "err");
+    }
+  };
+}
+
+function afficherSansCode() {
+  const zone = $("sansCode");
+  if (!sansCode.length) { zone.innerHTML = ""; return; }
+  zone.innerHTML = `
+    <div class="alerte">
+      <b>${sansCode.length} fiche(s) sans code produit</b>
+      Elles ne peuvent pas être publiées. Attribuez-leur un code depuis la page
+      <a href="produits-identifiants.html">Produits</a>.
+      <ul>${sansCode.map(n => "<li>" + n + "</li>").join("")}</ul>
+    </div>`;
+}
+
 function afficherProduits() {
+  afficherSansCode();
+  afficherOrphelins();
   const filtre = $("recherche").value.trim().toLowerCase();
   const liste  = $("listeProduits");
   liste.innerHTML = "";
@@ -575,6 +643,7 @@ function afficherProduits() {
       <div class="tete">
         <label class="bascule"><input type="checkbox" class="pub" ${p.publie ? "checked" : ""}> Publier</label>
         <span class="nom"></span>
+        <span class="code"></span>
         <span class="cat"></span>
       </div>
       <div class="detail" ${p.publie ? "" : "hidden"}>
@@ -595,14 +664,39 @@ function afficherProduits() {
         <label class="bascule" style="margin-top:12px">
           <input type="checkbox" class="dispo"> Disponible à la commande
         </label>
+        <div class="grille" style="margin-top:12px">
+          <div>
+            <label>Disponibilité</label>
+            <select class="mode-stock">
+              <option value="illimite">Toujours disponible</option>
+              <option value="limite">Stock limité</option>
+            </select>
+          </div>
+          <div class="champ-stock">
+            <label>Pièces restantes</label>
+            <input type="number" class="stock" min="0" step="1" value="0">
+          </div>
+        </div>
       </div>`;
 
     bloc.querySelector(".nom").textContent  = p.nom;
+    bloc.querySelector(".code").textContent = p.id;
     bloc.querySelector(".cat").textContent  = p.categorie;
     bloc.querySelector(".prix").value       = p.prix;
     bloc.querySelector(".photo").value      = p.photo;
     bloc.querySelector(".desc").value       = p.description;
     bloc.querySelector(".dispo").checked    = p.disponible;
+    const selMode = bloc.querySelector(".mode-stock");
+    const champStock = bloc.querySelector(".stock");
+    const boiteStock = bloc.querySelector(".champ-stock");
+    selMode.value = p.mode_stock;
+    champStock.value = p.stock;
+    const majStock = () => {
+      boiteStock.style.display = selMode.value === "limite" ? "" : "none";
+    };
+    majStock();
+    selMode.onchange = (e) => { p.mode_stock = e.target.value; majStock(); };
+    champStock.oninput = (e) => p.stock = Math.max(0, Number(e.target.value) || 0);
 
     const detail = bloc.querySelector(".detail");
     bloc.querySelector(".pub").onchange = (e) => {
@@ -675,12 +769,15 @@ $("btnEnregistrer").onclick = async () => {
       const ref = doc(db, "boutique_produits", p.id);
       if (p.publie) {
         await setDoc(ref, {
+          code: p.id,
           nom: p.nom,
           categorie: p.categorie,
           prix_vente: Number(p.prix) || 0,
           description_client: p.description.trim(),
           photo_url: p.photo.trim(),
           disponible: p.disponible,
+          mode_stock: p.mode_stock,
+          stock: p.mode_stock === "limite" ? Number(p.stock) || 0 : null,
           visible: true
         });
       } else {
