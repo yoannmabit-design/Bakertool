@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Étiquettes — Yoann's French Bakery</title>
+<style>
+  :root{
+    --creme:#fdf6ec;--papier:#fffdf9;--encre:#1a1a1a;
+    --encre-doux:#6b6157;--trait:#e2d7c6;--accent:#2f4858;--r:6px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--creme);color:var(--encre);
+    font:16px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+
+  /* ---------- Barre de réglages (écran uniquement) ---------- */
+  .reglages{
+    background:var(--papier);border-bottom:1px solid var(--trait);
+    padding:16px 18px;position:sticky;top:0;z-index:5;
+  }
+  .reglages .dedans{
+    max-width:900px;margin:0 auto;display:flex;gap:14px;
+    align-items:center;flex-wrap:wrap;
+  }
+  .reglages h1{font-size:16px;margin:0;font-weight:600}
+  .reglages label{display:flex;align-items:center;gap:7px;font-size:14.5px;cursor:pointer}
+  .reglages input[type=checkbox]{width:17px;height:17px;accent-color:var(--accent)}
+  .reglages .compte{color:var(--encre-doux);font-size:14px}
+  .reglages button{
+    background:var(--accent);color:#fff;border:none;padding:11px 20px;
+    border-radius:var(--r);font-size:15px;font-weight:600;cursor:pointer;
+  }
+  .reglages a{color:var(--accent);font-size:14px}
+  .conseil{
+    max-width:900px;margin:14px auto 0;font-size:13.5px;color:var(--encre-doux);
+  }
+  .apercu{max-width:900px;margin:22px auto;padding:0 18px 60px}
+  .apercu .titre{font-size:13px;color:var(--encre-doux);margin:0 0 10px}
+  .vide{padding:60px;text-align:center;color:var(--encre-doux)}
+
+  /* ---------- L'étiquette ---------- */
+  .etiquette{
+    width:80mm;height:60mm;padding:4mm 4.5mm;background:#fff;color:#000;
+    font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+    overflow:hidden;display:flex;flex-direction:column;
+    border:1px solid var(--trait);margin:0 auto 14px;
+  }
+  .etiquette .entete{
+    display:flex;justify-content:space-between;align-items:baseline;
+    border-bottom:.4mm solid #000;padding-bottom:1.2mm;margin-bottom:2mm;
+  }
+  .etiquette .marque{font-size:9pt;font-weight:700;letter-spacing:.02em}
+  .etiquette .ref{font-family:ui-monospace,monospace;font-size:8pt}
+  .etiquette .pour{font-size:7pt;text-transform:uppercase;letter-spacing:.1em;color:#555}
+  .etiquette .client{font-size:12pt;font-weight:700;line-height:1.2;margin-top:.6mm}
+  .etiquette .tel{font-size:10pt;margin-top:.8mm}
+  .etiquette .adresse{font-size:9pt;line-height:1.3;margin-top:1.4mm}
+  .etiquette .bas{
+    margin-top:auto;border-top:.3mm solid #000;padding-top:1.2mm;
+    display:flex;justify-content:space-between;gap:3mm;font-size:8.5pt;
+  }
+  .etiquette .bas b{font-weight:700}
+
+  .etiquette .lignes{flex:1;overflow:hidden;margin-top:.5mm}
+  .etiquette .l{
+    display:flex;gap:2mm;font-size:9pt;line-height:1.35;
+    border-bottom:.2mm dotted #bbb;padding:.3mm 0;
+  }
+  .etiquette .l .q{font-weight:700;min-width:7mm}
+  .etiquette .l .n{flex:1}
+  .etiquette .total{
+    display:flex;justify-content:space-between;font-size:10pt;
+    font-weight:700;margin-top:1.2mm;
+  }
+  .etiquette .note{font-size:7.5pt;font-style:italic;margin-top:.8mm;color:#333}
+  .etiquette .impaye{font-weight:700}
+
+  /* ---------- Impression ---------- */
+  @page{ size:80mm 60mm; margin:0 }
+  @media print{
+    .reglages,.conseil,.apercu .titre{display:none !important}
+    body{background:#fff}
+    .apercu{margin:0;padding:0;max-width:none}
+    .etiquette{
+      border:none;margin:0;
+      page-break-after:always;break-after:page;
+    }
+    .etiquette:last-child{page-break-after:auto;break-after:auto}
+  }
+</style>
+</head>
+<body>
+
+<div class="reglages">
+  <div class="dedans">
+    <h1>Étiquettes</h1>
+    <label><input type="checkbox" id="optAdresse" checked> Adresse</label>
+    <label><input type="checkbox" id="optContenu" checked> Contenu</label>
+    <span class="compte" id="compte"></span>
+    <button id="btnImprimer">Imprimer</button>
+    <a href="commandes-admin.html">Retour aux commandes</a>
+  </div>
+  <p class="conseil">
+    Dans la fenêtre d'impression : marges <b>Aucune</b>, mise à l'échelle <b>100 %</b>,
+    et décochez <b>En-têtes et pieds de page</b>. Format du papier : 80 × 60 mm.
+  </p>
+</div>
+
+<div class="apercu">
+  <p class="titre">Aperçu — une étiquette par vignette</p>
+  <div id="liste"><div class="vide">Chargement…</div></div>
+</div>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const peso = (n) => "P" + Number(n || 0).toLocaleString("en-PH");
+const MARQUE = "YOANN'S FRENCH BAKERY";
+
+let commandes = [];
+
+try { commandes = JSON.parse(sessionStorage.getItem("etiquettes") || "[]"); }
+catch { commandes = []; }
+
+if (!commandes.length) {
+  $("liste").innerHTML =
+    '<div class="vide">Aucune commande à imprimer.<br><br>' +
+    'Sélectionnez des commandes dans le tableau de bord, ' +
+    'puis cliquez sur « Imprimer les étiquettes ».</div>';
+  $("compte").textContent = "";
+} else {
+  $("compte").textContent = commandes.length +
+    (commandes.length > 1 ? " commandes" : " commande");
+  $("optAdresse").onchange = dessiner;
+  $("optContenu").onchange = dessiner;
+  $("btnImprimer").onclick = () => window.print();
+  dessiner();
+}
+
+function ech(t) {
+  return String(t ?? "").replace(/[&<>"]/g, x =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[x]));
+}
+
+function jourCourt(iso) {
+  if (!iso) return "";
+  return new Date(iso + "T12:00:00")
+    .toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" });
+}
+
+function dessiner() {
+  const adresse = $("optAdresse").checked;
+  const contenu = $("optContenu").checked;
+  const liste = $("liste");
+  liste.innerHTML = "";
+
+  if (!adresse && !contenu) {
+    liste.innerHTML = '<div class="vide">Cochez au moins un type d\'étiquette.</div>';
+    return;
+  }
+
+  commandes.forEach(c => {
+    if (adresse) liste.insertAdjacentHTML("beforeend", etiquetteAdresse(c));
+    if (contenu) liste.insertAdjacentHTML("beforeend", etiquetteContenu(c));
+  });
+}
+
+/* ---------- Étiquette adresse ---------- */
+function etiquetteAdresse(c) {
+  const livraison = c.option?.type === "livraison";
+  return `
+  <div class="etiquette">
+    <div class="entete">
+      <span class="marque">${MARQUE}</span>
+      <span class="ref">${ech(c.numero || c.id)}</span>
+    </div>
+
+    <div class="pour">${livraison ? "Deliver to" : "Pick up"}</div>
+    <div class="client">${ech(c.client?.nom || "")}</div>
+    <div class="tel">${ech(c.client?.telephone || "")}</div>
+    ${c.client?.adresse ? `<div class="adresse">${ech(c.client.adresse)}</div>` : ""}
+    ${!livraison && c.option?.lieu ? `<div class="adresse">${ech(c.option.lieu)}</div>` : ""}
+
+    <div class="bas">
+      <span><b>${ech(c.option?.nom || "")}</b></span>
+      <span>${ech(jourCourt(c.date_retrait))}${c.creneau ? " · " + ech(c.creneau) : ""}</span>
+    </div>
+  </div>`;
+}
+
+/* ---------- Étiquette contenu ---------- */
+function etiquetteContenu(c) {
+  const paye = (c.paiement?.statut || "en attente") === "paye";
+  const lignes = (c.panier || []).map(l =>
+    `<div class="l"><span class="q">${l.qte}×</span>
+     <span class="n">${ech(l.nom)}</span></div>`).join("");
+
+  return `
+  <div class="etiquette">
+    <div class="entete">
+      <span class="marque">${MARQUE}</span>
+      <span class="ref">${ech(c.numero || c.id)}</span>
+    </div>
+
+    <div class="bas" style="margin:0 0 1.4mm;border:none;padding:0">
+      <span><b>${ech(c.client?.nom || "")}</b></span>
+      <span>${ech(jourCourt(c.date_retrait))}${c.creneau ? " · " + ech(c.creneau) : ""}</span>
+    </div>
+
+    <div class="lignes">${lignes}</div>
+    ${c.notes ? `<div class="note">${ech(c.notes)}</div>` : ""}
+
+    <div class="total">
+      <span>${paye ? "PAID" : "TO PAY"}</span>
+      <span class="${paye ? "" : "impaye"}">${peso(c.total)}${c.frais_a_confirmer ? " +" : ""}</span>
+    </div>
+  </div>`;
+}
+</script>
+</body>
+</html>
