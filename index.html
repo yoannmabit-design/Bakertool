@@ -1359,7 +1359,7 @@
         const entete = document.createElement('div');
         entete.className = 'fiche-entete';
         entete.innerHTML = `
-            <span class="fiche-titre">${ouvert ? '▾' : '▸'} ${prod.nom}${!prod.vendable ? ' <span style="font-weight:normal; color:#8a7860; font-size:0.8em;">base</span>' : ''}</span>
+            <span class="fiche-titre">${ouvert ? '▾' : '▸'} ${prod.id ? `<code style="background:#efe0c8; color:#7a4a1f; padding:1px 6px; border-radius:3px; font-size:0.8em;">${prod.id}</code> ` : '<span style="color:#c0392b; font-size:0.75em;">[sans code] </span>'}${prod.nom}${!prod.vendable ? ' <span style="font-weight:normal; color:#8a7860; font-size:0.8em;">base</span>' : ''}</span>
             <span class="fiche-meta">${resume}</span>`;
         entete.onclick = () => toggleFiche(prod.nom);
         ligne.appendChild(entete);
@@ -1559,15 +1559,41 @@
         afficherFichesCouts();
     }
 
-    function sauvegarderFichesCloud() {
+    async function sauvegarderFichesCloud() {
         if (!db) { alert("Firebase indisponible — impossible d'enregistrer pour le moment."); return; }
-        db.collection("recettes").doc("fiches").set({ items: fichesTechniques })
-            .then(() => {
-                dirtyFiches = false;
-                majIndicateursMode();
-                alert("Fiches techniques enregistrées et synchronisées !");
-            })
-            .catch((err) => alert("Erreur d'enregistrement : " + err.message));
+        try {
+            // La copie en mémoire peut être périmée (page ouverte depuis longtemps,
+            // passage hors-ligne). On relit le serveur et on préserve les champs
+            // que cette page ne gère pas — dont le code produit (id).
+            const snap = await db.collection("recettes").doc("fiches").get({ source: "server" });
+            const distants = (snap.exists && snap.data().items) ? snap.data().items : [];
+            const parId = {}, parNom = {};
+            distants.forEach(d => {
+                if (d.id) parId[d.id] = d;
+                if (d.nom) parNom[d.nom.trim().toLowerCase()] = d;
+            });
+
+            const aEcrire = fichesTechniques.map(local => {
+                const distant = (local.id && parId[local.id])
+                    || (local.nom && parNom[local.nom.trim().toLowerCase()]) || {};
+                const fusion = Object.assign({}, distant, local);
+                const code = local.id || distant.id;
+                if (code) fusion.id = code; else delete fusion.id;
+                return fusion;
+            });
+
+            const perdues = distants.filter(d => d.id && !aEcrire.some(o => o.id === d.id)).length;
+            if (perdues && !confirm(perdues + " fiche(s) présente(s) sur le serveur ne figurent pas ici et seront supprimées.\n\nContinuer ?")) return;
+
+            await db.collection("recettes").doc("fiches").set({ items: aEcrire });
+            fichesTechniques = aEcrire;
+            dirtyFiches = false;
+            majIndicateursMode();
+            afficherFichesCouts();
+            alert("Fiches techniques enregistrées et synchronisées !");
+        } catch (err) {
+            alert("Erreur d'enregistrement : " + err.message);
+        }
     }
 
     /* ==========================================================
