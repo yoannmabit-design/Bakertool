@@ -184,6 +184,7 @@ const PAIEMENTS = { "en attente":"En attente", "paye":"Payé", "rembourse":"Remb
 let commandes = [], filtre = "actives";
 let joursFermes = [];   // 0 = lundi
 let stockLimite = {};   // { code produit : true } — produits à stock décompté
+let nomVersCode = {};   // rattrapage : nom du produit -> code, pour les commandes d'avant les codes
 const selection = new Set();
 
 /* ---------- Connexion ---------- */
@@ -227,8 +228,12 @@ async function charger() {
 
     try {
       const cat = await getDocs(collection(db, "boutique_produits"));
-      stockLimite = {};
-      cat.forEach(d => { if (d.data().mode_stock === "limite") stockLimite[d.id] = true; });
+      stockLimite = {}; nomVersCode = {};
+      cat.forEach(d => {
+        const v = d.data();
+        if (v.mode_stock === "limite") stockLimite[d.id] = true;
+        if (v.nom) nomVersCode[cle(v.nom)] = d.id;
+      });
     } catch (e) { console.error(e); }
 
     const s = await getDocs(collection(db, "commandes"));
@@ -401,6 +406,22 @@ function echapper(t) {
 /* ---------- Pont vers la production ----------
    Publie, pour la prochaine date de livraison, le total par code produit.
    Aucune donnée client : ce document est lisible par l'ERP sans risque. */
+// Clé de rapprochement par nom, insensible aux accents et à la casse.
+function cle(t) {
+  return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+// Le code de la ligne, ou à défaut celui retrouvé d'après le nom du produit.
+function codeLigne(l) {
+  return l.code || nomVersCode[cle(l.nom)] || null;
+}
+
+function iso(d) {
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+    .toISOString().slice(0, 10);
+}
+
 function prochaineLivraison() {
   const d = new Date(); d.setHours(0, 0, 0, 0);
   for (let i = 0; i < 14; i++) {
@@ -414,24 +435,29 @@ function prochaineLivraison() {
 const RETENUS = ["confirmee", "en production", "prete"];
 
 async function publierProduction() {
-  const date = prochaineLivraison();
+  try {
+    const date = prochaineLivraison();
   const totaux = {}, noms = {};
 
   commandes
     .filter(c => c.date_retrait === date && RETENUS.includes(c.statut))
     .forEach(c => (c.panier || []).forEach(l => {
-      if (!l.code) return;
-      totaux[l.code] = (totaux[l.code] || 0) + (l.qte || 0);
-      noms[l.code] = l.nom || l.code;
+      const code = codeLigne(l);
+      if (!code) { console.warn("Ligne sans code produit :", l.nom); return; }
+      totaux[code] = (totaux[code] || 0) + (l.qte || 0);
+      noms[code] = l.nom || code;
     }));
 
-  try {
     await setDoc(doc(db, "production", "commandes_boutique"), {
       date, totaux, noms,
       nb_commandes: commandes.filter(c => c.date_retrait === date && RETENUS.includes(c.statut)).length,
       maj: new Date().toISOString()
     });
-  } catch (e) { console.error("Publication production", e); }
+    console.log("Production publiée :", date, totaux);
+  } catch (e) {
+    console.error("Publication production", e);
+    signaler("Publication vers l'ERP impossible.", "err");
+  }
 }
 
 /* ---------- Décompte du stock ----------
@@ -444,7 +470,9 @@ function ajustementsStock(c, nouveauStatut) {
   if (!doitDeduire && !doitRendre) return null;
 
   const signe = doitDeduire ? -1 : 1;
-  const lignes = (c.panier || []).filter(l => l.code && stockLimite[l.code]);
+  const lignes = (c.panier || [])
+    .map(l => Object.assign({}, l, { code: codeLigne(l) }))
+    .filter(l => l.code && stockLimite[l.code]);
   return { lignes, signe, drapeau: doitDeduire };
 }
 
