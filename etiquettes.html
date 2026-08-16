@@ -145,6 +145,7 @@
 const $ = (id) => document.getElementById(id);
 const peso = (n) => "P" + Number(n || 0).toLocaleString("en-PH");
 const MARQUE = "YOANN'S FRENCH BAKERY";
+const MAX_LIGNES = 8;   // articles par étiquette avant passage à la suivante
 
 let commandes = [];
 try { commandes = JSON.parse(sessionStorage.getItem("etiquettes") || "[]"); }
@@ -169,6 +170,14 @@ function libelleMode(c) {
   return c.option?.type === "livraison" ? "DELIVERY" : (c.option?.nom || "");
 }
 
+function panne(ref, type) {
+  return `<div class="etiquette"><div class="entete">
+    <span class="mode">ERREUR</span><span class="ref">${ref}</span></div>
+    <div class="lignes" style="font-size:9pt">
+    Étiquette ${type} impossible à générer pour cette commande.
+    Voir la console (F12).</div></div>`;
+}
+
 function ech(t) {
   return String(t ?? "").replace(/[&<>"]/g, x =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[x]));
@@ -190,9 +199,17 @@ function dessiner() {
     liste.innerHTML = '<div class="vide">Cochez au moins un type d\'étiquette.</div>';
     return;
   }
+  // Une commande fautive ne doit pas empêcher l'impression des autres.
   commandes.forEach(c => {
-    if (adresse) liste.insertAdjacentHTML("beforeend", etiquetteAdresse(c));
-    if (contenu) liste.insertAdjacentHTML("beforeend", etiquetteContenu(c));
+    const ref = c.numero || c.id || "?";
+    if (adresse) {
+      try { liste.insertAdjacentHTML("beforeend", etiquetteAdresse(c)); }
+      catch (e) { console.error("Étiquette adresse", ref, e); liste.insertAdjacentHTML("beforeend", panne(ref, "adresse")); }
+    }
+    if (contenu) {
+      try { liste.insertAdjacentHTML("beforeend", etiquetteContenu(c)); }
+      catch (e) { console.error("Étiquette contenu", ref, e); liste.insertAdjacentHTML("beforeend", panne(ref, "contenu")); }
+    }
   });
 }
 
@@ -226,8 +243,6 @@ function etiquetteAdresse(c) {
 /* ---------- Étiquette contenu ----------
    Au-delà de MAX_LIGNES articles, la commande se poursuit sur une
    deuxième étiquette. Le montant ne figure que sur la dernière. */
-const MAX_LIGNES = 8;
-
 function etiquetteContenu(c) {
   const articles = c.panier || [];
   const paquets = [];
