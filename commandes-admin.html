@@ -156,7 +156,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, writeBatch }
+import { getFirestore, collection, getDocs, doc, getDoc, setDoc, updateDoc, writeBatch, increment }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -182,6 +182,8 @@ const LIBELLES = {
 const PAIEMENTS = { "en attente":"En attente", "paye":"Payé", "rembourse":"Remboursé" };
 
 let commandes = [], filtre = "actives";
+let joursFermes = [];   // 0 = lundi
+let stockLimite = {};   // { code produit : true } — produits à stock décompté
 const selection = new Set();
 
 /* ---------- Connexion ---------- */
@@ -217,6 +219,18 @@ onAuthStateChanged(auth, async (user) => {
 /* ---------- Chargement ---------- */
 async function charger() {
   try {
+    // Quels produits ont un stock à décompter ?
+    try {
+      const p = await getDoc(doc(db, "parametres", "boutique"));
+      if (p.exists()) joursFermes = p.data().jours_fermes || [];
+    } catch (e) { console.error(e); }
+
+    try {
+      const cat = await getDocs(collection(db, "boutique_produits"));
+      stockLimite = {};
+      cat.forEach(d => { if (d.data().mode_stock === "limite") stockLimite[d.id] = true; });
+    } catch (e) { console.error(e); }
+
     const s = await getDocs(collection(db, "commandes"));
     commandes = [];
     s.forEach(d => commandes.push({ id: d.id, ...d.data() }));
@@ -225,6 +239,7 @@ async function charger() {
       (a.date_retrait || "").localeCompare(b.date_retrait || "") ||
       (b.cree_le || "").localeCompare(a.cree_le || ""));
     afficher();
+    publierProduction();
   } catch (e) {
     console.error(e);
     $("liste").innerHTML = '<div class="vide">Les commandes n\'ont pas pu être chargées.</div>';
@@ -383,6 +398,66 @@ function echapper(t) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[x]));
 }
 
+/* ---------- Pont vers la production ----------
+   Publie, pour la prochaine date de livraison, le total par code produit.
+   Aucune donnée client : ce document est lisible par l'ERP sans risque. */
+function prochaineLivraison() {
+  const d = new Date(); d.setHours(0, 0, 0, 0);
+  for (let i = 0; i < 14; i++) {
+    if (!joursFermes.includes((d.getDay() + 6) % 7)) return iso(d);
+    d.setDate(d.getDate() + 1);
+  }
+  return iso(new Date());
+}
+
+// Une commande entre en production dès qu'elle est confirmée par vous.
+const RETENUS = ["confirmee", "en production", "prete"];
+
+async function publierProduction() {
+  const date = prochaineLivraison();
+  const totaux = {}, noms = {};
+
+  commandes
+    .filter(c => c.date_retrait === date && RETENUS.includes(c.statut))
+    .forEach(c => (c.panier || []).forEach(l => {
+      if (!l.code) return;
+      totaux[l.code] = (totaux[l.code] || 0) + (l.qte || 0);
+      noms[l.code] = l.nom || l.code;
+    }));
+
+  try {
+    await setDoc(doc(db, "production", "commandes_boutique"), {
+      date, totaux, noms,
+      nb_commandes: commandes.filter(c => c.date_retrait === date && RETENUS.includes(c.statut)).length,
+      maj: new Date().toISOString()
+    });
+  } catch (e) { console.error("Publication production", e); }
+}
+
+/* ---------- Décompte du stock ----------
+   Confirmer une commande retire ses pièces du stock ; l'annuler les rend.
+   Le drapeau stock_deduit évite tout double décompte. */
+function ajustementsStock(c, nouveauStatut) {
+  const dejaDeduit = !!c.stock_deduit;
+  const doitDeduire = nouveauStatut === "confirmee" && !dejaDeduit;
+  const doitRendre  = nouveauStatut === "annulee" && dejaDeduit;
+  if (!doitDeduire && !doitRendre) return null;
+
+  const signe = doitDeduire ? -1 : 1;
+  const lignes = (c.panier || []).filter(l => l.code && stockLimite[l.code]);
+  return { lignes, signe, drapeau: doitDeduire };
+}
+
+function appliquerStock(paquet, c, nouveauStatut) {
+  const a = ajustementsStock(c, nouveauStatut);
+  if (!a) return false;
+  a.lignes.forEach(l => {
+    paquet.update(doc(db, "boutique_produits", l.code),
+      { stock: increment(a.signe * (l.qte || 0)) });
+  });
+  return a.drapeau;
+}
+
 /* ---------- Traitement par lot ---------- */
 $("lotStatut").innerHTML = '<option value="">Avancement…</option>' +
   STATUTS.map(v => `<option value="${v}">${LIBELLES[v]}</option>`).join("");
@@ -439,9 +514,14 @@ $("lotAppliquer").onclick = async () => {
     for (let i = 0; i < ids.length; i += 400) {
       const paquet = writeBatch(db);
       ids.slice(i, i + 400).forEach(id => {
+        const c = commandes.find(x => x.id === id);
         const champs = {};
         if (statut)   champs.statut = statut;
         if (paiement) champs["paiement.statut"] = paiement;
+        if (statut && c) {
+          const a = ajustementsStock(c, statut);
+          if (a) champs.stock_deduit = appliquerStock(paquet, c, statut);
+        }
         paquet.update(doc(db, "commandes", id), champs);
       });
       await paquet.commit();
@@ -450,7 +530,11 @@ $("lotAppliquer").onclick = async () => {
     ids.forEach(id => {
       const c = commandes.find(x => x.id === id);
       if (!c) return;
-      if (statut) c.statut = statut;
+      if (statut) {
+        const a = ajustementsStock(c, statut);
+        if (a) c.stock_deduit = a.drapeau;
+        c.statut = statut;
+      }
       if (paiement) { c.paiement = c.paiement || {}; c.paiement.statut = paiement; }
     });
 
@@ -458,6 +542,7 @@ $("lotAppliquer").onclick = async () => {
     $("lotStatut").value = "";
     $("lotPaiement").value = "";
     afficher();
+    publierProduction();
     signaler(ids.length + " commande(s) mise(s) à jour.", "ok");
   } catch (e) {
     console.error(e);
@@ -469,13 +554,25 @@ $("lotAppliquer").onclick = async () => {
 /* ---------- Enregistrement ---------- */
 async function enregistrer(c, champs) {
   try {
-    await updateDoc(doc(db, "commandes", c.id), champs);
+    if (champs.statut) {
+      const paquet = writeBatch(db);
+      const deduit = appliquerStock(paquet, c, champs.statut);
+      const maj = Object.assign({}, champs);
+      const a = ajustementsStock(c, champs.statut);
+      if (a) maj.stock_deduit = deduit;
+      paquet.update(doc(db, "commandes", c.id), maj);
+      await paquet.commit();
+      if (a) c.stock_deduit = deduit;
+    } else {
+      await updateDoc(doc(db, "commandes", c.id), champs);
+    }
     if (champs.statut) c.statut = champs.statut;
     if (champs["paiement.statut"]) {
       c.paiement = c.paiement || {};
       c.paiement.statut = champs["paiement.statut"];
     }
     afficher();
+    publierProduction();
     signaler("Enregistré");
   } catch (e) {
     console.error(e);
