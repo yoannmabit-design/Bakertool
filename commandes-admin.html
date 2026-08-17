@@ -429,9 +429,15 @@ function echapper(t) {
    Une échéance sans commande n'est ni imprimable, ni encaissable, ni suivable.
    L'identifiant est déterministe : relancer la génération ne crée pas de doublon. */
 async function materialiserAbonnements(date) {
-  const aFaire = abonnements.filter(a =>
-    a.statut === "actif" &&
-    (a.echeances || []).some(e => e.statut === "planifiee" && e.date === date));
+  // Chaque échéance à traiter est repérée par son rang dans le plan : c'est
+  // ce rang, et non la date, qui fixe l'identifiant de la commande.
+  const aFaire = [];
+  abonnements.forEach(a => {
+    if (a.statut !== "actif") return;
+    (a.echeances || []).forEach((e, i) => {
+      if (e.statut === "planifiee" && e.date === date) aFaire.push({ a, rang: i + 1 });
+    });
+  });
 
   console.log("Abonnements :", abonnements.length,
     "· actifs :", abonnements.filter(a => a.statut === "actif").length,
@@ -444,8 +450,10 @@ async function materialiserAbonnements(date) {
   if (!aFaire.length) return 0;
 
   let creees = 0;
-  for (const a of aFaire) {
-    const id = "ABO-" + a.id + "-" + date;
+  for (const { a, rang } of aFaire) {
+    // Rang sur deux chiffres : la commande garde le même identifiant même si
+    // sa date est décalée ensuite, donc pas de doublon à la génération suivante.
+    const id = "ABO-" + a.id + "-" + String(rang).padStart(2, "0");
     if (commandes.some(c => c.id === id)) continue;   // déjà générée
 
     const sousTotal = (a.panier || []).reduce((t, l) => t + (l.qte || 0) * (l.prix || 0), 0);
@@ -454,6 +462,8 @@ async function materialiserAbonnements(date) {
               (a.client?.nom || "").slice(0, 3).toUpperCase(),
       statut: "confirmee",
       abonnement_id: a.id,
+      abonnement_rang: rang,
+      abonnement_total: (a.echeances || []).length,
       client: {
         nom: a.client?.nom || "",
         telephone: a.client?.telephone || "",
