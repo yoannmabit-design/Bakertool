@@ -353,6 +353,7 @@ function carte(c) {
       <input type="checkbox" class="coche" aria-label="Sélectionner">
       <span class="ref">${c.numero || c.id}</span>
       <span class="nom"></span>
+      ${c.credit_utilise > 0 ? `<span class="etiq">crédit ${peso(c.credit_utilise)}</span>` : ""}
       <span class="etiq ${paye ? "verte" : "rouge"}">${paye ? "Payé" : "À encaisser"}</span>
       <span class="montant">${peso(c.total)}</span>
     </div>
@@ -562,6 +563,29 @@ function ajustementsStock(c, nouveauStatut) {
   return { lignes, signe, drapeau: doitDeduire };
 }
 
+// Un crédit annoncé au checkout n'est réellement débité qu'à la confirmation,
+// et restitué si la commande est annulée.
+function appliquerCredit(paquet, c, nouveauStatut) {
+  const montant = Number(c.credit_utilise) || 0;
+  if (!montant || !c.compte_uid) return null;
+
+  const deja = !!c.credit_deduit;
+  const debiter = nouveauStatut === "confirmee" && !deja;
+  const rendre  = nouveauStatut === "annulee" && deja;
+  if (!debiter && !rendre) return null;
+
+  const signe = debiter ? -1 : 1;
+  paquet.set(doc(collection(db, "comptes", c.compte_uid, "mouvements")), {
+    type: debiter ? "depense" : "remboursement",
+    montant: signe * montant,
+    note: "Commande " + (c.numero || c.id),
+    quand: new Date().toISOString(),
+    par: auth.currentUser.email
+  });
+  paquet.update(doc(db, "comptes", c.compte_uid), { solde: increment(signe * montant) });
+  return debiter;
+}
+
 function appliquerStock(paquet, c, nouveauStatut) {
   const a = ajustementsStock(c, nouveauStatut);
   if (!a) return false;
@@ -635,6 +659,8 @@ $("lotAppliquer").onclick = async () => {
         if (statut && c) {
           const a = ajustementsStock(c, statut);
           if (a) champs.stock_deduit = appliquerStock(paquet, c, statut);
+          const credit = appliquerCredit(paquet, c, statut);
+          if (credit !== null) champs.credit_deduit = credit;
         }
         paquet.update(doc(db, "commandes", id), champs);
       });
@@ -674,6 +700,8 @@ async function enregistrer(c, champs) {
       const maj = Object.assign({}, champs);
       const a = ajustementsStock(c, champs.statut);
       if (a) maj.stock_deduit = deduit;
+      const credit = appliquerCredit(paquet, c, champs.statut);
+      if (credit !== null) maj.credit_deduit = credit;
       paquet.update(doc(db, "commandes", c.id), maj);
       await paquet.commit();
       if (a) c.stock_deduit = deduit;
