@@ -9,6 +9,7 @@
     { fichier: "commandes-admin.html",       titre: "Commandes" },
     { fichier: "boutique-admin.html",        titre: "Boutique"  },
     { fichier: "clients-admin.html",         titre: "Clients"   },
+    { fichier: "credits-admin.html",         titre: "Crédit"    },
     { fichier: "produits-identifiants.html", titre: "Produits"  }
   ];
 
