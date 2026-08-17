@@ -7,10 +7,10 @@
   const PAGES = [
     { fichier: "admin.html",                 titre: "Accueil"     },
     { fichier: "commandes-admin.html",       titre: "Commandes"   },
-    { fichier: "boutique-admin.html",        titre: "Boutique"    },
-    { fichier: "clients-admin.html",         titre: "Clients"     },
-    { fichier: "credits-admin.html",         titre: "Crédit"      },
     { fichier: "abonnements-admin.html",     titre: "Abonnements" },
+    { fichier: "credits-admin.html",         titre: "Crédit"      },
+    { fichier: "clients-admin.html",         titre: "Clients"     },
+    { fichier: "boutique-admin.html",        titre: "Boutique"    },
     { fichier: "produits-identifiants.html", titre: "Produits"    }
   ];
 
