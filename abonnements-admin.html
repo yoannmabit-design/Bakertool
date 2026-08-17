@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Abonnements — Yoann's French Bakery</title>
+<meta name="theme-color" content="#1a1a1a">
+<style>
+  :root{
+    --creme:#fdf6ec;--papier:#fffdf9;--encre:#1f1b16;
+    --encre-doux:#6b6157;--trait:#e2d7c6;--accent:#2f4858;
+    --alerte:#8c2f22;--ok:#3d6b3d;--r:6px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--creme);color:var(--encre);
+    font:16px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif}
+  header{background:var(--encre);color:var(--creme);padding:14px 18px;
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  header h1{font-size:17px;margin:0;font-weight:600}
+  header .qui{margin-left:auto;font-size:13px;opacity:.72}
+  header button{background:transparent;border:1px solid #4a443c;color:var(--creme);
+    padding:8px 13px;border-radius:var(--r);font-size:13.5px;cursor:pointer}
+  main{max-width:860px;margin:0 auto;padding:20px 16px 60px}
+
+  .filtres{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:18px}
+  .filtres button{border:1px solid var(--trait);background:transparent;
+    color:var(--encre-doux);padding:8px 15px;border-radius:var(--r);
+    font-size:14px;cursor:pointer}
+  .filtres button[aria-pressed="true"]{background:var(--accent);
+    border-color:var(--accent);color:#fff;font-weight:600}
+
+  .abo{background:var(--papier);border:1px solid var(--trait);
+    border-radius:var(--r);padding:14px;margin-bottom:11px}
+  .abo.nouveau{border-left:4px solid var(--alerte)}
+  .abo.actif{border-left:4px solid var(--ok)}
+  .tete{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;cursor:pointer}
+  .tete .nom{font-weight:600;flex:1;min-width:120px}
+  .tete .montant{font-weight:600;font-variant-numeric:tabular-nums}
+  .resume{font-size:13.5px;color:var(--encre-doux);margin-top:4px}
+  .puce{font-size:11.5px;padding:2px 8px;border-radius:10px;
+    background:#e8eef1;color:var(--accent);text-transform:uppercase;letter-spacing:.05em}
+  .puce.rouge{background:#f6e2de;color:var(--alerte)}
+
+  .detail{margin-top:13px;padding-top:13px;border-top:1px dashed var(--trait)}
+  .detail[hidden]{display:none}
+  .l{display:flex;justify-content:space-between;gap:12px;font-size:14.5px;padding:2px 0}
+  .info{font-size:14px;color:var(--encre-doux);margin:4px 0}
+  .info b{color:var(--encre)}
+
+  .echeances{margin-top:13px}
+  .ech{display:flex;align-items:center;gap:10px;padding:7px 0;
+    border-bottom:1px solid var(--trait);font-size:14.5px;flex-wrap:wrap}
+  .ech:last-child{border-bottom:none}
+  .ech .date{flex:1;min-width:120px}
+  .ech.livree .date{color:var(--encre-doux);text-decoration:line-through}
+  .ech.sautee .date{color:var(--encre-doux);font-style:italic}
+  .ech button{border:1px solid var(--trait);background:#fff;color:var(--accent);
+    padding:6px 11px;border-radius:var(--r);font-size:13px;cursor:pointer}
+
+  .actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px;align-items:center}
+  button.action{background:var(--accent);color:#fff;border:none;padding:10px 16px;
+    border-radius:var(--r);cursor:pointer;font-size:14.5px;font-weight:600}
+  button.danger{background:transparent;border:1px solid var(--trait);
+    color:var(--alerte);padding:10px 14px;border-radius:var(--r);cursor:pointer;font-size:14px}
+
+  .vide{padding:44px;text-align:center;color:var(--encre-doux)}
+  .etat{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);
+    background:var(--encre);color:var(--creme);padding:10px 18px;
+    border-radius:var(--r);font-size:14px;opacity:0;transition:opacity .2s}
+  .etat.vu{opacity:1}
+  .connexion{max-width:400px;margin:14vh auto;text-align:center;padding:0 20px}
+  .connexion h1{font-size:21px;margin:0 0 20px}
+</style>
+</head>
+<body>
+
+<div id="ecranConnexion" class="connexion">
+  <h1>Abonnements</h1>
+  <button class="action" id="btnConnexion">Se connecter avec Google</button>
+  <p id="msgConnexion" style="margin-top:18px;font-size:14px"></p>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <h1>Abonnements</h1>
+    <span class="qui" id="qui"></span>
+    <button id="btnAbsence">Je m'absente…</button>
+    <button id="btnRecharger">Actualiser</button>
+    <button id="btnDeconnexion">Quitter</button>
+  </header>
+  <main>
+    <div class="filtres" id="filtres">
+      <button data-f="encours" aria-pressed="true">En cours</button>
+      <button data-f="nouveaux" aria-pressed="false">À valider</button>
+      <button data-f="tous" aria-pressed="false">Tous</button>
+    </div>
+    <div id="liste"><div class="vide">Chargement…</div></div>
+  </main>
+</div>
+
+<div class="etat" id="etat"></div>
+
+<script src="admin-nav.js" defer></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, collection, getDocs, doc, getDoc, updateDoc,
+         writeBatch, increment }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDuq8KS8M_Z8U7BlSp6MvE-6Y9OYYaDujE",
+  authDomain: "bakertools-ae124.firebaseapp.com",
+  projectId: "bakertools-ae124",
+  storageBucket: "bakertools-ae124.firebasestorage.app",
+  messagingSenderId: "978584667113",
+  appId: "1:978584667113:web:868cc89788aff27717c178"
+};
+
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getFirestore(app);
+const $    = (id) => document.getElementById(id);
+const peso = (n) => "₱" + Number(n || 0).toLocaleString("en-PH");
+const ech  = (t) => String(t ?? "").replace(/[&<>"]/g, x =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[x]));
+
+const CADENCES = { hebdo: "chaque semaine", quinzaine: "toutes les 2 semaines" };
+let abos = [], filtre = "encours";
+
+/* ---------- Connexion ---------- */
+$("btnConnexion").onclick = async () => {
+  try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+  catch (e) { $("msgConnexion").textContent = "Connexion impossible."; console.error(e); }
+};
+$("btnDeconnexion").onclick = () => signOut(auth);
+$("btnRecharger").onclick = charger;
+
+onAuthStateChanged(auth, async (user) => {
+  if (!user) { $("app").hidden = true; $("ecranConnexion").hidden = false; return; }
+  let ok = false;
+  try { ok = (await getDoc(doc(db, "admins", user.uid))).exists(); } catch (e) { console.error(e); }
+  if (!ok) {
+    await signOut(auth);
+    $("msgConnexion").innerHTML = "Ce compte n'a pas accès.<br><code>" + user.uid + "</code>";
+    return;
+  }
+  $("ecranConnexion").hidden = true;
+  $("app").hidden = false;
+  $("qui").textContent = user.email;
+  charger();
+});
+
+/* ---------- Chargement ---------- */
+async function charger() {
+  try {
+    const s = await getDocs(collection(db, "abonnements"));
+    abos = [];
+    s.forEach(d => abos.push({ id: d.id, ...d.data() }));
+    abos.sort((a, b) => (b.cree_le || "").localeCompare(a.cree_le || ""));
+    afficher();
+  } catch (e) {
+    console.error(e);
+    $("liste").innerHTML = '<div class="vide">Chargement impossible.</div>';
+  }
+}
+
+$("filtres").onclick = (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  filtre = b.dataset.f;
+  $("filtres").querySelectorAll("button").forEach(x =>
+    x.setAttribute("aria-pressed", x === b));
+  afficher();
+};
+
+function retenu(a) {
+  if (filtre === "tous") return true;
+  if (filtre === "nouveaux") return a.statut === "nouveau";
+  return ["nouveau", "actif"].includes(a.statut);
+}
+
+/* ---------- Affichage ---------- */
+function afficher() {
+  const liste = $("liste");
+  const vus = abos.filter(retenu);
+  liste.innerHTML = "";
+  if (!vus.length) {
+    liste.innerHTML = '<div class="vide">Aucun abonnement dans cette vue.</div>';
+    return;
+  }
+  vus.forEach(a => liste.appendChild(carte(a)));
+}
+
+function restantes(a) {
+  return (a.echeances || []).filter(e => e.statut === "planifiee").length;
+}
+
+function carte(a) {
+  const el = document.createElement("div");
+  el.className = "abo " + (a.statut === "nouveau" ? "nouveau" : a.statut === "actif" ? "actif" : "");
+  const reste = restantes(a);
+  const prochaine = (a.echeances || []).find(e => e.statut === "planifiee");
+
+  el.innerHTML = `
+    <div class="tete">
+      <span class="nom"></span>
+      <span class="puce ${a.statut === "nouveau" ? "rouge" : ""}">${ech(a.statut)}</span>
+      <span class="puce">${a.paiement?.mode === "credit" ? "crédit" : "payé d'avance"}</span>
+      <span class="montant">${peso(a.total_par_livraison)} × ${reste}</span>
+    </div>
+    <div class="resume"></div>
+    <div class="detail" hidden>
+      <div class="lignes"></div>
+      <p class="info"><b>Contact</b> ${ech(a.client?.telephone || "")}
+        ${a.client?.email ? " · " + ech(a.client.email) : ""}</p>
+      ${a.client?.adresse ? '<p class="info adresse"></p>' : ""}
+      <div class="echeances"></div>
+      <div class="actions">
+        ${a.statut === "nouveau" ? '<button class="action valider">Valider cet abonnement</button>' : ""}
+        ${a.statut === "actif" ? '<button class="danger arreter">Arrêter</button>' : ""}
+      </div>
+    </div>`;
+
+  el.querySelector(".nom").textContent = a.client?.nom || "—";
+  el.querySelector(".resume").textContent =
+    [CADENCES[a.cadence] || a.cadence,
+     a.option?.nom,
+     reste + " livraison(s) restante(s)",
+     prochaine ? "prochaine le " + prochaine.date : "terminé"].filter(Boolean).join(" · ");
+
+  el.querySelector(".lignes").innerHTML = (a.panier || []).map(l =>
+    `<div class="l"><span>${l.qte} × ${ech(l.nom)}</span>
+     <span>${peso(l.qte * l.prix)}</span></div>`).join("") +
+    `<div class="l"><span>Livraison (tarif abonné)</span><span>${peso(a.frais_livraison)}</span></div>`;
+
+  if (a.client?.adresse) el.querySelector(".adresse").textContent = a.client.adresse;
+
+  const detail = el.querySelector(".detail");
+  el.querySelector(".tete").onclick = () => { detail.hidden = !detail.hidden; };
+
+  // Échéances
+  const ze = el.querySelector(".echeances");
+  (a.echeances || []).forEach((e, i) => {
+    const ligne = document.createElement("div");
+    ligne.className = "ech " + e.statut;
+    ligne.innerHTML = `
+      <span class="date">${e.date}${e.statut === "livree" ? " — livrée" :
+        e.statut === "sautee" ? " — sautée" : ""}</span>
+      ${e.statut === "planifiee" && a.statut === "actif"
+        ? '<button class="livrer">Marquer livrée</button><button class="sauter">Client absent</button>'
+        : ""}`;
+    const bl = ligne.querySelector(".livrer");
+    const bs = ligne.querySelector(".sauter");
+    if (bl) bl.onclick = () => marquerLivree(a, i);
+    if (bs) bs.onclick = () => sauter(a, i);
+    ze.appendChild(ligne);
+  });
+
+  const bv = el.querySelector(".valider");
+  if (bv) bv.onclick = () => valider(a);
+  const ba = el.querySelector(".arreter");
+  if (ba) ba.onclick = () => arreter(a);
+
+  return el;
+}
+
+/* ---------- Actions ---------- */
+async function valider(a) {
+  if (!confirm(`Valider l'abonnement de ${a.client?.nom} ?\n\n` +
+    (a.paiement?.mode === "credit"
+      ? "Chaque livraison sera prélevée sur son crédit."
+      : `Vérifiez d'avoir encaissé ${peso(a.total)} avant de valider.`))) return;
+  try {
+    await updateDoc(doc(db, "abonnements", a.id), { statut: "actif" });
+    a.statut = "actif";
+    afficher();
+    signaler("Abonnement validé.");
+  } catch (e) { console.error(e); signaler("Échec de la validation."); }
+}
+
+async function arreter(a) {
+  if (!confirm("Arrêter cet abonnement ?\n\nLes livraisons restantes sont annulées.")) return;
+  try {
+    await updateDoc(doc(db, "abonnements", a.id), { statut: "arrete" });
+    a.statut = "arrete";
+    afficher();
+    signaler("Abonnement arrêté.");
+  } catch (e) { console.error(e); signaler("Échec."); }
+}
+
+/* Une livraison marquée livrée prélève le crédit quand c'est le mode choisi.
+   Le mouvement et le solde partent avec l'échéance : jamais l'un sans l'autre. */
+async function marquerLivree(a, i) {
+  const montant = Number(a.total_par_livraison) || 0;
+  const surCredit = a.paiement?.mode === "credit";
+
+  let solde = null;
+  if (surCredit) {
+    try {
+      const s = await getDoc(doc(db, "comptes", a.client.uid));
+      solde = Number(s.data()?.solde) || 0;
+    } catch (e) { console.error(e); }
+    if (solde !== null && solde < montant &&
+        !confirm(`Le solde de ${a.client.nom} est de ${peso(solde)}, ` +
+                 `insuffisant pour ${peso(montant)}.\n\nEnregistrer quand même ?`)) return;
+  }
+
+  if (!confirm(`Marquer la livraison du ${a.echeances[i].date} comme livrée ?` +
+    (surCredit ? `\n\n${peso(montant)} seront prélevés sur son crédit.` : ""))) return;
+
+  try {
+    const echeances = a.echeances.map((e, n) =>
+      n === i ? { ...e, statut: "livree", livree_le: new Date().toISOString() } : e);
+
+    const paquet = writeBatch(db);
+    paquet.update(doc(db, "abonnements", a.id), { echeances });
+
+    if (surCredit) {
+      paquet.set(doc(collection(db, "comptes", a.client.uid, "mouvements")), {
+        type: "depense", montant: -montant,
+        note: "Livraison du " + a.echeances[i].date,
+        quand: new Date().toISOString(), par: auth.currentUser.email
+      });
+      paquet.update(doc(db, "comptes", a.client.uid), { solde: increment(-montant) });
+    }
+
+    // Plus aucune échéance planifiée : l'abonnement est terminé.
+    if (!echeances.some(e => e.statut === "planifiee"))
+      paquet.update(doc(db, "abonnements", a.id), { statut: "termine" });
+
+    await paquet.commit();
+    a.echeances = echeances;
+    if (!echeances.some(e => e.statut === "planifiee")) a.statut = "termine";
+    afficher();
+    signaler("Livraison enregistrée.");
+  } catch (e) { console.error(e); signaler("Échec de l'enregistrement."); }
+}
+
+/* Le client s'absente : l'échéance est sautée et reportée à la fin,
+   pour qu'il reçoive bien le nombre de livraisons payées. */
+async function sauter(a, i) {
+  if (!confirm(`Client absent le ${a.echeances[i].date} ?\n\n` +
+               "Cette livraison est reportée à la fin de l'abonnement.")) return;
+  try {
+    const pas = a.cadence === "quinzaine" ? 14 : 7;
+    const echeances = a.echeances.map((e, n) =>
+      n === i ? { ...e, statut: "sautee" } : e);
+
+    const derniere = echeances.filter(e => e.statut === "planifiee")
+      .map(e => e.date).sort().pop() || a.echeances[i].date;
+    const d = new Date(derniere + "T12:00:00");
+    d.setDate(d.getDate() + pas);
+    echeances.push({ date: iso(d), statut: "planifiee" });
+
+    await updateDoc(doc(db, "abonnements", a.id), { echeances });
+    a.echeances = echeances;
+    afficher();
+    signaler("Livraison reportée au " + iso(d));
+  } catch (e) { console.error(e); signaler("Échec du report."); }
+}
+
+/* ---------- Absence du boulanger : décalage global ---------- */
+$("btnAbsence").onclick = async () => {
+  const debut = prompt("Premier jour de votre absence (AAAA-MM-JJ) :");
+  if (!debut) return;
+  const fin = prompt("Dernier jour de votre absence (AAAA-MM-JJ) :", debut);
+  if (!fin) return;
+
+  const jours = Math.round(
+    (new Date(fin + "T12:00:00") - new Date(debut + "T12:00:00")) / 86400000) + 1;
+  if (!(jours > 0)) return signaler("Dates incohérentes.");
+
+  const concernes = abos.filter(a => a.statut === "actif" &&
+    (a.echeances || []).some(e => e.statut === "planifiee" && e.date >= debut && e.date <= fin));
+
+  if (!concernes.length) return signaler("Aucune livraison sur cette période.");
+
+  const nb = concernes.reduce((t, a) => t +
+    a.echeances.filter(e => e.statut === "planifiee" && e.date >= debut && e.date <= fin).length, 0);
+
+  if (!confirm(`${nb} livraison(s) chez ${concernes.length} client(s) tombent pendant votre absence.\n\n` +
+    `Toutes les livraisons à partir du ${debut} seront décalées de ${jours} jour(s).\n\n` +
+    "Pensez à prévenir les clients concernés.")) return;
+
+  try {
+    const paquet = writeBatch(db);
+    concernes.forEach(a => {
+      const echeances = a.echeances.map(e => {
+        if (e.statut !== "planifiee" || e.date < debut) return e;
+        const d = new Date(e.date + "T12:00:00");
+        d.setDate(d.getDate() + jours);
+        return { ...e, date: iso(d), decalee: true };
+      });
+      paquet.update(doc(db, "abonnements", a.id), { echeances });
+      a.echeances = echeances;
+    });
+    await paquet.commit();
+    afficher();
+    signaler(`${concernes.length} abonnement(s) décalé(s) de ${jours} jour(s).`);
+  } catch (e) { console.error(e); signaler("Échec du décalage."); }
+};
+
+function iso(d) {
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+let minuteur;
+function signaler(texte) {
+  $("etat").textContent = texte;
+  $("etat").classList.add("vu");
+  clearTimeout(minuteur);
+  minuteur = setTimeout(() => $("etat").classList.remove("vu"), 2600);
+}
+</script>
+</body>
+</html>
