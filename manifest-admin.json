@@ -1,0 +1,16 @@
+{
+  "name": "Yoann's Bakery — Administration",
+  "short_name": "Bakery Admin",
+  "description": "Commandes, boutique, clients, crédit et abonnements — Yoann's French Bakery",
+  "lang": "fr",
+  "start_url": "./admin.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#fdf6ec",
+  "theme_color": "#1a1a1a",
+  "icons": [
+    { "src": "logo.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "logo.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
