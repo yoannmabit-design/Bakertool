@@ -75,6 +75,7 @@
   }
   .etiq.rouge{background:#f6e2de;color:var(--alerte)}
   .etiq.verte{background:#e2eede;color:var(--ok)}
+  .etiq.bleue{background:#dfe8ee;color:var(--accent)}
 
   .coche{width:19px;height:19px;flex-shrink:0;accent-color:var(--accent);cursor:pointer}
   .jour{display:flex;align-items:center;gap:10px}
@@ -202,6 +203,9 @@ const LIBELLES = {
 };
 const PAIEMENTS = { "en attente":"En attente", "paye":"Payé", "rembourse":"Remboursé" };
 
+// Portée de la génération des commandes d'abonnement, en jours.
+const FENETRE_JOURS = 10;
+
 let commandes = [], filtre = "actives";
 let joursFermes = [];   // 0 = lundi
 let stockLimite = {};   // { code produit : true } — produits à stock décompté
@@ -274,7 +278,7 @@ async function charger() {
     commandes.sort((a, b) =>
       (a.date_retrait || "").localeCompare(b.date_retrait || "") ||
       (b.cree_le || "").localeCompare(a.cree_le || ""));
-    const crees = await materialiserAbonnements(prochaineLivraison());
+    const crees = await materialiserAbonnements();
     if (crees) {
       commandes.sort((a, b) =>
         (a.date_retrait || "").localeCompare(b.date_retrait || "") ||
@@ -371,6 +375,9 @@ function carte(c) {
       <input type="checkbox" class="coche" aria-label="Sélectionner">
       <span class="ref">${c.numero || c.id}</span>
       <span class="nom"></span>
+      ${c.abonnement_id ? `<span class="etiq bleue">Abonnement${
+        c.abonnement_rang ? " " + c.abonnement_rang +
+          (c.abonnement_total ? "/" + c.abonnement_total : "") : ""}</span>` : ""}
       ${c.credit_utilise > 0 ? `<span class="etiq">crédit ${peso(c.credit_utilise)}</span>` : ""}
       <span class="etiq ${paye ? "verte" : "rouge"}">${paye ? "Payé" : "À encaisser"}</span>
       <span class="montant">${peso(c.total)}</span>
@@ -450,20 +457,28 @@ function echapper(t) {
 /* ---------- Les échéances d'abonnement deviennent des commandes ----------
    Une échéance sans commande n'est ni imprimable, ni encaissable, ni suivable.
    L'identifiant est déterministe : relancer la génération ne crée pas de doublon. */
-async function materialiserAbonnements(date) {
+async function materialiserAbonnements() {
+  // Fenêtre glissante : tout ce qui est dû d'ici dix jours est généré, ainsi
+  // que les échéances en retard — une livraison due ne doit pas disparaître
+  // parce que la page n'a pas été ouverte le bon jour.
+  const limite = new Date(); limite.setHours(0, 0, 0, 0);
+  limite.setDate(limite.getDate() + FENETRE_JOURS);
+  const jusquA = iso(limite);
+
   // Chaque échéance à traiter est repérée par son rang dans le plan : c'est
   // ce rang, et non la date, qui fixe l'identifiant de la commande.
   const aFaire = [];
   abonnements.forEach(a => {
     if (a.statut !== "actif") return;
     (a.echeances || []).forEach((e, i) => {
-      if (e.statut === "planifiee" && e.date === date) aFaire.push({ a, rang: i + 1 });
+      if (e.statut === "planifiee" && e.date && e.date <= jusquA)
+        aFaire.push({ a, rang: i + 1, date: e.date });
     });
   });
 
   console.log("Abonnements :", abonnements.length,
     "· actifs :", abonnements.filter(a => a.statut === "actif").length,
-    "· échéance le " + date + " :", aFaire.length);
+    "· échéances jusqu'au " + jusquA + " :", aFaire.length);
   if (abonnements.length && !aFaire.length) {
     abonnements.forEach(a => console.log("  ", a.id, "statut", a.statut,
       "· échéances", (a.echeances || []).map(e => e.date + "/" + e.statut).join(" ")));
@@ -472,7 +487,7 @@ async function materialiserAbonnements(date) {
   if (!aFaire.length) return 0;
 
   let creees = 0;
-  for (const { a, rang } of aFaire) {
+  for (const { a, rang, date } of aFaire) {
     // Rang sur deux chiffres : la commande garde le même identifiant même si
     // sa date est décalée ensuite, donc pas de doublon à la génération suivante.
     const id = "ABO-" + a.id + "-" + String(rang).padStart(2, "0");
