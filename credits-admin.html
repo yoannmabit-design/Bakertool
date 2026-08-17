@@ -3,8 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Commandes — Yoann's French Bakery</title>
+<title>Crédit clients — Yoann's French Bakery</title>
 <meta name="theme-color" content="#1a1a1a">
+<link rel="icon" href="logo.png" type="image/png">
+<link rel="apple-touch-icon" href="logo.png">
+<link rel="manifest" href="manifest.json">
 <style>
   :root{
     --creme:#fdf6ec;--papier:#fffdf9;--encre:#1f1b16;
@@ -19,7 +22,6 @@
   header{
     background:var(--encre);color:var(--creme);padding:14px 18px;
     display:flex;align-items:center;gap:12px;flex-wrap:wrap;
-    position:sticky;top:0;z-index:5;
   }
   header h1{font-size:17px;margin:0;font-weight:600}
   header .qui{margin-left:auto;font-size:13px;opacity:.72}
@@ -27,126 +29,81 @@
     background:transparent;border:1px solid #4a443c;color:var(--creme);
     padding:8px 13px;border-radius:var(--r);font-size:13.5px;cursor:pointer;
   }
-  main{max-width:820px;margin:0 auto;padding:20px 16px 120px}
+  main{max-width:820px;margin:0 auto;padding:20px 16px 60px}
 
-  .filtres{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:20px}
-  .filtres button{
-    border:1px solid var(--trait);background:transparent;color:var(--encre-doux);
-    padding:8px 15px;border-radius:var(--r);font-size:14px;cursor:pointer;
-  }
-  .filtres button[aria-pressed="true"]{
-    background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;
-  }
+  .chiffres{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+    gap:12px;margin-bottom:20px}
+  .chiffre{background:var(--papier);border:1px solid var(--trait);
+    border-radius:var(--r);padding:15px}
+  .chiffre .v{font-size:24px;font-weight:600;font-variant-numeric:tabular-nums}
+  .chiffre .e{font-size:13px;color:var(--encre-doux);margin-top:4px}
 
-  .jour{font-size:14px;color:var(--encre-doux);margin:22px 0 9px;font-weight:600}
-  .cmd{
-    background:var(--papier);border:1px solid var(--trait);
-    border-radius:var(--r);padding:14px;margin-bottom:10px;
-  }
-  .cmd.impaye{border-left:4px solid var(--alerte)}
-  .cmd.reglee{border-left:4px solid var(--ok)}
+  .outils{display:flex;gap:10px;margin-bottom:16px}
+  .outils input{flex:1;padding:11px 12px;border:1px solid var(--trait);
+    border-radius:var(--r);background:#fff;font:inherit;font-size:15px;color:var(--encre)}
+
+  .compte{background:var(--papier);border:1px solid var(--trait);
+    border-radius:var(--r);padding:14px;margin-bottom:10px}
   .tete{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;cursor:pointer}
-  .tete .ref{font-family:ui-monospace,monospace;font-size:13px;color:var(--encre-doux)}
-  .tete .nom{font-weight:600;flex:1;min-width:120px}
-  .tete .montant{font-weight:600;font-variant-numeric:tabular-nums}
-  .resume{font-size:13.5px;color:var(--encre-doux);margin-top:4px}
+  .tete .nom{font-weight:600;flex:1;min-width:130px}
+  .tete .mail{font-size:13px;color:var(--encre-doux)}
+  .tete .solde{font-size:18px;font-weight:600;font-variant-numeric:tabular-nums}
+  .tete .solde.vide{color:var(--encre-doux)}
+  .puce{font-size:11.5px;padding:2px 8px;border-radius:10px;
+    background:#efe6d8;color:var(--encre-doux);font-weight:600}
 
-  .detail{margin-top:13px;padding-top:13px;border-top:1px dashed var(--trait)}
+  .detail{margin-top:14px;padding-top:14px;border-top:1px dashed var(--trait)}
   .detail[hidden]{display:none}
-  .detail .l{display:flex;justify-content:space-between;gap:12px;font-size:14.5px;padding:2px 0}
-  .info{font-size:14px;color:var(--encre-doux);margin:3px 0}
-  .info b{color:var(--encre);font-weight:600}
+  .ajout{display:flex;gap:9px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px}
+  .ajout label{display:block;font-size:13px;color:var(--encre-doux);margin-bottom:5px}
+  .ajout input,.ajout select{padding:10px 11px;border:1px solid var(--trait);
+    border-radius:var(--r);background:#fff;font:inherit;font-size:15px;color:var(--encre)}
+  .ajout .montant{width:120px}
+  .ajout .motif{flex:1;min-width:150px}
+  button.action{background:var(--accent);color:#fff;border:none;padding:11px 18px;
+    border-radius:var(--r);cursor:pointer;font-size:14.5px;font-weight:600}
+  button.action:disabled{opacity:.5;cursor:default}
 
-  .actions{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-top:14px}
-  select{
-    padding:9px 10px;border:1px solid var(--trait);border-radius:var(--r);
-    background:#fff;font:inherit;font-size:14.5px;color:var(--encre);
-  }
-  .lien{
-    display:inline-block;padding:9px 14px;border:1px solid var(--trait);
-    border-radius:var(--r);text-decoration:none;color:var(--accent);font-size:14px;
-  }
-  .etiq{
-    font-size:11.5px;letter-spacing:.07em;text-transform:uppercase;
-    padding:3px 8px;border-radius:3px;background:#efe6d8;color:var(--encre-doux);
-  }
-  .etiq.rouge{background:#f6e2de;color:var(--alerte)}
-  .etiq.verte{background:#e2eede;color:var(--ok)}
+  .mvt{display:flex;justify-content:space-between;gap:12px;padding:7px 0;
+    border-bottom:1px solid var(--trait);font-size:14.5px}
+  .mvt:last-child{border-bottom:none}
+  .mvt .quand{color:var(--encre-doux);font-size:13px}
+  .mvt .val{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+  .mvt .val.plus{color:var(--ok)}
+  .mvt .val.moins{color:var(--alerte)}
 
-  .coche{width:19px;height:19px;flex-shrink:0;accent-color:var(--accent);cursor:pointer}
-  .jour{display:flex;align-items:center;gap:10px}
-  .jour .tout{
-    font-size:12.5px;color:var(--accent);background:none;border:none;
-    cursor:pointer;text-decoration:underline;padding:0;font-weight:400;
-  }
-  .lot{
-    position:fixed;left:0;right:0;bottom:0;background:var(--encre);color:var(--creme);
-    padding:12px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;
-    transform:translateY(120%);transition:transform .18s ease;z-index:6;
-  }
-  .lot.vu{transform:translateY(0)}
-  .lot .n{font-weight:600;margin-right:auto}
-  .lot select{font-size:14px;padding:8px 9px}
-  .lot .appliquer{
-    background:var(--creme);color:var(--encre);border:none;padding:10px 16px;
-    border-radius:var(--r);font-size:14.5px;font-weight:600;cursor:pointer;
-  }
-  .lot .appliquer:disabled{opacity:.45;cursor:default}
-  .lot .annuler{
-    background:transparent;border:1px solid #4a443c;color:var(--creme);
-    padding:9px 13px;border-radius:var(--r);font-size:14px;cursor:pointer;
-  }
-  .vide{padding:44px;text-align:center;color:var(--encre-doux)}
-  .connexion{max-width:400px;margin:14vh auto;text-align:center;padding:0 20px}
-  .connexion h1{font-size:22px;margin:0 0 20px}
-  .connexion button{
-    background:var(--accent);color:#fff;border:none;padding:12px 22px;
-    border-radius:var(--r);font-size:15px;font-weight:600;cursor:pointer;
-  }
-  .etat{
-    position:fixed;bottom:84px;left:50%;transform:translateX(-50%);
+  .vide{padding:40px;text-align:center;color:var(--encre-doux)}
+  .etat{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);
     background:var(--encre);color:var(--creme);padding:10px 18px;
-    border-radius:var(--r);font-size:14px;opacity:0;transition:opacity .2s;
-  }
+    border-radius:var(--r);font-size:14px;opacity:0;transition:opacity .2s}
   .etat.vu{opacity:1}
+  .connexion{max-width:400px;margin:14vh auto;text-align:center;padding:0 20px}
+  .connexion h1{font-size:21px;margin:0 0 20px}
 </style>
 </head>
 <body>
 
 <div id="ecranConnexion" class="connexion">
-  <h1>Commandes</h1>
-  <button id="btnConnexion">Se connecter avec Google</button>
+  <h1>Crédit clients</h1>
+  <button class="action" id="btnConnexion">Se connecter avec Google</button>
   <p id="msgConnexion" style="margin-top:18px;font-size:14px"></p>
 </div>
 
 <div id="app" hidden>
   <header>
-    <h1>Commandes</h1>
+    <h1>Crédit clients</h1>
     <span class="qui" id="qui"></span>
     <button id="btnRecharger">Actualiser</button>
     <button id="btnDeconnexion">Quitter</button>
   </header>
+
   <main>
-    <div class="filtres" id="filtres">
-      <button data-f="actives" aria-pressed="true">À traiter</button>
-      <button data-f="impayees" aria-pressed="false">Impayées</button>
-      <button data-f="toutes" aria-pressed="false">Toutes</button>
+    <div class="chiffres" id="chiffres"></div>
+    <div class="outils">
+      <input type="text" id="recherche" placeholder="Rechercher un nom ou un e-mail…">
     </div>
     <div id="liste"><div class="vide">Chargement…</div></div>
   </main>
-</div>
-
-<div class="lot" id="lot">
-  <span class="n" id="lotN"></span>
-  <select id="lotStatut">
-    <option value="">Avancement…</option>
-  </select>
-  <select id="lotPaiement">
-    <option value="">Paiement…</option>
-  </select>
-  <button class="appliquer" id="lotAppliquer" disabled>Appliquer</button>
-  <button class="annuler" id="lotImprimer">Imprimer les étiquettes</button>
-  <button class="annuler" id="lotAnnuler">Annuler</button>
 </div>
 
 <div class="etat" id="etat"></div>
@@ -156,7 +113,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, collection, getDocs, doc, getDoc, setDoc, updateDoc, writeBatch, increment }
+import { getFirestore, collection, collectionGroup, getDocs, doc, getDoc,
+         setDoc, writeBatch, increment, query, orderBy, limit }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -174,19 +132,14 @@ const db   = getFirestore(app);
 const $    = (id) => document.getElementById(id);
 const peso = (n) => "₱" + Number(n || 0).toLocaleString("en-PH");
 
-const STATUTS = ["nouvelle","confirmee","en production","prete","remise","annulee"];
-const LIBELLES = {
-  "nouvelle":"Nouvelle", "confirmee":"Confirmée", "en production":"En production",
-  "prete":"Prête", "remise":"Remise", "annulee":"Annulée"
+const MOTIFS = {
+  rechargement: "Rechargement",
+  depense: "Dépense",
+  remboursement: "Remboursement",
+  correction: "Correction"
 };
-const PAIEMENTS = { "en attente":"En attente", "paye":"Payé", "rembourse":"Remboursé" };
 
-let commandes = [], filtre = "actives";
-let joursFermes = [];   // 0 = lundi
-let stockLimite = {};   // { code produit : true } — produits à stock décompté
-let nomVersCode = {};   // rattrapage : nom du produit -> code, pour les commandes d'avant les codes
-let abonnements = [];   // échéances d'abonnement à ajouter à la production
-const selection = new Set();
+let comptes = [];
 
 /* ---------- Connexion ---------- */
 $("btnConnexion").onclick = async () => {
@@ -197,15 +150,13 @@ $("btnConnexion").onclick = async () => {
   }
 };
 $("btnDeconnexion").onclick = () => signOut(auth);
-$("btnRecharger").onclick   = charger;
+$("btnRecharger").onclick = charger;
 
 onAuthStateChanged(auth, async (user) => {
   if (!user) { $("app").hidden = true; $("ecranConnexion").hidden = false; return; }
-
   let autorise = false;
   try { autorise = (await getDoc(doc(db, "admins", user.uid))).exists(); }
   catch (e) { console.error(e); }
-
   if (!autorise) {
     await signOut(auth);
     $("msgConnexion").innerHTML =
@@ -221,465 +172,222 @@ onAuthStateChanged(auth, async (user) => {
 /* ---------- Chargement ---------- */
 async function charger() {
   try {
-    // Quels produits ont un stock à décompter ?
-    try {
-      const p = await getDoc(doc(db, "parametres", "boutique"));
-      if (p.exists()) joursFermes = p.data().jours_fermes || [];
-    } catch (e) { console.error(e); }
-
-    try {
-      const cat = await getDocs(collection(db, "boutique_produits"));
-      stockLimite = {}; nomVersCode = {};
-      cat.forEach(d => {
-        const v = d.data();
-        if (v.mode_stock === "limite") stockLimite[d.id] = true;
-        if (v.nom) nomVersCode[cle(v.nom)] = d.id;
+    const s = await getDocs(collection(db, "comptes"));
+    comptes = [];
+    s.forEach(d => {
+      const v = d.data();
+      comptes.push({
+        id: d.id,
+        nom: v.nom || "",
+        email: v.email || "",
+        telephone: v.telephone || "",
+        solde: Number(v.solde) || 0,
+        groupe: v.groupe || "",
+        remise: Number(v.remise) || 0,
+        cree_le: v.cree_le || "",
+        mouvements: null      // chargés à l'ouverture de la fiche
       });
-    } catch (e) { console.error(e); }
-
-    try {
-      const sa = await getDocs(collection(db, "abonnements"));
-      abonnements = [];
-      sa.forEach(d => abonnements.push(d.data()));
-    } catch (e) {
-      console.warn("Abonnements non lus (règles Firestore ?) :", e.message);
-      abonnements = [];
-    }
-
-    const s = await getDocs(collection(db, "commandes"));
-    commandes = [];
-    s.forEach(d => commandes.push({ id: d.id, ...d.data() }));
-    // Les plus proches en premier, puis les plus récemment reçues.
-    commandes.sort((a, b) =>
-      (a.date_retrait || "").localeCompare(b.date_retrait || "") ||
-      (b.cree_le || "").localeCompare(a.cree_le || ""));
-    const crees = await materialiserAbonnements(prochaineLivraison());
-    if (crees) {
-      commandes.sort((a, b) =>
-        (a.date_retrait || "").localeCompare(b.date_retrait || "") ||
-        (b.cree_le || "").localeCompare(a.cree_le || ""));
-      signaler(crees + " commande(s) d'abonnement générée(s).");
-    }
-
+    });
+    comptes.sort((a, b) => b.solde - a.solde || a.nom.localeCompare(b.nom));
     afficher();
-    publierProduction();
   } catch (e) {
     console.error(e);
-    $("liste").innerHTML = '<div class="vide">Les commandes n\'ont pas pu être chargées.</div>';
+    $("liste").innerHTML = '<div class="vide">Les comptes n\'ont pas pu être chargés.</div>';
   }
-}
-
-/* ---------- Filtres ---------- */
-$("filtres").onclick = (e) => {
-  const b = e.target.closest("button");
-  if (!b) return;
-  filtre = b.dataset.f;
-  $("filtres").querySelectorAll("button").forEach(x =>
-    x.setAttribute("aria-pressed", x === b));
-  afficher();
-};
-
-function retenue(c) {
-  if (filtre === "toutes") return true;
-  if (filtre === "impayees")
-    return (c.paiement?.statut || "en attente") === "en attente" && c.statut !== "annulee";
-  return !["remise", "annulee"].includes(c.statut);
 }
 
 /* ---------- Affichage ---------- */
-function afficher() {
-  const liste = $("liste");
-  const vues = commandes.filter(retenue);
-  liste.innerHTML = "";
+$("recherche").oninput = afficher;
 
-  if (!vues.length) {
-    liste.innerHTML = '<div class="vide">Aucune commande dans cette vue.</div>';
-    return;
-  }
-
-  // Une commande sortie de la vue ne doit pas rester sélectionnée en douce.
-  const visibles = new Set(vues.map(c => c.id));
-  [...selection].forEach(id => { if (!visibles.has(id)) selection.delete(id); });
-
-  let jourCourant = null;
-  vues.forEach(c => {
-    if (c.date_retrait !== jourCourant) {
-      jourCourant = c.date_retrait;
-      const t = document.createElement("div");
-      t.className = "jour";
-      const duJour = vues.filter(x => x.date_retrait === jourCourant).map(x => x.id);
-      const toutes = duJour.every(id => selection.has(id));
-      t.innerHTML = '<span></span><button type="button" class="tout"></button>';
-      t.querySelector("span").textContent = dateLongue(jourCourant);
-      const bTout = t.querySelector(".tout");
-      bTout.textContent = toutes ? "Tout désélectionner" : "Tout sélectionner";
-      bTout.onclick = () => {
-        duJour.forEach(id => toutes ? selection.delete(id) : selection.add(id));
-        afficher();
-      };
-      liste.appendChild(t);
-    }
-    liste.appendChild(carte(c));
-  });
-
-  majLot();
-}
-
-function dateLongue(iso) {
-  if (!iso) return "Sans date";
-  const d = new Date(iso + "T12:00:00");
-  const texte = d.toLocaleDateString("fr-FR",
-    { weekday: "long", day: "numeric", month: "long" });
-  const auj = new Date(); auj.setHours(0, 0, 0, 0);
-  const ecart = Math.round((d - auj) / 86400000);
-  if (ecart === 0) return "Aujourd'hui — " + texte;
-  if (ecart === 1) return "Demain — " + texte;
-  if (ecart < 0)   return "Passée — " + texte;
-  return texte;
-}
-
-function carte(c) {
-  const paye = (c.paiement?.statut || "en attente") === "paye";
-  const el = document.createElement("div");
-  el.className = "cmd " + (paye ? "reglee" : "impaye");
-
-  const articles = (c.panier || []).reduce((n, l) => n + l.qte, 0);
-
-  el.innerHTML = `
-    <div class="tete">
-      <input type="checkbox" class="coche" aria-label="Sélectionner">
-      <span class="ref">${c.numero || c.id}</span>
-      <span class="nom"></span>
-      <span class="etiq ${paye ? "verte" : "rouge"}">${paye ? "Payé" : "À encaisser"}</span>
-      <span class="montant">${peso(c.total)}</span>
-    </div>
-    <div class="resume"></div>
-    <div class="detail" hidden>
-      <div class="lignes"></div>
-      <p class="info" style="margin-top:11px"><b>Contact</b> ${c.client?.telephone || ""}</p>
-      ${c.client?.adresse ? '<p class="info adresse"></p>' : ""}
-      ${c.option?.lieu ? '<p class="info lieu"></p>' : ""}
-      ${c.notes ? '<p class="info notes"></p>' : ""}
-      <div class="actions">
-        <select class="selStatut">
-          ${STATUTS.map(s => `<option value="${s}">${LIBELLES[s]}</option>`).join("")}
-        </select>
-        <select class="selPaiement">
-          ${Object.entries(PAIEMENTS).map(([v, t]) =>
-            `<option value="${v}">${t}</option>`).join("")}
-        </select>
-        <a class="lien lienClient" target="_blank" rel="noopener">WhatsApp client</a>
-      </div>
-    </div>`;
-
-  el.querySelector(".nom").textContent = c.client?.nom || "—";
-  el.querySelector(".resume").textContent =
-    [LIBELLES[c.statut] || c.statut, c.option?.nom, c.creneau,
-     articles + (articles > 1 ? " articles" : " article")]
-    .filter(Boolean).join(" · ");
-
-  el.querySelector(".lignes").innerHTML = (c.panier || []).map(l =>
-    `<div class="l"><span>${l.qte} × ${echapper(l.nom)}</span>
-     <span>${peso(l.qte * l.prix)}</span></div>`).join("") +
-    (c.frais_livraison > 0
-      ? `<div class="l"><span>${echapper(c.option?.nom || "Livraison")}</span>
-         <span>${peso(c.frais_livraison)}</span></div>` : "") +
-    (c.frais_a_confirmer
-      ? `<div class="l"><span>${echapper(c.option?.nom || "")}</span>
-         <span>à confirmer</span></div>` : "");
-
-  if (c.client?.adresse) el.querySelector(".adresse").textContent = c.client.adresse;
-  if (c.option?.lieu)    el.querySelector(".lieu").textContent = c.option.lieu;
-  if (c.notes)           el.querySelector(".notes").textContent = "Note : " + c.notes;
-
-  const detail = el.querySelector(".detail");
-  el.querySelector(".tete").onclick = () => { detail.hidden = !detail.hidden; };
-
-  const coche = el.querySelector(".coche");
-  coche.checked = selection.has(c.id);
-  coche.onclick = (e) => e.stopPropagation();   // ne pas déplier la carte
-  coche.onchange = () => {
-    coche.checked ? selection.add(c.id) : selection.delete(c.id);
-    majLot();
-  };
-
-  const selS = el.querySelector(".selStatut");
-  const selP = el.querySelector(".selPaiement");
-  selS.value = c.statut || "nouvelle";
-  selP.value = c.paiement?.statut || "en attente";
-  selS.onchange = () => enregistrer(c, { statut: selS.value });
-  selP.onchange = () => enregistrer(c, { "paiement.statut": selP.value });
-
-  el.querySelector(".lienClient").href =
-    "https://wa.me/" + (c.client?.telephone || "").replace(/\D/g, "");
-
-  return el;
-}
-
-function echapper(t) {
+function ech(t) {
   return String(t ?? "").replace(/[&<>"]/g, x =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[x]));
 }
 
-/* ---------- Les échéances d'abonnement deviennent des commandes ----------
-   Une échéance sans commande n'est ni imprimable, ni encaissable, ni suivable.
-   L'identifiant est déterministe : relancer la génération ne crée pas de doublon. */
-async function materialiserAbonnements(date) {
-  const aFaire = abonnements.filter(a =>
-    a.statut === "actif" &&
-    (a.echeances || []).some(e => e.statut === "planifiee" && e.date === date));
+function afficher() {
+  const f = $("recherche").value.trim().toLowerCase();
+  const vus = comptes.filter(c =>
+    !f || (c.nom + " " + c.email + " " + c.telephone).toLowerCase().includes(f));
 
-  if (!aFaire.length) return 0;
+  const total = comptes.reduce((t, c) => t + c.solde, 0);
+  const actifs = comptes.filter(c => c.solde > 0).length;
+  $("chiffres").innerHTML = `
+    <div class="chiffre"><div class="v">${peso(total)}</div>
+      <div class="e">encours total — argent dû aux clients</div></div>
+    <div class="chiffre"><div class="v">${actifs}</div>
+      <div class="e">compte(s) avec du crédit</div></div>
+    <div class="chiffre"><div class="v">${comptes.length}</div>
+      <div class="e">compte(s) au total</div></div>`;
 
-  let creees = 0;
-  for (const a of aFaire) {
-    const id = "ABO-" + a.id + "-" + date;
-    if (commandes.some(c => c.id === id)) continue;   // déjà générée
-
-    const sousTotal = (a.panier || []).reduce((t, l) => t + (l.qte || 0) * (l.prix || 0), 0);
-    const commande = {
-      numero: "ABO-" + date.slice(5).replace("-", "") + "-" +
-              (a.client?.nom || "").slice(0, 3).toUpperCase(),
-      statut: "confirmee",
-      abonnement_id: a.id,
-      client: {
-        nom: a.client?.nom || "",
-        telephone: a.client?.telephone || "",
-        adresse: a.client?.adresse || ""
-      },
-      panier: (a.panier || []).map(l => ({ code: l.code, nom: l.nom, qte: l.qte, prix: l.prix })),
-      sous_total: sousTotal,
-      frais_livraison: Number(a.frais_livraison) || 0,
-      frais_a_confirmer: false,
-      total: sousTotal + (Number(a.frais_livraison) || 0),
-      option: a.option || {},
-      date_retrait: date,
-      creneau: "",
-      paiement: {
-        methode: a.paiement?.mode === "credit" ? "credit" : "avance",
-        statut: a.paiement?.mode === "credit" ? "en attente" : "paye"
-      },
-      notes: "Bread plan",
-      cree_le: new Date().toISOString()
-    };
-
-    try {
-      await setDoc(doc(db, "commandes", id), commande);
-      commandes.push({ id, ...commande });
-      creees += 1;
-    } catch (e) {
-      console.error("Génération de la commande d'abonnement", id, e);
-    }
+  const liste = $("liste");
+  liste.innerHTML = "";
+  if (!vus.length) {
+    liste.innerHTML = '<div class="vide">Aucun compte pour l\'instant.<br><br>' +
+      'Un compte apparaît ici dès qu\'un client se connecte sur la boutique.</div>';
+    return;
   }
-  return creees;
+  vus.forEach(c => liste.appendChild(carte(c)));
 }
 
-/* ---------- Pont vers la production ----------
-   Publie, pour la prochaine date de livraison, le total par code produit.
-   Aucune donnée client : ce document est lisible par l'ERP sans risque. */
-// Clé de rapprochement par nom, insensible aux accents et à la casse.
-function cle(t) {
-  return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase().replace(/[^a-z0-9]/g, "");
+function carte(c) {
+  const el = document.createElement("div");
+  el.className = "compte";
+  el.innerHTML = `
+    <div class="tete">
+      <span class="nom"></span>
+      <span class="mail"></span>
+      ${c.remise > 0 ? `<span class="puce">−${c.remise} %${c.groupe ? " " + ech(c.groupe) : ""}</span>` : ""}
+      <span class="solde ${c.solde > 0 ? "" : "vide"}">${peso(c.solde)}</span>
+    </div>
+    <div class="detail" hidden>
+      <div class="ajout" style="border-bottom:1px dashed var(--trait);padding-bottom:14px">
+        <div>
+          <label>Groupe tarifaire</label>
+          <input type="text" class="g-nom" list="groupesConnus" placeholder="revendeur, café…">
+        </div>
+        <div>
+          <label>Remise (%)</label>
+          <input type="number" class="g-remise montant" min="0" max="90" step="1">
+        </div>
+        <button class="action g-valider">Appliquer</button>
+      </div>
+
+      <div class="ajout">
+        <div>
+          <label>Type</label>
+          <select class="m-type">
+            ${Object.entries(MOTIFS).map(([v, t]) =>
+              `<option value="${v}">${t}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label>Montant (₱)</label>
+          <input type="number" class="m-montant montant" min="0" step="1">
+        </div>
+        <div class="motif">
+          <label>Note (facultatif)</label>
+          <input type="text" class="m-note" placeholder="GCash reçu le 17/08">
+        </div>
+        <button class="action m-valider">Enregistrer</button>
+      </div>
+      <div class="histo"><div class="vide">Chargement de l'historique…</div></div>
+    </div>`;
+
+  el.querySelector(".nom").textContent  = c.nom || "—";
+  el.querySelector(".mail").textContent = c.email || c.telephone || c.id;
+
+  const detail = el.querySelector(".detail");
+  el.querySelector(".tete").onclick = async () => {
+    detail.hidden = !detail.hidden;
+    if (!detail.hidden && c.mouvements === null) await chargerMouvements(c, el);
+  };
+
+  el.querySelector(".g-nom").value    = c.groupe || "";
+  el.querySelector(".g-remise").value = c.remise || "";
+  el.querySelector(".g-valider").onclick = () => enregistrerGroupe(c, el);
+
+  el.querySelector(".m-valider").onclick = () => enregistrerMouvement(c, el);
+  return el;
 }
 
-// Le code de la ligne, ou à défaut celui retrouvé d'après le nom du produit.
-function codeLigne(l) {
-  return l.code || nomVersCode[cle(l.nom)] || null;
-}
+/* ---------- Groupe tarifaire ----------
+   La remise vit sur le compte du client, pas dans les paramètres publics :
+   vos conditions ne sont lisibles que par lui et par vous. */
+async function enregistrerGroupe(c, el) {
+  const groupe = el.querySelector(".g-nom").value.trim();
+  const remise = Math.min(90, Math.max(0, Number(el.querySelector(".g-remise").value) || 0));
 
-function iso(d) {
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-    .toISOString().slice(0, 10);
-}
-
-function prochaineLivraison() {
-  const d = new Date(); d.setHours(0, 0, 0, 0);
-  for (let i = 0; i < 14; i++) {
-    if (!joursFermes.includes((d.getDay() + 6) % 7)) return iso(d);
-    d.setDate(d.getDate() + 1);
-  }
-  return iso(new Date());
-}
-
-// Une commande entre en production dès qu'elle est confirmée par vous.
-const RETENUS = ["confirmee", "en production", "prete"];
-
-async function publierProduction() {
-  try {
-    const date = prochaineLivraison();
-  const totaux = {}, noms = {};
-
-  commandes
-    .filter(c => c.date_retrait === date && RETENUS.includes(c.statut))
-    .forEach(c => (c.panier || []).forEach(l => {
-      const code = codeLigne(l);
-      if (!code) { console.warn("Ligne sans code produit :", l.nom); return; }
-      totaux[code] = (totaux[code] || 0) + (l.qte || 0);
-      noms[code] = l.nom || code;
-    }));
-
-    const nbAbos = commandes.filter(c =>
-      c.date_retrait === date && c.abonnement_id && RETENUS.includes(c.statut)).length;
-
-    await setDoc(doc(db, "production", "commandes_boutique"), {
-      date, totaux, noms,
-      nb_commandes: commandes.filter(c => c.date_retrait === date && RETENUS.includes(c.statut)).length,
-      nb_abonnements: nbAbos,
-      maj: new Date().toISOString()
-    });
-    console.log("Production publiée :", date, totaux, "dont", nbAbos, "abonnement(s)");
-  } catch (e) {
-    console.error("Publication production", e);
-    signaler("Publication vers l'ERP impossible.", "err");
-  }
-}
-
-/* ---------- Décompte du stock ----------
-   Confirmer une commande retire ses pièces du stock ; l'annuler les rend.
-   Le drapeau stock_deduit évite tout double décompte. */
-function ajustementsStock(c, nouveauStatut) {
-  const dejaDeduit = !!c.stock_deduit;
-  const doitDeduire = nouveauStatut === "confirmee" && !dejaDeduit;
-  const doitRendre  = nouveauStatut === "annulee" && dejaDeduit;
-  if (!doitDeduire && !doitRendre) return null;
-
-  const signe = doitDeduire ? -1 : 1;
-  const lignes = (c.panier || [])
-    .map(l => Object.assign({}, l, { code: codeLigne(l) }))
-    .filter(l => l.code && stockLimite[l.code]);
-  return { lignes, signe, drapeau: doitDeduire };
-}
-
-function appliquerStock(paquet, c, nouveauStatut) {
-  const a = ajustementsStock(c, nouveauStatut);
-  if (!a) return false;
-  a.lignes.forEach(l => {
-    paquet.update(doc(db, "boutique_produits", l.code),
-      { stock: increment(a.signe * (l.qte || 0)) });
-  });
-  return a.drapeau;
-}
-
-/* ---------- Traitement par lot ---------- */
-$("lotStatut").innerHTML = '<option value="">Avancement…</option>' +
-  STATUTS.map(v => `<option value="${v}">${LIBELLES[v]}</option>`).join("");
-$("lotPaiement").innerHTML = '<option value="">Paiement…</option>' +
-  Object.entries(PAIEMENTS).map(([v, t]) => `<option value="${v}">${t}</option>`).join("");
-
-function majLot() {
-  const n = selection.size;
-  $("lot").classList.toggle("vu", n > 0);
-  $("lotN").textContent = n + (n > 1 ? " commandes sélectionnées" : " commande sélectionnée");
-  majBoutonLot();
-}
-function majBoutonLot() {
-  $("lotAppliquer").disabled =
-    !selection.size || (!$("lotStatut").value && !$("lotPaiement").value);
-}
-$("lotStatut").onchange = majBoutonLot;
-$("lotPaiement").onchange = majBoutonLot;
-
-$("lotAnnuler").onclick = () => {
-  selection.clear();
-  $("lotStatut").value = "";
-  $("lotPaiement").value = "";
-  afficher();
-};
-
-$("lotImprimer").onclick = () => {
-  const choisies = commandes.filter(c => selection.has(c.id));
-  if (!choisies.length) return;
-  try {
-    sessionStorage.setItem("etiquettes", JSON.stringify(choisies));
-    window.open("etiquettes.html", "_blank");
-  } catch (e) {
-    console.error(e);
-    signaler("Impossible d'ouvrir les étiquettes.", "err");
-  }
-};
-
-$("lotAppliquer").onclick = async () => {
-  const statut = $("lotStatut").value;
-  const paiement = $("lotPaiement").value;
-  const ids = [...selection];
-  if (!ids.length || (!statut && !paiement)) return;
-
-  const quoi = [statut ? LIBELLES[statut] : null, paiement ? PAIEMENTS[paiement] : null]
-    .filter(Boolean).join(" et ");
-  if (!confirm(`Appliquer « ${quoi} » à ${ids.length} commande(s) ?`)) return;
-
-  $("lotAppliquer").disabled = true;
-  signaler("Application…");
+  if (!confirm(remise > 0
+    ? `Appliquer une remise de ${remise} % à ${c.nom || c.email} ?` +
+      (groupe ? `\n\nGroupe : ${groupe}` : "")
+    : `Retirer la remise de ${c.nom || c.email} ?`)) return;
 
   try {
-    // Firestore limite un lot à 500 écritures ; on découpe par prudence.
-    for (let i = 0; i < ids.length; i += 400) {
-      const paquet = writeBatch(db);
-      ids.slice(i, i + 400).forEach(id => {
-        const c = commandes.find(x => x.id === id);
-        const champs = {};
-        if (statut)   champs.statut = statut;
-        if (paiement) champs["paiement.statut"] = paiement;
-        if (statut && c) {
-          const a = ajustementsStock(c, statut);
-          if (a) champs.stock_deduit = appliquerStock(paquet, c, statut);
-        }
-        paquet.update(doc(db, "commandes", id), champs);
-      });
-      await paquet.commit();
-    }
-
-    ids.forEach(id => {
-      const c = commandes.find(x => x.id === id);
-      if (!c) return;
-      if (statut) {
-        const a = ajustementsStock(c, statut);
-        if (a) c.stock_deduit = a.drapeau;
-        c.statut = statut;
-      }
-      if (paiement) { c.paiement = c.paiement || {}; c.paiement.statut = paiement; }
-    });
-
-    selection.clear();
-    $("lotStatut").value = "";
-    $("lotPaiement").value = "";
+    await setDoc(doc(db, "comptes", c.id), { groupe, remise }, { merge: true });
+    c.groupe = groupe; c.remise = remise;
     afficher();
-    publierProduction();
-    signaler(ids.length + " commande(s) mise(s) à jour.", "ok");
+    signaler(remise > 0 ? `Remise de ${remise} % appliquée.` : "Remise retirée.");
   } catch (e) {
     console.error(e);
-    signaler("Échec de la mise à jour groupée.", "err");
-    majBoutonLot();
+    signaler("L'enregistrement a échoué.");
   }
-};
+}
 
-/* ---------- Enregistrement ---------- */
-async function enregistrer(c, champs) {
+/* ---------- Historique ---------- */
+async function chargerMouvements(c, el) {
   try {
-    if (champs.statut) {
-      const paquet = writeBatch(db);
-      const deduit = appliquerStock(paquet, c, champs.statut);
-      const maj = Object.assign({}, champs);
-      const a = ajustementsStock(c, champs.statut);
-      if (a) maj.stock_deduit = deduit;
-      paquet.update(doc(db, "commandes", c.id), maj);
-      await paquet.commit();
-      if (a) c.stock_deduit = deduit;
-    } else {
-      await updateDoc(doc(db, "commandes", c.id), champs);
-    }
-    if (champs.statut) c.statut = champs.statut;
-    if (champs["paiement.statut"]) {
-      c.paiement = c.paiement || {};
-      c.paiement.statut = champs["paiement.statut"];
-    }
-    afficher();
-    publierProduction();
-    signaler("Enregistré");
+    const q = query(collection(db, "comptes", c.id, "mouvements"),
+                    orderBy("quand", "desc"), limit(50));
+    const s = await getDocs(q);
+    c.mouvements = [];
+    s.forEach(d => c.mouvements.push(d.data()));
   } catch (e) {
     console.error(e);
-    signaler("Échec de l'enregistrement");
+    c.mouvements = [];
+  }
+  afficherMouvements(c, el);
+}
+
+function afficherMouvements(c, el) {
+  const zone = el.querySelector(".histo");
+  if (!c.mouvements.length) {
+    zone.innerHTML = '<div class="vide">Aucun mouvement.</div>';
+    return;
+  }
+  zone.innerHTML = c.mouvements.map(m => {
+    const plus = m.montant >= 0;
+    return `<div class="mvt">
+      <span>${ech(MOTIFS[m.type] || m.type)}
+        ${m.note ? `<span class="quand">· ${ech(m.note)}</span>` : ""}
+        <span class="quand">· ${ech((m.quand || "").slice(0, 10))}</span></span>
+      <span class="val ${plus ? "plus" : "moins"}">${plus ? "+" : ""}${peso(m.montant)}</span>
+    </div>`;
+  }).join("");
+}
+
+/* ---------- Écriture d'un mouvement ----------
+   Le mouvement et le solde partent ensemble : jamais l'un sans l'autre.
+   Le solde n'est qu'un cumul, l'historique reste la référence. */
+async function enregistrerMouvement(c, el) {
+  const type = el.querySelector(".m-type").value;
+  const brut = Number(el.querySelector(".m-montant").value) || 0;
+  const note = el.querySelector(".m-note").value.trim();
+  const bouton = el.querySelector(".m-valider");
+
+  if (brut <= 0) return signaler("Indiquez un montant.");
+
+  // Un rechargement augmente le solde ; dépense et remboursement le diminuent.
+  const signe = (type === "rechargement" || type === "correction") ? 1 : -1;
+  const montant = signe * brut;
+  const nouveau = c.solde + montant;
+
+  if (nouveau < 0 && !confirm(
+      `Ce mouvement rendrait le solde négatif (${peso(nouveau)}).\n\nContinuer ?`)) return;
+
+  if (!confirm(`${MOTIFS[type]} de ${peso(brut)} pour ${c.nom || c.email} ?\n\n` +
+               `Nouveau solde : ${peso(nouveau)}`)) return;
+
+  bouton.disabled = true;
+  signaler("Enregistrement…");
+
+  try {
+    const quand = new Date().toISOString();
+    const paquet = writeBatch(db);
+    paquet.set(doc(collection(db, "comptes", c.id, "mouvements")), {
+      type, montant, note, quand, par: auth.currentUser.email
+    });
+    paquet.update(doc(db, "comptes", c.id), { solde: increment(montant) });
+    await paquet.commit();
+
+    c.solde = nouveau;
+    c.mouvements = [{ type, montant, note, quand }, ...(c.mouvements || [])];
+    afficher();
+    signaler("Enregistré — nouveau solde : " + peso(nouveau));
+  } catch (e) {
+    console.error(e);
+    signaler("L'enregistrement a échoué.");
+  } finally {
+    bouton.disabled = false;
   }
 }
 
@@ -688,8 +396,18 @@ function signaler(texte) {
   $("etat").textContent = texte;
   $("etat").classList.add("vu");
   clearTimeout(minuteur);
-  minuteur = setTimeout(() => $("etat").classList.remove("vu"), 2200);
+  minuteur = setTimeout(() => $("etat").classList.remove("vu"), 2600);
 }
+</script>
+<datalist id="groupesConnus"></datalist>
+<script>
+  document.addEventListener('input', () => {
+    const dl = document.getElementById('groupesConnus');
+    if (!dl) return;
+    const vus = [...document.querySelectorAll('.g-nom')]
+      .map(i => i.value.trim()).filter(Boolean);
+    dl.innerHTML = [...new Set(vus)].map(g => `<option value="${g}">`).join('');
+  });
 </script>
 </body>
 </html>
