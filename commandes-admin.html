@@ -241,7 +241,10 @@ async function charger() {
       const sa = await getDocs(collection(db, "abonnements"));
       abonnements = [];
       sa.forEach(d => abonnements.push(d.data()));
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.warn("Abonnements non lus (règles Firestore ?) :", e.message);
+      abonnements = [];
+    }
 
     const s = await getDocs(collection(db, "commandes"));
     commandes = [];
@@ -454,6 +457,24 @@ async function publierProduction() {
       totaux[code] = (totaux[code] || 0) + (l.qte || 0);
       noms[code] = l.nom || code;
     }));
+
+    // Les abonnements actifs dont une échéance tombe ce jour-là comptent
+    // comme des commandes : ce sont des livraisons réelles à produire.
+    let nbAbos = 0;
+    abonnements
+      .filter(a => a.statut === "actif")
+      .forEach(a => {
+        const due = (a.echeances || []).some(e =>
+          e.statut === "planifiee" && e.date === date);
+        if (!due) return;
+        nbAbos += 1;
+        (a.panier || []).forEach(l => {
+          const code = codeLigne(l);
+          if (!code) return;
+          totaux[code] = (totaux[code] || 0) + (l.qte || 0);
+          noms[code] = l.nom || code;
+        });
+      });
 
     await setDoc(doc(db, "production", "commandes_boutique"), {
       date, totaux, noms,
