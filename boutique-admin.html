@@ -235,6 +235,32 @@
       </div>
 
       <div class="carte">
+        <h2>Abonnements</h2>
+        <p class="aide">Le client choisit ses produits, une cadence et un nombre de livraisons. Chaque livraison est facturée au tarif abonné de l'option choisie, défini plus haut dans « Points de retrait et de livraison ».</p>
+        <label class="bascule" style="margin-bottom:14px">
+          <input type="checkbox" id="aboActif"> Proposer les abonnements
+        </label>
+        <div class="grille">
+          <div>
+            <label for="aboNombres">Nombres de livraisons proposés</label>
+            <input type="text" id="aboNombres" placeholder="4, 6, 8, 12" value="4, 6, 8, 12">
+          </div>
+        </div>
+        <div style="margin-top:16px">
+          <label>Cadences proposées</label>
+          <div class="jours">
+            <label><input type="checkbox" id="aboHebdo" checked> Chaque semaine</label>
+            <label><input type="checkbox" id="aboQuinzaine" checked> Toutes les 2 semaines</label>
+          </div>
+        </div>
+        <p class="aide" style="margin:14px 0 0">
+          Un tarif abonné laissé vide signifie que l'abonné paie le tarif habituel de l'option —
+          gratuit reste gratuit. Renseigné, il remplace le tarif normal, y compris pour les
+          livraisons à tarif variable : le prix annoncé au client reste donc ferme.
+        </p>
+      </div>
+
+      <div class="carte">
         <h2>Mode vacances</h2>
         <p class="aide">Le catalogue reste visible, mais la commande est fermée. Vos clients voient votre message à la place du panier.</p>
         <label class="bascule" style="margin-bottom:14px">
@@ -404,6 +430,10 @@ function ajouterOption(o = {}) {
           <input type="checkbox" class="o-adresse"> Demander l'adresse du client
         </label>
       </div>
+      <div style="max-width:170px">
+        <label>Tarif abonné (₱)</label>
+        <input type="number" class="o-abo" min="0" step="1" placeholder="tarif normal">
+      </div>
     </div>
 
     <div>
@@ -428,6 +458,8 @@ function ajouterOption(o = {}) {
   bloc.querySelector(".o-tarif").value    = o.tarif ?? 0;
   bloc.querySelector(".o-variable").checked = !!o.tarif_variable;
   bloc.querySelector(".o-adresse").checked  = !!o.demander_adresse;
+  bloc.querySelector(".o-abo").value        =
+    (o.tarif_abonne === null || o.tarif_abonne === undefined) ? "" : o.tarif_abonne;
   bloc.querySelector(".o-lieu").value     = o.lieu || "";
   (o.jours || []).forEach(n => {
     const c = zoneJours.querySelector(`input[value="${n}"]`);
@@ -459,6 +491,8 @@ function lireOptions() {
     tarif: Number(b.querySelector(".o-tarif").value) || 0,
     tarif_variable: b.querySelector(".o-variable").checked,
     demander_adresse: b.querySelector(".o-adresse").checked,
+    tarif_abonne: b.querySelector(".o-abo").value.trim() === ""
+      ? null : Number(b.querySelector(".o-abo").value) || 0,
     lieu: b.querySelector(".o-lieu").value.trim(),
     jours: [...b.querySelectorAll(".o-jours input:checked")].map(c => Number(c.value))
   })).filter(o => o.nom);
@@ -505,6 +539,12 @@ async function chargerParametres() {
   $("messenger").value = d.messenger || "";
   $("creneaux").value = (d.creneaux || []).join("\n");
   $("accueil").value  = d.message_accueil || "";
+
+  const abo = d.abonnements || {};
+  $("aboActif").checked     = !!abo.actif;
+  $("aboNombres").value     = (abo.nombres || [4, 6, 8, 12]).join(", ");
+  $("aboHebdo").checked     = (abo.cadences || ["hebdo", "quinzaine"]).includes("hebdo");
+  $("aboQuinzaine").checked = (abo.cadences || ["hebdo", "quinzaine"]).includes("quinzaine");
 
   const vac = d.vacances || {};
   $("vacancesActif").checked  = !!vac.actif;
@@ -772,6 +812,17 @@ $("btnEnregistrer").onclick = async () => {
       email: $("email").value.trim(),
       messenger: $("messenger").value.trim().replace(/^.*m\.me\//, ""),
       message_accueil: $("accueil").value.trim(),
+      abonnements: {
+        actif: $("aboActif").checked,
+        nombres: ($("aboNombres").value.split(",")
+          .map(n => parseInt(n.trim(), 10))
+          .filter(n => Number.isFinite(n) && n > 0)
+          .sort((a, b) => a - b)) || [4, 6, 8, 12],
+        cadences: [
+          $("aboHebdo").checked ? "hebdo" : null,
+          $("aboQuinzaine").checked ? "quinzaine" : null
+        ].filter(Boolean)
+      },
       vacances: {
         actif: $("vacancesActif").checked,
         message: $("vacancesMessage").value.trim(),
