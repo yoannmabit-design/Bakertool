@@ -5,12 +5,13 @@
    ============================================================ */
 (function () {
   const PAGES = [
-    { fichier: "admin.html",                 titre: "Accueil"   },
-    { fichier: "commandes-admin.html",       titre: "Commandes" },
-    { fichier: "boutique-admin.html",        titre: "Boutique"  },
-    { fichier: "clients-admin.html",         titre: "Clients"   },
-    { fichier: "credits-admin.html",         titre: "Crédit"    },
-    { fichier: "produits-identifiants.html", titre: "Produits"  }
+    { fichier: "admin.html",                 titre: "Accueil"     },
+    { fichier: "commandes-admin.html",       titre: "Commandes"   },
+    { fichier: "boutique-admin.html",        titre: "Boutique"    },
+    { fichier: "clients-admin.html",         titre: "Clients"     },
+    { fichier: "credits-admin.html",         titre: "Crédit"      },
+    { fichier: "abonnements-admin.html",     titre: "Abonnements" },
+    { fichier: "produits-identifiants.html", titre: "Produits"    }
   ];
 
   const ici = location.pathname.split("/").pop() || "admin.html";
@@ -46,4 +47,9 @@
   });
 
   document.body.insertBefore(barre, document.body.firstChild);
+
+  // Installation possible sur mobile, et consultation hors ligne au fournil.
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw-admin.js").catch(() => {});
+  }
 })();
