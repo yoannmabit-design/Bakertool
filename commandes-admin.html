@@ -253,6 +253,14 @@ async function charger() {
     commandes.sort((a, b) =>
       (a.date_retrait || "").localeCompare(b.date_retrait || "") ||
       (b.cree_le || "").localeCompare(a.cree_le || ""));
+    const crees = await materialiserAbonnements(prochaineLivraison());
+    if (crees) {
+      commandes.sort((a, b) =>
+        (a.date_retrait || "").localeCompare(b.date_retrait || "") ||
+        (b.cree_le || "").localeCompare(a.cree_le || ""));
+      signaler(crees + " commande(s) d'abonnement générée(s).");
+    }
+
     afficher();
     publierProduction();
   } catch (e) {
@@ -413,6 +421,59 @@ function echapper(t) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[x]));
 }
 
+/* ---------- Les échéances d'abonnement deviennent des commandes ----------
+   Une échéance sans commande n'est ni imprimable, ni encaissable, ni suivable.
+   L'identifiant est déterministe : relancer la génération ne crée pas de doublon. */
+async function materialiserAbonnements(date) {
+  const aFaire = abonnements.filter(a =>
+    a.statut === "actif" &&
+    (a.echeances || []).some(e => e.statut === "planifiee" && e.date === date));
+
+  if (!aFaire.length) return 0;
+
+  let creees = 0;
+  for (const a of aFaire) {
+    const id = "ABO-" + a.id + "-" + date;
+    if (commandes.some(c => c.id === id)) continue;   // déjà générée
+
+    const sousTotal = (a.panier || []).reduce((t, l) => t + (l.qte || 0) * (l.prix || 0), 0);
+    const commande = {
+      numero: "ABO-" + date.slice(5).replace("-", "") + "-" +
+              (a.client?.nom || "").slice(0, 3).toUpperCase(),
+      statut: "confirmee",
+      abonnement_id: a.id,
+      client: {
+        nom: a.client?.nom || "",
+        telephone: a.client?.telephone || "",
+        adresse: a.client?.adresse || ""
+      },
+      panier: (a.panier || []).map(l => ({ code: l.code, nom: l.nom, qte: l.qte, prix: l.prix })),
+      sous_total: sousTotal,
+      frais_livraison: Number(a.frais_livraison) || 0,
+      frais_a_confirmer: false,
+      total: sousTotal + (Number(a.frais_livraison) || 0),
+      option: a.option || {},
+      date_retrait: date,
+      creneau: "",
+      paiement: {
+        methode: a.paiement?.mode === "credit" ? "credit" : "avance",
+        statut: a.paiement?.mode === "credit" ? "en attente" : "paye"
+      },
+      notes: "Bread plan",
+      cree_le: new Date().toISOString()
+    };
+
+    try {
+      await setDoc(doc(db, "commandes", id), commande);
+      commandes.push({ id, ...commande });
+      creees += 1;
+    } catch (e) {
+      console.error("Génération de la commande d'abonnement", id, e);
+    }
+  }
+  return creees;
+}
+
 /* ---------- Pont vers la production ----------
    Publie, pour la prochaine date de livraison, le total par code produit.
    Aucune donnée client : ce document est lisible par l'ERP sans risque. */
@@ -458,23 +519,8 @@ async function publierProduction() {
       noms[code] = l.nom || code;
     }));
 
-    // Les abonnements actifs dont une échéance tombe ce jour-là comptent
-    // comme des commandes : ce sont des livraisons réelles à produire.
-    let nbAbos = 0;
-    abonnements
-      .filter(a => a.statut === "actif")
-      .forEach(a => {
-        const due = (a.echeances || []).some(e =>
-          e.statut === "planifiee" && e.date === date);
-        if (!due) return;
-        nbAbos += 1;
-        (a.panier || []).forEach(l => {
-          const code = codeLigne(l);
-          if (!code) return;
-          totaux[code] = (totaux[code] || 0) + (l.qte || 0);
-          noms[code] = l.nom || code;
-        });
-      });
+    const nbAbos = commandes.filter(c =>
+      c.date_retrait === date && c.abonnement_id && RETENUS.includes(c.statut)).length;
 
     await setDoc(doc(db, "production", "commandes_boutique"), {
       date, totaux, noms,
