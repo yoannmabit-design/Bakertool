@@ -185,6 +185,7 @@ let commandes = [], filtre = "actives";
 let joursFermes = [];   // 0 = lundi
 let stockLimite = {};   // { code produit : true } — produits à stock décompté
 let nomVersCode = {};   // rattrapage : nom du produit -> code, pour les commandes d'avant les codes
+let abonnements = [];   // échéances d'abonnement à ajouter à la production
 const selection = new Set();
 
 /* ---------- Connexion ---------- */
@@ -234,6 +235,12 @@ async function charger() {
         if (v.mode_stock === "limite") stockLimite[d.id] = true;
         if (v.nom) nomVersCode[cle(v.nom)] = d.id;
       });
+    } catch (e) { console.error(e); }
+
+    try {
+      const sa = await getDocs(collection(db, "abonnements"));
+      abonnements = [];
+      sa.forEach(d => abonnements.push(d.data()));
     } catch (e) { console.error(e); }
 
     const s = await getDocs(collection(db, "commandes"));
@@ -451,9 +458,10 @@ async function publierProduction() {
     await setDoc(doc(db, "production", "commandes_boutique"), {
       date, totaux, noms,
       nb_commandes: commandes.filter(c => c.date_retrait === date && RETENUS.includes(c.statut)).length,
+      nb_abonnements: nbAbos,
       maj: new Date().toISOString()
     });
-    console.log("Production publiée :", date, totaux);
+    console.log("Production publiée :", date, totaux, "dont", nbAbos, "abonnement(s)");
   } catch (e) {
     console.error("Publication production", e);
     signaler("Publication vers l'ERP impossible.", "err");
