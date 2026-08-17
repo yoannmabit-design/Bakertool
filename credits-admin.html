@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crédit clients — Yoann's French Bakery</title>
+<meta name="theme-color" content="#1a1a1a">
+<style>
+  :root{
+    --creme:#fdf6ec;--papier:#fffdf9;--encre:#1f1b16;
+    --encre-doux:#6b6157;--trait:#e2d7c6;--accent:#2f4858;
+    --alerte:#8c2f22;--ok:#3d6b3d;--r:6px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--creme);color:var(--encre);
+    font:16px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  header{
+    background:var(--encre);color:var(--creme);padding:14px 18px;
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  }
+  header h1{font-size:17px;margin:0;font-weight:600}
+  header .qui{margin-left:auto;font-size:13px;opacity:.72}
+  header button{
+    background:transparent;border:1px solid #4a443c;color:var(--creme);
+    padding:8px 13px;border-radius:var(--r);font-size:13.5px;cursor:pointer;
+  }
+  main{max-width:820px;margin:0 auto;padding:20px 16px 60px}
+
+  .chiffres{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+    gap:12px;margin-bottom:20px}
+  .chiffre{background:var(--papier);border:1px solid var(--trait);
+    border-radius:var(--r);padding:15px}
+  .chiffre .v{font-size:24px;font-weight:600;font-variant-numeric:tabular-nums}
+  .chiffre .e{font-size:13px;color:var(--encre-doux);margin-top:4px}
+
+  .outils{display:flex;gap:10px;margin-bottom:16px}
+  .outils input{flex:1;padding:11px 12px;border:1px solid var(--trait);
+    border-radius:var(--r);background:#fff;font:inherit;font-size:15px;color:var(--encre)}
+
+  .compte{background:var(--papier);border:1px solid var(--trait);
+    border-radius:var(--r);padding:14px;margin-bottom:10px}
+  .tete{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;cursor:pointer}
+  .tete .nom{font-weight:600;flex:1;min-width:130px}
+  .tete .mail{font-size:13px;color:var(--encre-doux)}
+  .tete .solde{font-size:18px;font-weight:600;font-variant-numeric:tabular-nums}
+  .tete .solde.vide{color:var(--encre-doux)}
+
+  .detail{margin-top:14px;padding-top:14px;border-top:1px dashed var(--trait)}
+  .detail[hidden]{display:none}
+  .ajout{display:flex;gap:9px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px}
+  .ajout label{display:block;font-size:13px;color:var(--encre-doux);margin-bottom:5px}
+  .ajout input,.ajout select{padding:10px 11px;border:1px solid var(--trait);
+    border-radius:var(--r);background:#fff;font:inherit;font-size:15px;color:var(--encre)}
+  .ajout .montant{width:120px}
+  .ajout .motif{flex:1;min-width:150px}
+  button.action{background:var(--accent);color:#fff;border:none;padding:11px 18px;
+    border-radius:var(--r);cursor:pointer;font-size:14.5px;font-weight:600}
+  button.action:disabled{opacity:.5;cursor:default}
+
+  .mvt{display:flex;justify-content:space-between;gap:12px;padding:7px 0;
+    border-bottom:1px solid var(--trait);font-size:14.5px}
+  .mvt:last-child{border-bottom:none}
+  .mvt .quand{color:var(--encre-doux);font-size:13px}
+  .mvt .val{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+  .mvt .val.plus{color:var(--ok)}
+  .mvt .val.moins{color:var(--alerte)}
+
+  .vide{padding:40px;text-align:center;color:var(--encre-doux)}
+  .etat{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);
+    background:var(--encre);color:var(--creme);padding:10px 18px;
+    border-radius:var(--r);font-size:14px;opacity:0;transition:opacity .2s}
+  .etat.vu{opacity:1}
+  .connexion{max-width:400px;margin:14vh auto;text-align:center;padding:0 20px}
+  .connexion h1{font-size:21px;margin:0 0 20px}
+</style>
+</head>
+<body>
+
+<div id="ecranConnexion" class="connexion">
+  <h1>Crédit clients</h1>
+  <button class="action" id="btnConnexion">Se connecter avec Google</button>
+  <p id="msgConnexion" style="margin-top:18px;font-size:14px"></p>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <h1>Crédit clients</h1>
+    <span class="qui" id="qui"></span>
+    <button id="btnRecharger">Actualiser</button>
+    <button id="btnDeconnexion">Quitter</button>
+  </header>
+
+  <main>
+    <div class="chiffres" id="chiffres"></div>
+    <div class="outils">
+      <input type="text" id="recherche" placeholder="Rechercher un nom ou un e-mail…">
+    </div>
+    <div id="liste"><div class="vide">Chargement…</div></div>
+  </main>
+</div>
+
+<div class="etat" id="etat"></div>
+
+<script src="admin-nav.js" defer></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, collection, collectionGroup, getDocs, doc, getDoc,
+         setDoc, writeBatch, increment, query, orderBy, limit }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDuq8KS8M_Z8U7BlSp6MvE-6Y9OYYaDujE",
+  authDomain: "bakertools-ae124.firebaseapp.com",
+  projectId: "bakertools-ae124",
+  storageBucket: "bakertools-ae124.firebasestorage.app",
+  messagingSenderId: "978584667113",
+  appId: "1:978584667113:web:868cc89788aff27717c178"
+};
+
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getFirestore(app);
+const $    = (id) => document.getElementById(id);
+const peso = (n) => "₱" + Number(n || 0).toLocaleString("en-PH");
+
+const MOTIFS = {
+  rechargement: "Rechargement",
+  depense: "Dépense",
+  remboursement: "Remboursement",
+  correction: "Correction"
+};
+
+let comptes = [];
+
+/* ---------- Connexion ---------- */
+$("btnConnexion").onclick = async () => {
+  try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+  catch (e) {
+    $("msgConnexion").textContent = "Connexion impossible. Autorisez les fenêtres surgissantes.";
+    console.error(e);
+  }
+};
+$("btnDeconnexion").onclick = () => signOut(auth);
+$("btnRecharger").onclick = charger;
+
+onAuthStateChanged(auth, async (user) => {
+  if (!user) { $("app").hidden = true; $("ecranConnexion").hidden = false; return; }
+  let autorise = false;
+  try { autorise = (await getDoc(doc(db, "admins", user.uid))).exists(); }
+  catch (e) { console.error(e); }
+  if (!autorise) {
+    await signOut(auth);
+    $("msgConnexion").innerHTML =
+      "Ce compte n'a pas accès.<br>Identifiant : <code>" + user.uid + "</code>";
+    return;
+  }
+  $("ecranConnexion").hidden = true;
+  $("app").hidden = false;
+  $("qui").textContent = user.email;
+  charger();
+});
+
+/* ---------- Chargement ---------- */
+async function charger() {
+  try {
+    const s = await getDocs(collection(db, "comptes"));
+    comptes = [];
+    s.forEach(d => {
+      const v = d.data();
+      comptes.push({
+        id: d.id,
+        nom: v.nom || "",
+        email: v.email || "",
+        telephone: v.telephone || "",
+        solde: Number(v.solde) || 0,
+        cree_le: v.cree_le || "",
+        mouvements: null      // chargés à l'ouverture de la fiche
+      });
+    });
+    comptes.sort((a, b) => b.solde - a.solde || a.nom.localeCompare(b.nom));
+    afficher();
+  } catch (e) {
+    console.error(e);
+    $("liste").innerHTML = '<div class="vide">Les comptes n\'ont pas pu être chargés.</div>';
+  }
+}
+
+/* ---------- Affichage ---------- */
+$("recherche").oninput = afficher;
+
+function ech(t) {
+  return String(t ?? "").replace(/[&<>"]/g, x =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[x]));
+}
+
+function afficher() {
+  const f = $("recherche").value.trim().toLowerCase();
+  const vus = comptes.filter(c =>
+    !f || (c.nom + " " + c.email + " " + c.telephone).toLowerCase().includes(f));
+
+  const total = comptes.reduce((t, c) => t + c.solde, 0);
+  const actifs = comptes.filter(c => c.solde > 0).length;
+  $("chiffres").innerHTML = `
+    <div class="chiffre"><div class="v">${peso(total)}</div>
+      <div class="e">encours total — argent dû aux clients</div></div>
+    <div class="chiffre"><div class="v">${actifs}</div>
+      <div class="e">compte(s) avec du crédit</div></div>
+    <div class="chiffre"><div class="v">${comptes.length}</div>
+      <div class="e">compte(s) au total</div></div>`;
+
+  const liste = $("liste");
+  liste.innerHTML = "";
+  if (!vus.length) {
+    liste.innerHTML = '<div class="vide">Aucun compte pour l\'instant.<br><br>' +
+      'Un compte apparaît ici dès qu\'un client se connecte sur la boutique.</div>';
+    return;
+  }
+  vus.forEach(c => liste.appendChild(carte(c)));
+}
+
+function carte(c) {
+  const el = document.createElement("div");
+  el.className = "compte";
+  el.innerHTML = `
+    <div class="tete">
+      <span class="nom"></span>
+      <span class="mail"></span>
+      <span class="solde ${c.solde > 0 ? "" : "vide"}">${peso(c.solde)}</span>
+    </div>
+    <div class="detail" hidden>
+      <div class="ajout">
+        <div>
+          <label>Type</label>
+          <select class="m-type">
+            ${Object.entries(MOTIFS).map(([v, t]) =>
+              `<option value="${v}">${t}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label>Montant (₱)</label>
+          <input type="number" class="m-montant montant" min="0" step="1">
+        </div>
+        <div class="motif">
+          <label>Note (facultatif)</label>
+          <input type="text" class="m-note" placeholder="GCash reçu le 17/08">
+        </div>
+        <button class="action m-valider">Enregistrer</button>
+      </div>
+      <div class="histo"><div class="vide">Chargement de l'historique…</div></div>
+    </div>`;
+
+  el.querySelector(".nom").textContent  = c.nom || "—";
+  el.querySelector(".mail").textContent = c.email || c.telephone || c.id;
+
+  const detail = el.querySelector(".detail");
+  el.querySelector(".tete").onclick = async () => {
+    detail.hidden = !detail.hidden;
+    if (!detail.hidden && c.mouvements === null) await chargerMouvements(c, el);
+  };
+
+  el.querySelector(".m-valider").onclick = () => enregistrerMouvement(c, el);
+  return el;
+}
+
+/* ---------- Historique ---------- */
+async function chargerMouvements(c, el) {
+  try {
+    const q = query(collection(db, "comptes", c.id, "mouvements"),
+                    orderBy("quand", "desc"), limit(50));
+    const s = await getDocs(q);
+    c.mouvements = [];
+    s.forEach(d => c.mouvements.push(d.data()));
+  } catch (e) {
+    console.error(e);
+    c.mouvements = [];
+  }
+  afficherMouvements(c, el);
+}
+
+function afficherMouvements(c, el) {
+  const zone = el.querySelector(".histo");
+  if (!c.mouvements.length) {
+    zone.innerHTML = '<div class="vide">Aucun mouvement.</div>';
+    return;
+  }
+  zone.innerHTML = c.mouvements.map(m => {
+    const plus = m.montant >= 0;
+    return `<div class="mvt">
+      <span>${ech(MOTIFS[m.type] || m.type)}
+        ${m.note ? `<span class="quand">· ${ech(m.note)}</span>` : ""}
+        <span class="quand">· ${ech((m.quand || "").slice(0, 10))}</span></span>
+      <span class="val ${plus ? "plus" : "moins"}">${plus ? "+" : ""}${peso(m.montant)}</span>
+    </div>`;
+  }).join("");
+}
+
+/* ---------- Écriture d'un mouvement ----------
+   Le mouvement et le solde partent ensemble : jamais l'un sans l'autre.
+   Le solde n'est qu'un cumul, l'historique reste la référence. */
+async function enregistrerMouvement(c, el) {
+  const type = el.querySelector(".m-type").value;
+  const brut = Number(el.querySelector(".m-montant").value) || 0;
+  const note = el.querySelector(".m-note").value.trim();
+  const bouton = el.querySelector(".m-valider");
+
+  if (brut <= 0) return signaler("Indiquez un montant.");
+
+  // Un rechargement augmente le solde ; dépense et remboursement le diminuent.
+  const signe = (type === "rechargement" || type === "correction") ? 1 : -1;
+  const montant = signe * brut;
+  const nouveau = c.solde + montant;
+
+  if (nouveau < 0 && !confirm(
+      `Ce mouvement rendrait le solde négatif (${peso(nouveau)}).\n\nContinuer ?`)) return;
+
+  if (!confirm(`${MOTIFS[type]} de ${peso(brut)} pour ${c.nom || c.email} ?\n\n` +
+               `Nouveau solde : ${peso(nouveau)}`)) return;
+
+  bouton.disabled = true;
+  signaler("Enregistrement…");
+
+  try {
+    const quand = new Date().toISOString();
+    const paquet = writeBatch(db);
+    paquet.set(doc(collection(db, "comptes", c.id, "mouvements")), {
+      type, montant, note, quand, par: auth.currentUser.email
+    });
+    paquet.update(doc(db, "comptes", c.id), { solde: increment(montant) });
+    await paquet.commit();
+
+    c.solde = nouveau;
+    c.mouvements = [{ type, montant, note, quand }, ...(c.mouvements || [])];
+    afficher();
+    signaler("Enregistré — nouveau solde : " + peso(nouveau));
+  } catch (e) {
+    console.error(e);
+    signaler("L'enregistrement a échoué.");
+  } finally {
+    bouton.disabled = false;
+  }
+}
+
+let minuteur;
+function signaler(texte) {
+  $("etat").textContent = texte;
+  $("etat").classList.add("vu");
+  clearTimeout(minuteur);
+  minuteur = setTimeout(() => $("etat").classList.remove("vu"), 2600);
+}
+</script>
+</body>
+</html>
