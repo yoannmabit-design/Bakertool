@@ -8,6 +8,7 @@
     { fichier: "admin.html",                 titre: "Accueil"   },
     { fichier: "commandes-admin.html",       titre: "Commandes" },
     { fichier: "boutique-admin.html",        titre: "Boutique"  },
+    { fichier: "clients-admin.html",         titre: "Clients"   },
     { fichier: "produits-identifiants.html", titre: "Produits"  }
   ];
 
