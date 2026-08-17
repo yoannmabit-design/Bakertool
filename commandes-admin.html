@@ -99,6 +99,23 @@
     background:transparent;border:1px solid #4a443c;color:var(--creme);
     padding:9px 13px;border-radius:var(--r);font-size:14px;cursor:pointer;
   }
+  .lot .danger{
+    background:transparent;border:1px solid #a8503f;color:#f0a795;
+    padding:9px 13px;border-radius:var(--r);font-size:14px;cursor:pointer;
+  }
+
+  /* Couleur des menus de statut : l'état d'une commande se lit de loin,
+     sans avoir à déplier la carte. */
+  select[data-v]{font-weight:600}
+  select[data-v="nouvelle"]     {color:#8c2f22;border-color:#d9a79c}
+  select[data-v="confirmee"]    {color:#2f4858;border-color:#a9bcc7}
+  select[data-v="en production"]{color:#8a5a12;border-color:#dcbe8a}
+  select[data-v="prete"]        {color:#3d6b3d;border-color:#a9c7a9}
+  select[data-v="remise"]       {color:#6b6157;border-color:var(--trait)}
+  select[data-v="annulee"]      {color:#9a9188;border-color:var(--trait)}
+  select[data-v="en attente"]   {color:#8c2f22;border-color:#d9a79c}
+  select[data-v="paye"]         {color:#3d6b3d;border-color:#a9c7a9}
+  select[data-v="rembourse"]    {color:#6b6157;border-color:var(--trait)}
   .vide{padding:44px;text-align:center;color:var(--encre-doux)}
   .connexion{max-width:400px;margin:14vh auto;text-align:center;padding:0 20px}
   .connexion h1{font-size:22px;margin:0 0 20px}
@@ -149,6 +166,7 @@
   </select>
   <button class="appliquer" id="lotAppliquer" disabled>Appliquer</button>
   <button class="annuler" id="lotImprimer">Imprimer les étiquettes</button>
+  <button class="danger" id="lotSupprimer">Supprimer</button>
   <button class="annuler" id="lotAnnuler">Annuler</button>
 </div>
 
@@ -411,8 +429,12 @@ function carte(c) {
   const selP = el.querySelector(".selPaiement");
   selS.value = c.statut || "nouvelle";
   selP.value = c.paiement?.statut || "en attente";
-  selS.onchange = () => enregistrer(c, { statut: selS.value });
-  selP.onchange = () => enregistrer(c, { "paiement.statut": selP.value });
+  // La valeur est recopiée dans un attribut : le CSS ne peut pas cibler
+  // la sélection courante d'un menu autrement.
+  const teinter = (sel) => sel.dataset.v = sel.value;
+  teinter(selS); teinter(selP);
+  selS.onchange = () => { teinter(selS); enregistrer(c, { statut: selS.value }); };
+  selP.onchange = () => { teinter(selP); enregistrer(c, { "paiement.statut": selP.value }); };
 
   el.querySelector(".lienClient").href =
     "https://wa.me/" + (c.client?.telephone || "").replace(/\D/g, "");
@@ -641,6 +663,51 @@ $("lotImprimer").onclick = () => {
   } catch (e) {
     console.error(e);
     signaler("Impossible d'ouvrir les étiquettes.", "err");
+  }
+};
+
+$("lotSupprimer").onclick = async () => {
+  const ids = [...selection];
+  if (!ids.length) return;
+
+  const choisies = ids.map(id => commandes.find(c => c.id === id)).filter(Boolean);
+  const validees = choisies.filter(c => !["nouvelle", "annulee"].includes(c.statut));
+  const issuesAbo = choisies.filter(c => c.abonnement_id);
+
+  let message = `Supprimer définitivement ${ids.length} commande(s) ?\n\n` +
+    "Cette action est irréversible.";
+  if (validees.length) {
+    message += `\n\n${validees.length} commande(s) déjà validée(s) : le stock et ` +
+      "les avoirs déjà décomptés ne seront pas rendus.";
+  }
+  if (issuesAbo.length) {
+    message += `\n\n${issuesAbo.length} commande(s) d'abonnement : l'échéance reste ` +
+      "planifiée, la commande sera regénérée au prochain chargement. Sautez " +
+      "l'échéance dans Abonnements pour l'éviter.";
+  }
+  if (!confirm(message)) return;
+
+  $("lotSupprimer").disabled = true;
+  signaler("Suppression…");
+
+  try {
+    // Firestore limite un lot à 500 écritures ; on découpe par prudence.
+    for (let i = 0; i < ids.length; i += 400) {
+      const paquet = writeBatch(db);
+      ids.slice(i, i + 400).forEach(id => paquet.delete(doc(db, "commandes", id)));
+      await paquet.commit();
+    }
+
+    commandes = commandes.filter(c => !selection.has(c.id));
+    selection.clear();
+    afficher();
+    publierProduction();
+    signaler(ids.length + " commande(s) supprimée(s).", "ok");
+  } catch (e) {
+    console.error(e);
+    signaler("La suppression a échoué.", "err");
+  } finally {
+    $("lotSupprimer").disabled = false;
   }
 };
 
