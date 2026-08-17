@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Commandes — Yoann's French Bakery</title>
 <meta name="theme-color" content="#1a1a1a">
+<link rel="icon" href="logo.png" type="image/png">
+<link rel="apple-touch-icon" href="logo.png">
+<link rel="manifest" href="manifest.json">
 <style>
   :root{
     --creme:#fdf6ec;--papier:#fffdf9;--encre:#1f1b16;
@@ -240,7 +243,7 @@ async function charger() {
     try {
       const sa = await getDocs(collection(db, "abonnements"));
       abonnements = [];
-      sa.forEach(d => abonnements.push(d.data()));
+      sa.forEach(d => abonnements.push({ id: d.id, ...d.data() }));
     } catch (e) {
       console.warn("Abonnements non lus (règles Firestore ?) :", e.message);
       abonnements = [];
@@ -428,6 +431,14 @@ async function materialiserAbonnements(date) {
   const aFaire = abonnements.filter(a =>
     a.statut === "actif" &&
     (a.echeances || []).some(e => e.statut === "planifiee" && e.date === date));
+
+  console.log("Abonnements :", abonnements.length,
+    "· actifs :", abonnements.filter(a => a.statut === "actif").length,
+    "· échéance le " + date + " :", aFaire.length);
+  if (abonnements.length && !aFaire.length) {
+    abonnements.forEach(a => console.log("  ", a.id, "statut", a.statut,
+      "· échéances", (a.echeances || []).map(e => e.date + "/" + e.statut).join(" ")));
+  }
 
   if (!aFaire.length) return 0;
 
