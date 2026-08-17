@@ -350,7 +350,8 @@ function rayonParDefaut(categorieERP) {
 
 let orphelins = [];
 let sansCode  = [];
-let produits = [];   // { id, nom, categorie, publie, prix, description, photo, disponible }
+let produits = [];   // { id, nom, categorie, publie, prix, description, photo,
+                     //   disponible, abonnement, rayon, mode_stock, stock }
 
 /* ============================================================
    2. CONNEXION
@@ -638,6 +639,9 @@ async function chargerProduits() {
         description: p.description_client || "",
         photo: p.photo_url || "",
         disponible: p.disponible !== false,
+        // Champ absent = disponible : les produits publiés avant l'existence
+        // de ce réglage restent proposés à l'abonnement.
+        abonnement: p.abonnement !== false,
         rayon: p.rayon || rayonParDefaut(it.categorie || it.category),
         mode_stock: p.mode_stock || "illimite",
         stock: p.stock ?? 0
@@ -756,6 +760,9 @@ function afficherProduits() {
         <label class="bascule" style="margin-top:12px">
           <input type="checkbox" class="dispo"> Disponible à la commande
         </label>
+        <label class="bascule" style="margin-top:8px">
+          <input type="checkbox" class="abo"> Proposé dans les abonnements
+        </label>
         <div class="grille" style="margin-top:12px">
           <div>
             <label>Disponibilité</label>
@@ -778,6 +785,7 @@ function afficherProduits() {
     bloc.querySelector(".photo").value      = p.photo;
     bloc.querySelector(".desc").value       = p.description;
     bloc.querySelector(".dispo").checked    = p.disponible;
+    bloc.querySelector(".abo").checked      = p.abonnement;
     const selRayon = bloc.querySelector(".rayon");
     selRayon.value = p.rayon;
     selRayon.onchange = (e) => p.rayon = e.target.value;
@@ -803,6 +811,7 @@ function afficherProduits() {
     bloc.querySelector(".photo").oninput = (e) => p.photo = e.target.value;
     bloc.querySelector(".desc").oninput  = (e) => p.description = e.target.value;
     bloc.querySelector(".dispo").onchange = (e) => p.disponible = e.target.checked;
+    bloc.querySelector(".abo").onchange   = (e) => p.abonnement = e.target.checked;
 
     liste.appendChild(bloc);
   });
@@ -888,6 +897,7 @@ $("btnEnregistrer").onclick = async () => {
           description_client: p.description.trim(),
           photo_url: p.photo.trim(),
           disponible: p.disponible,
+          abonnement: p.abonnement,
           mode_stock: p.mode_stock,
           stock: p.mode_stock === "limite" ? Number(p.stock) || 0 : null,
           visible: true
