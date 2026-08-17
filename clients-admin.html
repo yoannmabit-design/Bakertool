@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clients — Yoann's French Bakery</title>
+<meta name="theme-color" content="#1a1a1a">
+<style>
+  :root{
+    --creme:#fdf6ec;--papier:#fffdf9;--encre:#1f1b16;
+    --encre-doux:#6b6157;--trait:#e2d7c6;--accent:#2f4858;
+    --alerte:#8c2f22;--ok:#3d6b3d;--r:6px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--creme);color:var(--encre);
+    font:16px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+    padding-bottom:90px;
+  }
+  header{
+    background:var(--encre);color:var(--creme);padding:14px 18px;
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  }
+  header h1{font-size:17px;margin:0;font-weight:600}
+  header .qui{margin-left:auto;font-size:13px;opacity:.72}
+  header button{
+    background:transparent;border:1px solid #4a443c;color:var(--creme);
+    padding:8px 13px;border-radius:var(--r);font-size:13.5px;cursor:pointer;
+  }
+  main{max-width:880px;margin:0 auto;padding:20px 16px}
+
+  .outils{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+  .outils input[type=text]{
+    flex:1;min-width:180px;padding:11px 12px;border:1px solid var(--trait);
+    border-radius:var(--r);background:#fff;font:inherit;font-size:15px;color:var(--encre);
+  }
+  .outils select{
+    padding:11px 10px;border:1px solid var(--trait);border-radius:var(--r);
+    background:#fff;font:inherit;font-size:14.5px;color:var(--encre);
+  }
+  button.action{
+    background:var(--accent);color:#fff;border:none;padding:11px 18px;
+    border-radius:var(--r);cursor:pointer;font-size:14.5px;font-weight:600;
+  }
+  button.action:disabled{opacity:.5;cursor:default}
+  button.mineur{
+    background:transparent;color:var(--accent);border:1px solid var(--trait);
+    padding:10px 15px;border-radius:var(--r);cursor:pointer;font-size:14.5px;
+  }
+
+  .client{
+    background:var(--papier);border:1px solid var(--trait);
+    border-radius:var(--r);padding:14px;margin-bottom:10px;
+  }
+  .tete{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;cursor:pointer}
+  .tete .nom{font-weight:600;flex:1;min-width:130px}
+  .tete .tel{font-family:ui-monospace,monospace;font-size:13px;color:var(--encre-doux)}
+  .tete .chiffre{font-size:13px;color:var(--encre-doux)}
+  .puce{
+    font-size:11.5px;padding:2px 8px;border-radius:10px;
+    background:#e8eef1;color:var(--accent);
+  }
+  .puce.groupe{background:#efe6d8;color:var(--encre-doux);font-weight:600}
+
+  .detail{margin-top:14px;padding-top:14px;border-top:1px dashed var(--trait)}
+  .detail[hidden]{display:none}
+  .grille{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:13px}
+  label{display:block;font-size:13px;color:var(--encre-doux);margin-bottom:5px}
+  input[type=text],textarea{
+    width:100%;padding:10px 11px;border:1px solid var(--trait);
+    border-radius:var(--r);background:#fff;font:inherit;font-size:15px;color:var(--encre);
+  }
+  textarea{min-height:58px;resize:vertical}
+  .actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px;align-items:center}
+  .lien{
+    display:inline-block;padding:9px 14px;border:1px solid var(--trait);
+    border-radius:var(--r);text-decoration:none;color:var(--accent);font-size:14px;
+  }
+
+  .vide{padding:40px;text-align:center;color:var(--encre-doux)}
+  .barre{
+    position:fixed;bottom:0;left:0;right:0;background:var(--papier);
+    border-top:1px solid var(--trait);padding:12px 16px;display:flex;gap:12px;align-items:center;
+  }
+  .etat{font-size:13.5px;color:var(--encre-doux);margin-right:auto}
+  .etat.ok{color:var(--ok)}
+  .etat.err{color:var(--alerte)}
+  .connexion{max-width:400px;margin:14vh auto;text-align:center;padding:0 20px}
+  .connexion h1{font-size:21px;margin:0 0 20px}
+</style>
+</head>
+<body>
+
+<div id="ecranConnexion" class="connexion">
+  <h1>Clients</h1>
+  <button class="action" id="btnConnexion">Se connecter avec Google</button>
+  <p id="msgConnexion" style="margin-top:18px;font-size:14px"></p>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <h1>Fichier clients</h1>
+    <span class="qui" id="qui"></span>
+    <button id="btnDeconnexion">Quitter</button>
+  </header>
+
+  <main>
+    <div class="outils">
+      <input type="text" id="recherche" placeholder="Rechercher un nom, un numéro, un tag…">
+      <select id="filtreGroupe"><option value="">Tous les groupes</option></select>
+      <button class="mineur" id="btnImporter">Importer depuis les commandes</button>
+    </div>
+    <div id="liste"><div class="vide">Chargement…</div></div>
+  </main>
+
+  <div class="barre">
+    <span class="etat" id="etat"></span>
+    <button class="action" id="btnEnregistrer">Enregistrer</button>
+  </div>
+</div>
+
+<script src="admin-nav.js" defer></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, collection, getDocs, doc, getDoc, setDoc, writeBatch }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDuq8KS8M_Z8U7BlSp6MvE-6Y9OYYaDujE",
+  authDomain: "bakertools-ae124.firebaseapp.com",
+  projectId: "bakertools-ae124",
+  storageBucket: "bakertools-ae124.firebasestorage.app",
+  messagingSenderId: "978584667113",
+  appId: "1:978584667113:web:868cc89788aff27717c178"
+};
+
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getFirestore(app);
+const $    = (id) => document.getElementById(id);
+const peso = (n) => "₱" + Number(n || 0).toLocaleString("en-PH");
+
+let clients = [];        // { id, nom, telephone, adresse, groupe, tags[], notes, nb_commandes, total_depense, derniere_commande }
+const modifies = new Set();
+
+/* ---------- Connexion ---------- */
+$("btnConnexion").onclick = async () => {
+  try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+  catch (e) {
+    $("msgConnexion").textContent = "Connexion impossible. Autorisez les fenêtres surgissantes.";
+    console.error(e);
+  }
+};
+$("btnDeconnexion").onclick = () => signOut(auth);
+
+onAuthStateChanged(auth, async (user) => {
+  if (!user) { $("app").hidden = true; $("ecranConnexion").hidden = false; return; }
+  let autorise = false;
+  try { autorise = (await getDoc(doc(db, "admins", user.uid))).exists(); }
+  catch (e) { console.error(e); }
+  if (!autorise) {
+    await signOut(auth);
+    $("msgConnexion").innerHTML =
+      "Ce compte n'a pas accès.<br>Identifiant : <code>" + user.uid + "</code>";
+    return;
+  }
+  $("ecranConnexion").hidden = true;
+  $("app").hidden = false;
+  $("qui").textContent = user.email;
+  charger();
+});
+
+/* ---------- Chargement ---------- */
+async function charger() {
+  try {
+    const s = await getDocs(collection(db, "clients"));
+    clients = [];
+    s.forEach(d => {
+      const v = d.data();
+      clients.push({
+        id: d.id,
+        nom: v.nom || "",
+        telephone: v.telephone || d.id,
+        adresse: v.adresse || "",
+        groupe: v.groupe || "",
+        tags: Array.isArray(v.tags) ? v.tags : [],
+        notes: v.notes || "",
+        nb_commandes: v.nb_commandes || 0,
+        total_depense: v.total_depense || 0,
+        derniere_commande: v.derniere_commande || ""
+      });
+    });
+    trier();
+    majGroupes();
+    afficher();
+  } catch (e) {
+    console.error(e);
+    $("liste").innerHTML = '<div class="vide">Les clients n\'ont pas pu être chargés.</div>';
+  }
+}
+
+function trier() {
+  clients.sort((a, b) =>
+    (b.derniere_commande || "").localeCompare(a.derniere_commande || "") ||
+    a.nom.localeCompare(b.nom));
+}
+
+function majGroupes() {
+  const noms = [...new Set(clients.map(c => c.groupe).filter(Boolean))].sort();
+  const sel = $("filtreGroupe");
+  const actuel = sel.value;
+  sel.innerHTML = '<option value="">Tous les groupes</option>' +
+    noms.map(g => `<option value="${g}">${g}</option>`).join("");
+  sel.value = actuel;
+}
+
+/* ---------- Import depuis les commandes ---------- */
+$("btnImporter").onclick = async () => {
+  if (!confirm("Parcourir les commandes et mettre à jour le fichier clients ?\n\n" +
+    "Les noms, adresses et statistiques sont repris. Vos tags, groupes et notes ne sont pas touchés."))
+    return;
+
+  $("btnImporter").disabled = true;
+  etat("Import en cours…");
+
+  try {
+    const s = await getDocs(collection(db, "commandes"));
+    const parTel = {};
+    s.forEach(d => {
+      const c = d.data();
+      const tel = (c.client?.telephone || "").replace(/\D/g, "");
+      if (!tel || c.statut === "annulee") return;
+      const e = parTel[tel] = parTel[tel] || {
+        telephone: tel, nom: "", adresse: "", nb: 0, total: 0, derniere: ""
+      };
+      e.nb += 1;
+      e.total += Number(c.total) || 0;
+      if (c.client?.nom) e.nom = c.client.nom;
+      if (c.client?.adresse) e.adresse = c.client.adresse;
+      const d1 = c.date_retrait || (c.cree_le || "").slice(0, 10);
+      if (d1 > e.derniere) e.derniere = d1;
+    });
+
+    const existants = {};
+    clients.forEach(c => existants[c.telephone] = c);
+
+    const paquet = writeBatch(db);
+    let ajoutes = 0, majs = 0;
+
+    Object.values(parTel).forEach(e => {
+      const ancien = existants[e.telephone];
+      // Les statistiques sont recalculées ; tags, groupe et notes restent à vous.
+      const fiche = {
+        nom: e.nom || (ancien ? ancien.nom : ""),
+        telephone: e.telephone,
+        adresse: e.adresse || (ancien ? ancien.adresse : ""),
+        groupe: ancien ? ancien.groupe : "",
+        tags: ancien ? ancien.tags : [],
+        notes: ancien ? ancien.notes : "",
+        nb_commandes: e.nb,
+        total_depense: e.total,
+        derniere_commande: e.derniere
+      };
+      paquet.set(doc(db, "clients", e.telephone), fiche);
+      ancien ? majs++ : ajoutes++;
+    });
+
+    await paquet.commit();
+    await charger();
+    etat(`${ajoutes} client(s) ajouté(s), ${majs} mis à jour.`, "ok");
+  } catch (e) {
+    console.error(e);
+    etat("L'import a échoué.", "err");
+  } finally {
+    $("btnImporter").disabled = false;
+  }
+};
+
+/* ---------- Affichage ---------- */
+$("recherche").oninput = afficher;
+$("filtreGroupe").onchange = afficher;
+
+function ech(t) {
+  return String(t ?? "").replace(/[&<>"]/g, x =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[x]));
+}
+
+function afficher() {
+  const f = $("recherche").value.trim().toLowerCase();
+  const g = $("filtreGroupe").value;
+  const liste = $("liste");
+
+  const vus = clients.filter(c => {
+    if (g && c.groupe !== g) return false;
+    if (!f) return true;
+    return (c.nom + " " + c.telephone + " " + c.tags.join(" ") + " " + c.groupe)
+      .toLowerCase().includes(f);
+  });
+
+  liste.innerHTML = "";
+  if (!vus.length) {
+    liste.innerHTML = '<div class="vide">Aucun client ne correspond.<br><br>' +
+      'Si le fichier est vide, cliquez sur « Importer depuis les commandes ».</div>';
+    return;
+  }
+
+  vus.forEach(c => liste.appendChild(carte(c)));
+}
+
+function carte(c) {
+  const el = document.createElement("div");
+  el.className = "client";
+  el.innerHTML = `
+    <div class="tete">
+      <span class="nom"></span>
+      ${c.groupe ? '<span class="puce groupe"></span>' : ""}
+      ${c.tags.map(() => '<span class="puce"></span>').join("")}
+      <span class="tel"></span>
+      <span class="chiffre">${c.nb_commandes} cmd · ${peso(c.total_depense)}</span>
+    </div>
+    <div class="detail" hidden>
+      <div class="grille">
+        <div><label>Nom</label><input type="text" class="c-nom"></div>
+        <div><label>Téléphone</label><input type="text" class="c-tel" readonly
+             style="background:#f2ece2;color:var(--encre-doux)"></div>
+        <div><label>Groupe</label><input type="text" class="c-groupe" list="groupesConnus"
+             placeholder="revendeur, café, habitué…"></div>
+      </div>
+      <div style="margin-top:13px"><label>Adresse</label>
+        <textarea class="c-adresse"></textarea></div>
+      <div style="margin-top:13px"><label>Tags (séparés par des virgules)</label>
+        <input type="text" class="c-tags" placeholder="marché, sans gluten, VIP"></div>
+      <div style="margin-top:13px"><label>Notes</label>
+        <textarea class="c-notes"></textarea></div>
+      <div class="actions">
+        <a class="lien c-wa" target="_blank" rel="noopener">WhatsApp</a>
+        <span class="chiffre">${c.derniere_commande ? "Dernière commande : " + c.derniere_commande : "Aucune commande enregistrée"}</span>
+      </div>
+    </div>`;
+
+  el.querySelector(".nom").textContent = c.nom || "—";
+  el.querySelector(".tel").textContent = c.telephone;
+  if (c.groupe) el.querySelector(".puce.groupe").textContent = c.groupe;
+  const puces = [...el.querySelectorAll(".puce:not(.groupe)")];
+  c.tags.forEach((t, i) => { if (puces[i]) puces[i].textContent = t; });
+
+  const d = el.querySelector(".detail");
+  el.querySelector(".tete").onclick = () => { d.hidden = !d.hidden; };
+
+  d.querySelector(".c-nom").value     = c.nom;
+  d.querySelector(".c-tel").value     = c.telephone;
+  d.querySelector(".c-groupe").value  = c.groupe;
+  d.querySelector(".c-adresse").value = c.adresse;
+  d.querySelector(".c-tags").value    = c.tags.join(", ");
+  d.querySelector(".c-notes").value   = c.notes;
+  d.querySelector(".c-wa").href = "https://wa.me/" + c.telephone;
+
+  const noter = () => { modifies.add(c.id); majEtat(); };
+  d.querySelector(".c-nom").oninput     = (e) => { c.nom = e.target.value; noter(); };
+  d.querySelector(".c-groupe").oninput  = (e) => { c.groupe = e.target.value.trim(); noter(); };
+  d.querySelector(".c-adresse").oninput = (e) => { c.adresse = e.target.value; noter(); };
+  d.querySelector(".c-notes").oninput   = (e) => { c.notes = e.target.value; noter(); };
+  d.querySelector(".c-tags").oninput    = (e) => {
+    c.tags = e.target.value.split(",").map(t => t.trim()).filter(Boolean);
+    noter();
+  };
+
+  return el;
+}
+
+function majEtat() {
+  etat(modifies.size
+    ? modifies.size + " fiche(s) modifiée(s) — pensez à enregistrer"
+    : "");
+}
+
+/* ---------- Enregistrement ---------- */
+$("btnEnregistrer").onclick = async () => {
+  if (!modifies.size) return etat("Rien à enregistrer.", "ok");
+  $("btnEnregistrer").disabled = true;
+  etat("Enregistrement…");
+  try {
+    const paquet = writeBatch(db);
+    clients.filter(c => modifies.has(c.id)).forEach(c => {
+      paquet.set(doc(db, "clients", c.id), {
+        nom: c.nom, telephone: c.telephone, adresse: c.adresse,
+        groupe: c.groupe, tags: c.tags, notes: c.notes,
+        nb_commandes: c.nb_commandes, total_depense: c.total_depense,
+        derniere_commande: c.derniere_commande
+      });
+    });
+    await paquet.commit();
+    modifies.clear();
+    majGroupes();
+    afficher();
+    etat("Enregistré.", "ok");
+  } catch (e) {
+    console.error(e);
+    etat("L'enregistrement a échoué.", "err");
+  } finally {
+    $("btnEnregistrer").disabled = false;
+  }
+};
+
+function etat(texte, type = "") {
+  $("etat").textContent = texte;
+  $("etat").className = "etat " + type;
+}
+</script>
+
+<datalist id="groupesConnus"></datalist>
+<script>
+  // Alimente la liste de suggestions de groupes au fil des saisies.
+  document.addEventListener('input', () => {
+    const dl = document.getElementById('groupesConnus');
+    if (!dl) return;
+    const vus = [...document.querySelectorAll('.c-groupe')]
+      .map(i => i.value.trim()).filter(Boolean);
+    dl.innerHTML = [...new Set(vus)].map(g => `<option value="${g}">`).join('');
+  });
+</script>
+</body>
+</html>
