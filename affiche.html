@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Affiche — Yoann's French Bakery</title>
+<style>
+  :root{
+    --creme:#fdf6ec;--papier:#fffdf9;--encre:#1f1b16;
+    --encre-doux:#6b6157;--trait:#e2d7c6;--accent:#2f4858;
+    --alerte:#8c2f22;--ok:#3d6b3d;--r:6px;
+  }
+  *{box-sizing:border-box}
+  body{
+    font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+    margin:0;background:var(--creme);color:var(--encre);
+  }
+  header{
+    background:var(--encre);color:var(--creme);padding:14px 18px;
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  }
+  header h1{font-size:17px;margin:0;letter-spacing:.01em;display:flex;align-items:center}
+  main{max-width:900px;margin:0 auto;padding:22px 18px 60px}
+
+  .carte{
+    background:var(--papier);border:1px solid var(--trait);
+    border-radius:var(--r);padding:20px;margin-bottom:18px;
+  }
+  .carte h2{margin:0 0 4px;font-size:16px}
+  .aide{font-size:13.5px;color:var(--encre-doux);line-height:1.5;margin:6px 0 0}
+
+  label{display:block;font-size:13.5px;color:var(--encre-doux);margin-bottom:5px}
+  input,select{
+    width:100%;padding:10px 12px;border:1px solid var(--trait);
+    border-radius:var(--r);background:#fff;font:inherit;font-size:15px;color:var(--encre);
+  }
+  .grille{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+
+  .actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px}
+  button{
+    background:var(--accent);color:#fff;border:none;padding:11px 20px;
+    border-radius:var(--r);font-size:15px;font-weight:600;cursor:pointer;
+  }
+  button.mineur{background:none;border:1px solid var(--trait);color:var(--accent);font-weight:400}
+  .etat{font-size:13.5px;color:var(--ok);align-self:center}
+
+  /* ---------- L'affiche ----------
+     Proportions d'une A5 en portrait : ce qui est à l'écran est ce qui sort
+     de l'imprimante, sans surprise de cadrage. */
+  .feuille{
+    background:#fff;color:#1c1917;border:1px solid var(--trait);
+    width:100%;max-width:520px;margin:0 auto;
+    aspect-ratio:148 / 210;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:7% 8%;gap:2%;
+  }
+  .feuille .enseigne{
+    font-size:clamp(19px,4.4vw,27px);font-weight:700;letter-spacing:.01em;line-height:1.2;
+  }
+  .feuille .accroche{
+    font-size:clamp(12px,2.5vw,15px);color:#57534e;line-height:1.45;margin:0;
+  }
+  .feuille .code{width:62%;max-width:260px;margin:3% 0}
+  .feuille .code svg{width:100%;height:auto;display:block}
+  .feuille .consigne{font-size:clamp(12px,2.5vw,15px);font-weight:600;margin:0}
+  .feuille .adresse{
+    font-size:clamp(11px,2.2vw,13.5px);color:#57534e;margin:0;
+    letter-spacing:.02em;word-break:break-all;
+  }
+
+  @media print{
+    header,.reglages,.aide-impression{display:none !important}
+    body{background:#fff}
+    main{max-width:none;padding:0}
+    .feuille{
+      border:none;max-width:none;width:100%;height:100vh;aspect-ratio:auto;
+      page-break-inside:avoid;
+    }
+    @page{margin:12mm}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Affiche</h1>
+</header>
+
+<main>
+  <div class="carte reglages">
+    <h2>Ce qui figure sur l'affiche</h2>
+    <p class="aide">
+      Le QR code est fabriqué dans la page : rien n'est envoyé à un service
+      extérieur, et l'affiche s'imprime même sans connexion.
+    </p>
+
+    <div class="grille" style="margin-top:14px">
+      <div>
+        <label for="adresse">Adresse encodée</label>
+        <input type="text" id="adresse" value="https://yoannthebaker.com">
+      </div>
+      <div>
+        <label for="enseigne">Nom affiché</label>
+        <input type="text" id="enseigne" value="Yoann's French Bakery">
+      </div>
+    </div>
+
+    <div class="grille" style="margin-top:14px">
+      <div>
+        <label for="accroche">Accroche</label>
+        <input type="text" id="accroche"
+               value="Real French bread, baked overnight in Manila.">
+      </div>
+      <div>
+        <label for="consigne">Consigne</label>
+        <input type="text" id="consigne" value="Scan to order">
+      </div>
+    </div>
+
+    <div class="grille" style="margin-top:14px">
+      <div>
+        <label for="niveau">Résistance du code</label>
+        <select id="niveau">
+          <option value="L">Faible — code plus fin</option>
+          <option value="M" selected>Moyenne — recommandé</option>
+          <option value="Q">Haute</option>
+          <option value="H">Maximale — lisible même abîmé</option>
+        </select>
+      </div>
+      <div>
+        <label for="suivi">Marquer la provenance <span style="opacity:.7">(facultatif)</span></label>
+        <input type="text" id="suivi" placeholder="marche-legazpi">
+      </div>
+    </div>
+
+    <div class="actions">
+      <button type="button" id="btnImprimer">Imprimer</button>
+      <button type="button" class="mineur" id="btnSvg">Télécharger le QR seul</button>
+      <span class="etat" id="etat"></span>
+    </div>
+
+    <p class="aide" style="margin-top:14px">
+      La provenance ajoute un repère à l'adresse — <code>?ref=marche-legazpi</code> —
+      pour distinguer plus tard les visites venues de cette affiche de celles
+      venues d'ailleurs. Elle n'est jamais montrée au client.
+    </p>
+  </div>
+
+  <div class="feuille" id="feuille">
+    <div class="enseigne" id="vEnseigne"></div>
+    <p class="accroche" id="vAccroche"></p>
+    <div class="code" id="vCode"></div>
+    <p class="consigne" id="vConsigne"></p>
+    <p class="adresse" id="vAdresse"></p>
+  </div>
+
+  <p class="aide aide-impression" style="text-align:center;margin-top:16px">
+    À l'impression, seule l'affiche sort. Vérifiez le code avec votre téléphone
+    avant d'en tirer une pile.
+  </p>
+</main>
+
+<script src="admin-nav.js" defer></script>
+<script type="module">
+import { qrSvg } from "./qr.js";
+
+const $ = (id) => document.getElementById(id);
+
+// L'adresse réellement encodée, repère de provenance compris.
+function adresseFinale() {
+  const base = $("adresse").value.trim();
+  const ref = $("suivi").value.trim();
+  if (!ref) return base;
+  return base + (base.includes("?") ? "&" : "?") + "ref=" + encodeURIComponent(ref);
+}
+
+function dessiner() {
+  const url = adresseFinale();
+
+  $("vEnseigne").textContent = $("enseigne").value;
+  $("vAccroche").textContent = $("accroche").value;
+  $("vConsigne").textContent = $("consigne").value;
+  // Sur l'affiche, l'adresse reste lisible sans le repère de provenance :
+  // c'est celle qu'un passant recopiera à la main.
+  $("vAdresse").textContent = $("adresse").value.replace(/^https?:\/\//, "");
+
+  try {
+    $("vCode").innerHTML = qrSvg(url, { niveau: $("niveau").value, taille: 600 });
+    $("etat").textContent = "";
+  } catch (e) {
+    console.error(e);
+    $("vCode").innerHTML = "";
+    $("etat").textContent = "Adresse trop longue pour un QR code.";
+  }
+}
+
+["adresse", "enseigne", "accroche", "consigne", "suivi"]
+  .forEach(id => $(id).addEventListener("input", dessiner));
+$("niveau").addEventListener("change", dessiner);
+
+$("btnImprimer").onclick = () => window.print();
+
+// Le SVG seul, pour un flyer ou un autocollant fait ailleurs.
+$("btnSvg").onclick = () => {
+  const svg = qrSvg(adresseFinale(), { niveau: $("niveau").value, taille: 1000 });
+  const lien = document.createElement("a");
+  lien.href = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+  lien.download = "qr-yoannthebaker.svg";
+  lien.click();
+  URL.revokeObjectURL(lien.href);
+  $("etat").textContent = "Fichier téléchargé.";
+};
+
+dessiner();
+</script>
+</body>
+</html>
