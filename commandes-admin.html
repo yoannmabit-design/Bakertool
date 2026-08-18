@@ -97,6 +97,12 @@
   .cmd.b-remise     {border-left-color:#c3bcb0}
   .cmd.b-annulee    {border-left-color:#c1705f}
 
+  /* Confirmée ET payée : rien à faire sur cette commande. Le filet vert vif
+     l'emporte sur la couleur de statut — c'est la combinaison des deux qui
+     compte, pas l'un ou l'autre séparément. Un balayage du regard suffit :
+     ce qui est vert est réglé, tout le reste demande quelque chose. */
+  .cmd.rien-a-faire{border-left-color:#00c853;border-left-width:4px}
+
   /* ---------- Modification d'une commande ---------- */
   /* Ces deux classes n'existaient pas dans cette page : l'écran de
      modification est le premier à avoir de vrais boutons d'action. */
@@ -471,8 +477,13 @@ function dateLongue(iso) {
 function carte(c) {
   const paye = (c.paiement?.statut || "en attente") === "paye";
   const el = document.createElement("div");
+  // Confirmée et payée : la commande n'attend plus rien de vous.
+  const rienAFaire = paye && ["confirmee", "en production", "prete", "remise"]
+    .includes(c.statut);
+
   el.className = "cmd " + (paye ? "reglee" : "impaye") +
-                 " b-" + (CLASSE_STATUT[c.statut] || "nouvelle");
+                 " b-" + (CLASSE_STATUT[c.statut] || "nouvelle") +
+                 (rienAFaire ? " rien-a-faire" : "");
 
   const articles = (c.panier || []).reduce((n, l) => n + l.qte, 0);
 
