@@ -786,7 +786,8 @@ async function chargerProduits() {
         abonnement: p.abonnement !== false,
         rayon: p.rayon || rayonParDefaut(it.categorie || it.category),
         mode_stock: p.mode_stock || "illimite",
-        stock: p.stock ?? 0
+        stock: p.stock ?? 0,
+        capacite_jour: p.capacite_jour ?? 0
       });
     });
 
@@ -917,7 +918,17 @@ function afficherProduits() {
             <label>Pièces restantes</label>
             <input type="number" class="stock" min="0" step="1" value="0">
           </div>
+          <div>
+            <label>Capacité par jour de cuisson</label>
+            <input type="number" class="capacite" min="0" step="1" value="0"
+                   placeholder="0 = pas de limite">
+          </div>
         </div>
+        <p class="aide" style="margin:10px 0 0">
+          Nombre de pièces que vous pouvez produire de ce produit sur une même
+          journée, toutes commandes confondues. Une fois atteint, la date n'est
+          plus proposée au client pour ce produit. Zéro : aucune limite.
+        </p>
       </div>`;
 
     bloc.querySelector(".nom").textContent  = p.nom;
@@ -942,6 +953,9 @@ function afficherProduits() {
     majStock();
     selMode.onchange = (e) => { p.mode_stock = e.target.value; majStock(); };
     champStock.oninput = (e) => p.stock = Math.max(0, Number(e.target.value) || 0);
+    const champCap = bloc.querySelector(".capacite");
+    champCap.value = p.capacite_jour;
+    champCap.oninput = (e) => p.capacite_jour = Math.max(0, Number(e.target.value) || 0);
 
     const detail = bloc.querySelector(".detail");
     bloc.querySelector(".pub").onchange = (e) => {
@@ -1045,6 +1059,8 @@ $("btnEnregistrer").onclick = async () => {
           abonnement: p.abonnement,
           mode_stock: p.mode_stock,
           stock: p.mode_stock === "limite" ? Number(p.stock) || 0 : null,
+          // Plafond de production par jour de cuisson. 0 = pas de limite.
+          capacite_jour: Number(p.capacite_jour) || 0,
           visible: true
         });
       } else {
