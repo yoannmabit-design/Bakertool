@@ -239,6 +239,22 @@
       </div>
 
       <div class="carte">
+        <h2>Adresse de livraison</h2>
+        <p class="aide">
+          Les villes proposées au client quand une option demande son adresse.
+          Une par ligne, telles qu'elles doivent apparaître. Le client choisit
+          dans cette liste : il ne peut pas saisir une ville que vous ne livrez pas.
+        </p>
+        <div>
+          <label for="villes">Villes livrées</label>
+          <textarea id="villes" placeholder="Makati&#10;Taguig&#10;Pasay&#10;Mandaluyong"></textarea>
+        </div>
+        <p class="aide" style="margin:14px 0 0">
+          Liste vide : le client saisit sa ville librement, comme aujourd'hui.
+        </p>
+      </div>
+
+      <div class="carte">
         <h2>Coordonnées de paiement</h2>
         <p class="aide">Affichées au client au moment de choisir son paiement. Un moyen sans numéro ni QR n'est pas proposé. Pour le QR, indiquez le nom du fichier déposé dans le dépôt (par exemple <code>qr-gcash.jpg</code>) ou une adresse complète.</p>
 
@@ -679,6 +695,7 @@ async function chargerParametres() {
   $("email").value     = d.email || "";
   $("messenger").value = d.messenger || "";
   $("creneaux").value = (d.creneaux || []).join("\n");
+  $("villes").value   = (d.villes_livrees || []).join("\n");
   $("accueil").value  = d.message_accueil || "";
 
   const abo = d.abonnements || {};
@@ -964,6 +981,9 @@ $("btnEnregistrer").onclick = async () => {
     await setDoc(doc(db, "parametres", "boutique"), {
       options_retrait: lireOptions(),
       creneaux: $("creneaux").value.split("\n").map(s => s.trim()).filter(Boolean),
+      // Villes proposées au client lorsqu'une option demande son adresse.
+      villes_livrees: $("villes").value.split("\n")
+        .map(s => s.trim()).filter(Boolean),
       jours_fermes: joursFermes,
       delai_min_heures: Number($("delai").value) || 0,
       whatsapp: $("whatsapp").value.replace(/\D/g, ""),
