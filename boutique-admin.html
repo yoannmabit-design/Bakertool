@@ -47,6 +47,27 @@
     border-radius:var(--r);padding:20px;margin-bottom:18px;
   }
   .carte h2{margin:0 0 4px;font-size:16px;letter-spacing:.01em}
+  /* Cartes repliables : le titre sert de bouton. */
+  .carte > h2[role="button"]{
+    cursor:pointer;display:flex;align-items:center;gap:9px;
+    margin:0;padding:2px 0 6px;user-select:none;
+  }
+  .carte > h2[role="button"]::before{
+    content:"";width:0;height:0;flex:0 0 auto;
+    border-left:6px solid var(--encre-doux);
+    border-top:4.5px solid transparent;border-bottom:4.5px solid transparent;
+    transform:rotate(90deg);transform-origin:center;
+  }
+  .carte > h2[role="button"]:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+  .carte.repliee{padding:14px 20px}
+  .carte.repliee > h2[role="button"]{padding-bottom:0}
+  .carte.repliee > h2[role="button"]::before{transform:rotate(0deg)}
+  .carte > .carte-corps{padding-top:6px}
+  .carte > .carte-corps[hidden]{display:none}
+  .plis{display:flex;justify-content:flex-end;margin:-14px 0 16px}
+  @media (prefers-reduced-motion:no-preference){
+    .carte > h2[role="button"]::before{transition:transform .15s}
+  }
   .carte p.aide{margin:0 0 16px;font-size:13.5px;color:var(--encre-doux)}
   label{display:block;font-size:13px;color:var(--encre-doux);margin-bottom:5px}
   input[type=text],input[type=number],textarea,select{
@@ -106,6 +127,25 @@
   .produit .detail{margin-top:14px;padding-top:14px;border-top:1px dashed var(--trait)}
   .produit .detail[hidden]{display:none}
   .bascule{display:flex;align-items:center;gap:7px;font-size:14px;margin:0;color:var(--encre);cursor:pointer}
+  .cp{
+    border:1px solid var(--trait);border-radius:var(--r);
+    padding:13px 14px;margin-bottom:10px;background:#fff;
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  }
+  .cp.inactif{opacity:.62}
+  .cp .cp-code{
+    font-family:ui-monospace,monospace;font-size:14px;font-weight:600;
+    background:#efe6d8;padding:3px 9px;border-radius:3px;letter-spacing:.04em;
+  }
+  .cp .cp-valeur{font-weight:600;white-space:nowrap}
+  .cp .cp-libelle{flex:1;min-width:130px;font-size:14px;color:var(--encre-doux)}
+  .cp .cp-portee{
+    font-size:12px;color:var(--encre-doux);background:#f2ece1;
+    padding:2px 8px;border-radius:11px;white-space:nowrap;
+  }
+  .cp .cp-etat{font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  .cp .cp-etat.on{color:var(--ok)}
+  .cp .cp-etat.off{color:var(--encre-doux)}
   .barre{
     position:fixed;bottom:0;left:0;right:0;background:var(--papier);
     border-top:1px solid var(--trait);padding:12px 16px;
@@ -146,6 +186,11 @@
     <div class="onglets" role="tablist">
       <button role="tab" id="ongletParams" aria-selected="true">Paramètres</button>
       <button role="tab" id="ongletProduits" aria-selected="false">Produits en vente</button>
+      <button role="tab" id="ongletCodes" aria-selected="false">Codes promo</button>
+    </div>
+
+    <div class="plis">
+      <button class="mineur" id="btnPlis" type="button">Tout déplier</button>
     </div>
 
     <!-- ---------- PARAMÈTRES ---------- -->
@@ -299,9 +344,83 @@
         <div id="listeProduits"><div class="vide">Chargement…</div></div>
       </div>
     </section>
+
+    <!-- ---------- CODES PROMO ---------- -->
+    <section id="vueCodes" hidden>
+
+      <div class="carte">
+        <h2 id="titreFormule">Nouveau code promo</h2>
+        <p class="aide">
+          Le code est enregistré seul, immédiatement : le bouton « Enregistrer » du bas de page
+          ne concerne que les paramètres et les produits. La remise porte sur le sous-total des
+          produits, jamais sur la livraison.
+        </p>
+
+        <div class="grille">
+          <div>
+            <label for="cpCode">Code saisi par le client</label>
+            <input type="text" id="cpCode" placeholder="BIENVENUE10" autocomplete="off"
+                   style="text-transform:uppercase;font-family:ui-monospace,monospace">
+          </div>
+          <div>
+            <label for="cpType">Type de remise</label>
+            <select id="cpType">
+              <option value="pourcentage">Pourcentage du sous-total</option>
+              <option value="montant">Montant fixe (₱)</option>
+            </select>
+          </div>
+          <div>
+            <label for="cpValeur"><span id="cpValeurLabel">Valeur (%)</span></label>
+            <input type="number" id="cpValeur" min="0" step="1" value="10">
+          </div>
+        </div>
+
+        <div style="margin-top:12px">
+          <label for="cpLibelle">Libellé interne <span style="opacity:.7">(jamais montré au client)</span></label>
+          <input type="text" id="cpLibelle" placeholder="Ouverture — clients du marché de Legazpi">
+        </div>
+
+        <div style="margin-top:14px">
+          <label>Rayons concernés <span style="opacity:.7">(aucun coché = tout le panier)</span></label>
+          <div class="jours" id="cpRayons"></div>
+        </div>
+
+        <label class="bascule" style="margin-top:14px">
+          <input type="checkbox" id="cpActif" checked> Code actif
+        </label>
+
+        <p class="aide" style="margin:14px 0 0">
+          La remise ne portera que sur les produits des rayons cochés. Un montant
+          fixe plus élevé que la part concernée est ramené à cette part : la
+          réduction ne déborde jamais sur le reste du panier.
+        </p>
+
+        <p class="aide" style="margin:10px 0 0">
+          La limite d'usage par client arrive à l'étape suivante. Le champ
+          correspondant est déjà créé dans la fiche, vide.
+        </p>
+
+        <div class="ligne" style="margin:18px 0 0">
+          <div style="flex:0 0 auto">
+            <button class="action" id="btnCodeEnregistrer">Enregistrer ce code</button>
+          </div>
+          <div style="flex:0 0 auto">
+            <button class="mineur" id="btnCodeAnnuler" hidden>Annuler la modification</button>
+          </div>
+          <span class="etat" id="etatCode" style="margin-left:8px"></span>
+        </div>
+      </div>
+
+      <div class="carte">
+        <h2>Codes existants</h2>
+        <p class="aide">Un code inactif est refusé au client sans être supprimé.</p>
+        <div id="listeCodes"><div class="vide">Chargement…</div></div>
+      </div>
+
+    </section>
   </main>
 
-  <div class="barre">
+  <div class="barre" id="barreEnregistrer">
     <span class="etat" id="etat"></span>
     <button class="action" id="btnEnregistrer">Enregistrer</button>
   </div>
@@ -400,14 +519,20 @@ onAuthStateChanged(auth, async (user) => {
    3. ONGLETS
    ============================================================ */
 function ouvrir(onglet) {
-  const p = onglet === "params";
-  $("ongletParams").setAttribute("aria-selected", p);
-  $("ongletProduits").setAttribute("aria-selected", !p);
-  $("vueParams").hidden = !p;
-  $("vueProduits").hidden = p;
+  const vues = { params: "vueParams", produits: "vueProduits", codes: "vueCodes" };
+  const onglets = { params: "ongletParams", produits: "ongletProduits", codes: "ongletCodes" };
+  Object.keys(vues).forEach(cle => {
+    const actif = (cle === onglet);
+    $(onglets[cle]).setAttribute("aria-selected", actif);
+    $(vues[cle]).hidden = !actif;
+  });
+  // Les codes promo s'enregistrent un par un : la barre du bas n'a pas de sens ici.
+  $("barreEnregistrer").hidden = (onglet === "codes");
+  majLibellePlis();
 }
 $("ongletParams").onclick   = () => ouvrir("params");
 $("ongletProduits").onclick = () => ouvrir("produits");
+$("ongletCodes").onclick    = () => { ouvrir("codes"); chargerCodes(); };
 
 /* ============================================================
    4. POINTS DE RETRAIT ET DE LIVRAISON
@@ -916,6 +1041,344 @@ $("btnEnregistrer").onclick = async () => {
     $("btnEnregistrer").disabled = false;
   }
 };
+
+/* ============================================================
+   9. CODES PROMO
+   Un document par code, dans la collection codes_promo.
+   L'identifiant du document EST le code en majuscules : l'unicité est
+   garantie sans requête, et la vitrine pourra le lire en un seul accès.
+
+   Champs gérés ici : code, libelle, type, valeur, actif.
+   Champs créés vides, gérés aux étapes suivantes :
+     date_debut, date_fin   — bornes de validité
+     rayons                 — portée (vide = tous les rayons)
+     limite_par_client      — nombre d'usages autorisés
+     usages                 — comptage par client
+   Ils sont posés dès maintenant pour qu'aucun code enregistré aujourd'hui
+   n'ait à être repris plus tard.
+   ============================================================ */
+let codes = [];            // fiches lues sur le serveur
+let codeEnEdition = null;  // identifiant du code en cours de modification
+
+function etatCode(texte, type = "") {
+  const e = $("etatCode");
+  e.textContent = texte;
+  e.className = "etat " + type;
+}
+
+// Un code se saisit sans accent, sans espace et sans casse.
+function normaliserCode(saisie) {
+  return (saisie || "")
+    .toUpperCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Z0-9-]/g, "");
+}
+
+function libelleValeur(c) {
+  return c.type === "montant" ? "− ₱" + (Number(c.valeur) || 0)
+                              : "− " + (Number(c.valeur) || 0) + " %";
+}
+
+// Le libellé du champ suit le type choisi.
+function majTypeCode() {
+  const pourcent = $("cpType").value === "pourcentage";
+  $("cpValeurLabel").textContent = pourcent ? "Valeur (%)" : "Valeur (₱)";
+  $("cpValeur").max = pourcent ? 100 : "";
+}
+$("cpType").onchange = majTypeCode;
+majTypeCode();
+
+// Cases de portée, bâties sur la même liste que les fiches produits.
+RAYONS.forEach(r => {
+  const l = document.createElement("label");
+  l.innerHTML = `<input type="checkbox" class="cp-rayon" value="${r}"> ${r}`;
+  $("cpRayons").appendChild(l);
+});
+
+function lireRayons() {
+  return [...document.querySelectorAll("#cpRayons input:checked")].map(c => c.value);
+}
+function ecrireRayons(liste) {
+  const choisis = Array.isArray(liste) ? liste : [];
+  document.querySelectorAll("#cpRayons input").forEach(c => {
+    c.checked = choisis.includes(c.value);
+  });
+}
+
+// Phrase courte pour la liste des codes.
+function libellePortee(c) {
+  const r = Array.isArray(c.rayons) ? c.rayons : [];
+  if (!r.length) return "tout le panier";
+  return r.join(", ");
+}
+
+$("cpCode").oninput = (e) => {
+  const pos = e.target.selectionStart;
+  e.target.value = normaliserCode(e.target.value);
+  e.target.setSelectionRange(pos, pos);
+};
+
+function viderFormuleCode() {
+  codeEnEdition = null;
+  $("titreFormule").textContent = "Nouveau code promo";
+  $("cpCode").value = "";
+  $("cpCode").readOnly = false;
+  $("cpType").value = "pourcentage";
+  $("cpValeur").value = 10;
+  $("cpLibelle").value = "";
+  ecrireRayons([]);
+  $("cpActif").checked = true;
+  $("btnCodeAnnuler").hidden = true;
+  majTypeCode();
+  etatCode("");
+}
+$("btnCodeAnnuler").onclick = viderFormuleCode;
+
+function modifierCode(c) {
+  codeEnEdition = c.id;
+  $("titreFormule").textContent = "Modifier le code " + c.id;
+  $("cpCode").value = c.id;
+  // Changer le code reviendrait à créer un second document : on le fige.
+  $("cpCode").readOnly = true;
+  $("cpType").value = c.type || "pourcentage";
+  $("cpValeur").value = Number(c.valeur) || 0;
+  $("cpLibelle").value = c.libelle || "";
+  ecrireRayons(c.rayons);
+  $("cpActif").checked = c.actif !== false;
+  $("btnCodeAnnuler").hidden = false;
+  majTypeCode();
+  etatCode("Modification en cours.");
+  // Le formulaire peut être replié : on l'ouvre avant d'y envoyer le curseur.
+  const carte = deplierPour($("cpCode"));
+  if (carte) carte.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  $("cpLibelle").focus();
+}
+
+async function chargerCodes() {
+  try {
+    const s = await getDocs(collection(db, "codes_promo"));
+    codes = s.docs.map(d => ({ id: d.id, ...d.data() }));
+    codes.sort((a, b) => a.id.localeCompare(b.id));
+    afficherCodes();
+  } catch (e) {
+    console.error(e);
+    $("listeCodes").innerHTML =
+      '<div class="vide">Les codes n\'ont pas pu être chargés. Vérifiez les règles Firestore.</div>';
+  }
+}
+
+function afficherCodes() {
+  const zone = $("listeCodes");
+  zone.innerHTML = "";
+
+  if (!codes.length) {
+    zone.innerHTML = '<div class="vide">Aucun code pour le moment.</div>';
+    return;
+  }
+
+  codes.forEach(c => {
+    const actif = c.actif !== false;
+    const bloc = document.createElement("div");
+    bloc.className = "cp" + (actif ? "" : " inactif");
+    bloc.innerHTML = `
+      <span class="cp-code"></span>
+      <span class="cp-valeur"></span>
+      <span class="cp-portee"></span>
+      <span class="cp-libelle"></span>
+      <span class="cp-etat ${actif ? "on" : "off"}">${actif ? "Actif" : "Inactif"}</span>
+      <button class="mineur cp-bascule" type="button">${actif ? "Désactiver" : "Activer"}</button>
+      <button class="mineur cp-modifier" type="button">Modifier</button>
+      <button class="retirer cp-supprimer" type="button">Supprimer</button>`;
+
+    bloc.querySelector(".cp-code").textContent    = c.id;
+    bloc.querySelector(".cp-valeur").textContent  = libelleValeur(c);
+    bloc.querySelector(".cp-portee").textContent  = libellePortee(c);
+    bloc.querySelector(".cp-libelle").textContent = c.libelle || "";
+
+    bloc.querySelector(".cp-bascule").onclick   = () => basculerCode(c);
+    bloc.querySelector(".cp-modifier").onclick  = () => modifierCode(c);
+    bloc.querySelector(".cp-supprimer").onclick = () => supprimerCode(c);
+
+    zone.appendChild(bloc);
+  });
+}
+
+/* Écriture : on relit d'abord le serveur et on repose tel quel
+   tout ce que cet écran ne gère pas. */
+async function ecrireCode(id, champs) {
+  const ref = doc(db, "codes_promo", id);
+  const s = await getDoc(ref);
+  const existant = s.exists() ? s.data() : {};
+
+  await setDoc(ref, {
+    ...existant,
+    ...champs,
+    // Créés vides s'ils n'existent pas encore, jamais écrasés ensuite.
+    date_debut:        existant.date_debut        ?? null,
+    date_fin:          existant.date_fin          ?? null,
+    limite_par_client: existant.limite_par_client ?? null,
+    usages:            existant.usages            ?? {},
+    cree_le: existant.cree_le || new Date().toISOString(),
+    maj_le:  new Date().toISOString()
+  });
+}
+
+$("btnCodeEnregistrer").onclick = async () => {
+  const id = normaliserCode($("cpCode").value);
+  const type = $("cpType").value;
+  const valeur = Number($("cpValeur").value);
+
+  if (id.length < 3) {
+    etatCode("Le code doit compter au moins 3 caractères (lettres, chiffres, tiret).", "err");
+    return;
+  }
+  if (!Number.isFinite(valeur) || valeur <= 0) {
+    etatCode("La valeur de la remise doit être supérieure à zéro.", "err");
+    return;
+  }
+  if (type === "pourcentage" && valeur > 100) {
+    etatCode("Un pourcentage ne peut pas dépasser 100.", "err");
+    return;
+  }
+  // En création seulement : ne pas écraser un code existant sans le dire.
+  if (!codeEnEdition && codes.some(c => c.id === id)) {
+    etatCode("Ce code existe déjà. Utilisez « Modifier » dans la liste ci-dessous.", "err");
+    return;
+  }
+
+  $("btnCodeEnregistrer").disabled = true;
+  etatCode("Enregistrement…");
+  try {
+    await ecrireCode(id, {
+      code: id,
+      libelle: $("cpLibelle").value.trim(),
+      rayons: lireRayons(),
+      type,
+      valeur: Math.round(valeur),
+      actif: $("cpActif").checked
+    });
+    viderFormuleCode();
+    await chargerCodes();
+    etatCode("Code " + id + " enregistré.", "ok");
+  } catch (e) {
+    console.error(e);
+    etatCode("L'enregistrement a échoué. Vérifiez votre connexion, puis réessayez.", "err");
+  } finally {
+    $("btnCodeEnregistrer").disabled = false;
+  }
+};
+
+async function basculerCode(c) {
+  try {
+    await ecrireCode(c.id, { actif: !(c.actif !== false) });
+    await chargerCodes();
+    etatCode("Code " + c.id + (c.actif !== false ? " désactivé." : " activé."), "ok");
+  } catch (e) {
+    console.error(e);
+    etatCode("La modification a échoué.", "err");
+  }
+}
+
+/* ============================================================
+   10. CARTES REPLIABLES
+   Le titre de chaque carte sert de bouton. Le contenu reste dans la page,
+   simplement masqué : l'enregistrement lit les champs repliés comme les autres.
+   L'état est retenu d'une visite à l'autre.
+   ============================================================ */
+const CLE_PLIS = "boutique-admin.cartes";
+let etatPlis = {};
+try { etatPlis = JSON.parse(localStorage.getItem(CLE_PLIS) || "{}"); } catch (e) { etatPlis = {}; }
+
+function memoriserPlis() {
+  try { localStorage.setItem(CLE_PLIS, JSON.stringify(etatPlis)); } catch (e) {}
+}
+
+function plier(carte, ouvert) {
+  const titre = carte.querySelector(":scope > h2");
+  const corps = carte.querySelector(":scope > .carte-corps");
+  carte.classList.toggle("repliee", !ouvert);
+  if (titre) titre.setAttribute("aria-expanded", String(ouvert));
+  if (corps) corps.hidden = !ouvert;
+  etatPlis[carte.dataset.pli] = ouvert;
+  memoriserPlis();
+}
+
+// Déplie la carte qui contient un élément donné — utile quand un bouton
+// de la liste renvoie vers un formulaire replié.
+function deplierPour(element) {
+  const carte = element && element.closest(".carte");
+  if (carte && carte.classList.contains("repliee")) plier(carte, true);
+  return carte;
+}
+
+function cartesVisibles() {
+  return [...document.querySelectorAll("main section:not([hidden]) .carte")];
+}
+
+function majLibellePlis() {
+  const cartes = cartesVisibles();
+  const btn = $("btnPlis");
+  if (!btn) return;
+  btn.hidden = cartes.length < 2;
+  const toutOuvert = cartes.length > 0 && cartes.every(c => !c.classList.contains("repliee"));
+  btn.textContent = toutOuvert ? "Tout replier" : "Tout déplier";
+}
+
+function rendrePliables() {
+  document.querySelectorAll("main .carte").forEach(carte => {
+    const titre = carte.querySelector(":scope > h2");
+    if (!titre || carte.dataset.pli) return;
+
+    // Le titre du formulaire des codes change au fil des modifications :
+    // la clé est figée à l'initialisation.
+    const cle = (titre.textContent || "").trim().slice(0, 48);
+    carte.dataset.pli = cle;
+
+    const corps = document.createElement("div");
+    corps.className = "carte-corps";
+    while (titre.nextSibling) corps.appendChild(titre.nextSibling);
+    carte.appendChild(corps);
+
+    titre.setAttribute("role", "button");
+    titre.tabIndex = 0;
+    titre.addEventListener("click", () => {
+      plier(carte, carte.classList.contains("repliee"));
+      majLibellePlis();
+    });
+    titre.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); titre.click(); }
+    });
+
+    // Les six cartes des paramètres arrivent repliées : c'est là que le
+    // défilement gênait. Les autres onglets n'ont qu'une ou deux cartes.
+    const defaut = !carte.closest("#vueParams");
+    plier(carte, etatPlis[cle] ?? defaut);
+  });
+  majLibellePlis();
+}
+
+$("btnPlis").onclick = () => {
+  const cartes = cartesVisibles();
+  const ouvrirTout = cartes.some(c => c.classList.contains("repliee"));
+  cartes.forEach(c => plier(c, ouvrirTout));
+  majLibellePlis();
+};
+
+rendrePliables();
+
+async function supprimerCode(c) {
+  if (!confirm("Supprimer définitivement le code " + c.id + " ?\n\n" +
+               "Les commandes déjà passées avec ce code ne sont pas touchées.")) return;
+  try {
+    await deleteDoc(doc(db, "codes_promo", c.id));
+    if (codeEnEdition === c.id) viderFormuleCode();
+    await chargerCodes();
+    etatCode("Code " + c.id + " supprimé.", "ok");
+  } catch (e) {
+    console.error(e);
+    etatCode("La suppression a échoué.", "err");
+  }
+}
 </script>
 </body>
 </html>
