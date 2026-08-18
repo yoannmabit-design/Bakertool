@@ -231,6 +231,7 @@ function carte(a) {
     [CADENCES[a.cadence] || a.cadence,
      a.option?.nom,
      reste + " livraison(s) restante(s)",
+     reportsFaits(a) ? "reports " + reportsFaits(a) + "/" + MAX_REPORTS : null,
      prochaine ? "prochaine le " + prochaine.date : "terminé"].filter(Boolean).join(" · ");
 
   el.querySelector(".lignes").innerHTML = (a.panier || []).map(l =>
@@ -342,25 +343,58 @@ async function marquerLivree(a, i) {
 }
 
 /* Le client s'absente : l'échéance est sautée et reportée à la fin,
-   pour qu'il reçoive bien le nombre de livraisons payées. */
+   pour qu'il reçoive bien le nombre de livraisons payées.
+   Plafonné à MAX_REPORTS : au-delà, l'échéance est perdue, sans quoi un
+   abonnement pourrait s'étirer indéfiniment. */
+const MAX_REPORTS = 2;
+
+// Le compteur est stocké sur l'abonnement ; les plans créés avant son
+// existence repartent de zéro.
+function reportsFaits(a) {
+  return Number(a.reports) || 0;
+}
+
 async function sauter(a, i) {
-  if (!confirm(`Client absent le ${a.echeances[i].date} ?\n\n` +
-               "Cette livraison est reportée à la fin de l'abonnement.")) return;
+  const faits = reportsFaits(a);
+  const reste = faits < MAX_REPORTS;
+
+  const message = reste
+    ? `Client absent le ${a.echeances[i].date} ?\n\n` +
+      "Cette livraison est reportée à la fin de l'abonnement.\n" +
+      `Report ${faits + 1} sur ${MAX_REPORTS}.`
+    : `Client absent le ${a.echeances[i].date} ?\n\n` +
+      `Les ${MAX_REPORTS} reports autorisés ont déjà été utilisés : cette ` +
+      "livraison sera perdue, elle ne sera pas replacée à la fin.";
+  if (!confirm(message)) return;
+
   try {
     const pas = a.cadence === "quinzaine" ? 14 : 7;
     const echeances = a.echeances.map((e, n) =>
       n === i ? { ...e, statut: "sautee" } : e);
 
-    const derniere = echeances.filter(e => e.statut === "planifiee")
-      .map(e => e.date).sort().pop() || a.echeances[i].date;
-    const d = new Date(derniere + "T12:00:00");
-    d.setDate(d.getDate() + pas);
-    echeances.push({ date: iso(d), statut: "planifiee" });
+    const maj = { echeances };
+    let jusquA = null;
 
-    await updateDoc(doc(db, "abonnements", a.id), { echeances });
+    if (reste) {
+      const derniere = echeances.filter(e => e.statut === "planifiee")
+        .map(e => e.date).sort().pop() || a.echeances[i].date;
+      const d = new Date(derniere + "T12:00:00");
+      d.setDate(d.getDate() + pas);
+      jusquA = iso(d);
+      echeances.push({ date: jusquA, statut: "planifiee" });
+      maj.reports = faits + 1;
+    }
+
+    // Sauter la dernière échéance sans report possible clôt le plan.
+    if (!echeances.some(e => e.statut === "planifiee")) maj.statut = "termine";
+
+    await updateDoc(doc(db, "abonnements", a.id), maj);
     a.echeances = echeances;
+    if (maj.reports !== undefined) a.reports = maj.reports;
+    if (maj.statut) a.statut = maj.statut;
     afficher();
-    signaler("Livraison reportée au " + iso(d));
+    signaler(jusquA ? "Livraison reportée au " + jusquA
+                    : "Livraison sautée, sans report.");
   } catch (e) { console.error(e); signaler("Échec du report."); }
 }
 
