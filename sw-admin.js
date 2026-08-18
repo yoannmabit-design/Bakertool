@@ -1,12 +1,12 @@
 /* Service worker de l'administration — réseau d'abord.
    La version en ligne l'emporte toujours ; le cache ne sert qu'en cas de coupure. */
-const VERSION = 'yfb-admin-v3';
+const VERSION = 'yfb-admin-v4';
 const ESSENTIELS = [
   './', './index.html',
   './admin.html', './commandes-admin.html', './boutique-admin.html',
   './clients-admin.html', './credits-admin.html', './abonnements-admin.html',
-  './produits-identifiants.html', './etiquettes.html',
-  './admin-nav.js', './manifest.json', './logo.png'
+  './produits-identifiants.html', './etiquettes.html', './affiche.html',
+  './admin-nav.js', './promo.js', './qr.js', './manifest.json', './logo.png'
 ];
 
 self.addEventListener('install', (e) => {
