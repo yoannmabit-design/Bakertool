@@ -77,6 +77,26 @@
   .etiq.verte{background:#e2eede;color:var(--ok)}
   .etiq.bleue{background:#dfe8ee;color:var(--accent)}
 
+  /* Une couleur par statut, du plus froid au plus chaud : la commande
+     avance vers le pain prêt, puis s'éteint une fois remise. */
+  .etiq.st-nouvelle      {background:#e6e3f0;color:#4a4270}
+  .etiq.st-confirmee     {background:#dfe8ee;color:#2d5771}
+  .etiq.st-production    {background:#fbead2;color:#8a5a1c}
+  .etiq.st-prete         {background:#e2eede;color:#33632f}
+  .etiq.st-remise        {background:#eae6df;color:#6d665c}
+  .etiq.st-annulee       {background:#f6e2de;color:var(--alerte);
+                          text-decoration:line-through}
+
+  /* Le même code couleur en filet à gauche de la carte : la liste se lit
+     d'un coup d'œil sans avoir à relire chaque étiquette. */
+  .cmd{border-left:3px solid transparent}
+  .cmd.b-nouvelle   {border-left-color:#8b83b5}
+  .cmd.b-confirmee  {border-left-color:#5b8bab}
+  .cmd.b-production {border-left-color:#d09a3f}
+  .cmd.b-prete      {border-left-color:#5f9257}
+  .cmd.b-remise     {border-left-color:#c3bcb0}
+  .cmd.b-annulee    {border-left-color:#c1705f}
+
   .coche{width:19px;height:19px;flex-shrink:0;accent-color:var(--accent);cursor:pointer}
   .jour{display:flex;align-items:center;gap:10px}
   .jour .tout{
@@ -130,6 +150,8 @@
     border-radius:var(--r);font-size:14px;opacity:0;transition:opacity .2s;
   }
   .etat.vu{opacity:1}
+  .etat.ok{background:#33632f}
+  .etat.err{background:var(--alerte)}
 </style>
 </head>
 <body>
@@ -202,6 +224,12 @@ const LIBELLES = {
   "prete":"Prête", "remise":"Remise", "annulee":"Annulée"
 };
 const PAIEMENTS = { "en attente":"En attente", "paye":"Payé", "rembourse":"Remboursé" };
+
+// « en production » contient une espace : on la retire pour en faire une classe.
+const CLASSE_STATUT = {
+  "nouvelle":"nouvelle", "confirmee":"confirmee", "en production":"production",
+  "prete":"prete", "remise":"remise", "annulee":"annulee"
+};
 
 // Portée de la génération des commandes d'abonnement, en jours.
 const FENETRE_JOURS = 10;
@@ -367,7 +395,8 @@ function dateLongue(iso) {
 function carte(c) {
   const paye = (c.paiement?.statut || "en attente") === "paye";
   const el = document.createElement("div");
-  el.className = "cmd " + (paye ? "reglee" : "impaye");
+  el.className = "cmd " + (paye ? "reglee" : "impaye") +
+                 " b-" + (CLASSE_STATUT[c.statut] || "nouvelle");
 
   const articles = (c.panier || []).reduce((n, l) => n + l.qte, 0);
 
@@ -380,6 +409,8 @@ function carte(c) {
         c.abonnement_rang ? " " + c.abonnement_rang +
           (c.abonnement_total ? "/" + c.abonnement_total : "") : ""}</span>` : ""}
       ${c.credit_utilise > 0 ? `<span class="etiq">crédit ${peso(c.credit_utilise)}</span>` : ""}
+      <span class="etiq st-${CLASSE_STATUT[c.statut] || "nouvelle"}">${
+        LIBELLES[c.statut] || c.statut}</span>
       <span class="etiq ${paye ? "verte" : "rouge"}">${paye ? "Payé" : "À encaisser"}</span>
       <span class="montant">${peso(c.total)}</span>
     </div>
@@ -403,8 +434,9 @@ function carte(c) {
     </div>`;
 
   el.querySelector(".nom").textContent = c.client?.nom || "—";
+  // Le statut est déjà dans l'étiquette colorée de l'en-tête.
   el.querySelector(".resume").textContent =
-    [LIBELLES[c.statut] || c.statut, c.option?.nom, c.creneau,
+    [c.option?.nom, c.creneau,
      articles + (articles > 1 ? " articles" : " article")]
     .filter(Boolean).join(" · ");
 
@@ -845,11 +877,21 @@ $("lotAppliquer").onclick = async () => {
       if (paiement) { c.paiement = c.paiement || {}; c.paiement.statut = paiement; }
     });
 
+    // Les échéances d'abonnement suivent, une par une : chacune peut toucher
+    // un compte différent, elles ne tiennent pas dans un lot commun.
+    if (statut && SUITE_ECHEANCE[statut]) {
+      for (const id of ids) {
+        const c = commandes.find(x => x.id === id);
+        if (c) await lierEcheance(c, statut);
+      }
+    }
+
     selection.clear();
     $("lotStatut").value = "";
     $("lotPaiement").value = "";
     afficher();
     publierProduction();
+    publierCharges();
     signaler(ids.length + " commande(s) mise(s) à jour.", "ok");
   } catch (e) {
     console.error(e);
@@ -857,6 +899,82 @@ $("lotAppliquer").onclick = async () => {
     majBoutonLot();
   }
 };
+
+
+/* ---------- Liaison commande → abonnement ----------
+   Une commande d'abonnement porte abonnement_id et abonnement_rang : elle sait
+   donc à quelle échéance elle correspond. Changer son statut ici met l'échéance
+   à jour, pour ne pas avoir à refaire le même geste sur la page Abonnements.
+
+     remise  → échéance livrée
+     annulee → échéance sautée
+
+   Un seul sens : la commande commande. La page Abonnements reste libre de
+   marquer une livraison à la main, ce qui n'écrase rien ici.
+
+   L'argent suit la livraison, comme sur la page Abonnements : quand
+   l'abonnement est payé sur le crédit, marquer livré prélève le montant et
+   inscrit le mouvement. Le drapeau echeance_appliquee évite tout double
+   prélèvement si le statut est remis deux fois. */
+const SUITE_ECHEANCE = { "remise": "livree", "annulee": "sautee" };
+
+async function lierEcheance(c, nouveauStatut) {
+  const suite = SUITE_ECHEANCE[nouveauStatut];
+  if (!c.abonnement_id || !c.abonnement_rang || !suite) return;
+  if (c.echeance_appliquee === suite) return;          // déjà fait
+
+  try {
+    const ref = doc(db, "abonnements", c.abonnement_id);
+    const s = await getDoc(ref);
+    if (!s.exists()) return;
+    const a = s.data();
+
+    // Le rang est de 1 à n ; l'échéance est à l'index rang − 1.
+    const i = Number(c.abonnement_rang) - 1;
+    const liste = a.echeances || [];
+    if (!liste[i]) return;
+    if (liste[i].statut === suite) {                   // déjà à jour côté abonnement
+      await updateDoc(doc(db, "commandes", c.id), { echeance_appliquee: suite });
+      c.echeance_appliquee = suite;
+      return;
+    }
+
+    const echeances = liste.map((e, n) => n === i
+      ? (suite === "livree"
+          ? { ...e, statut: "livree", livree_le: new Date().toISOString() }
+          : { ...e, statut: "sautee" })
+      : e);
+
+    const paquet = writeBatch(db);
+    paquet.update(ref, { echeances });
+
+    // Prélèvement du crédit, à l'identique de la page Abonnements.
+    const surCredit = a.paiement?.mode === "credit";
+    const montant = Number(a.total_par_livraison) || 0;
+    if (suite === "livree" && surCredit && montant > 0 && a.client?.uid) {
+      paquet.set(doc(collection(db, "comptes", a.client.uid, "mouvements")), {
+        type: "depense", montant: -montant,
+        note: "Livraison du " + liste[i].date,
+        quand: new Date().toISOString(), par: auth.currentUser?.email || ""
+      });
+      paquet.update(doc(db, "comptes", a.client.uid), { solde: increment(-montant) });
+    }
+
+    // Plus aucune échéance planifiée : l'abonnement est terminé.
+    if (!echeances.some(e => e.statut === "planifiee"))
+      paquet.update(ref, { statut: "termine" });
+
+    paquet.update(doc(db, "commandes", c.id), { echeance_appliquee: suite });
+    await paquet.commit();
+    c.echeance_appliquee = suite;
+
+    signaler("Échéance d'abonnement mise à jour (" + suite + ").", "ok");
+  } catch (e) {
+    // La commande, elle, est bien enregistrée : on ne la fait pas échouer.
+    console.error("Liaison échéance", e);
+    signaler("Commande enregistrée, mais l'échéance d'abonnement n'a pas suivi.", "err");
+  }
+}
 
 /* ---------- Enregistrement ---------- */
 async function enregistrer(c, champs) {
@@ -875,7 +993,10 @@ async function enregistrer(c, champs) {
     } else {
       await updateDoc(doc(db, "commandes", c.id), champs);
     }
-    if (champs.statut) c.statut = champs.statut;
+    if (champs.statut) {
+      c.statut = champs.statut;
+      await lierEcheance(c, champs.statut);
+    }
     if (champs["paiement.statut"]) {
       c.paiement = c.paiement || {};
       c.paiement.statut = champs["paiement.statut"];
@@ -890,11 +1011,11 @@ async function enregistrer(c, champs) {
 }
 
 let minuteur;
-function signaler(texte) {
+function signaler(texte, type = "") {
   $("etat").textContent = texte;
-  $("etat").classList.add("vu");
+  $("etat").className = "etat vu " + type;
   clearTimeout(minuteur);
-  minuteur = setTimeout(() => $("etat").classList.remove("vu"), 2200);
+  minuteur = setTimeout(() => $("etat").classList.remove("vu"), 2600);
 }
 </script>
 </body>
