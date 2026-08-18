@@ -68,7 +68,7 @@
   /* Deux lignes au maximum : nom et montant sur la première, statut sur la
      seconde. Le mode n'est plus répété, il sert de titre au groupe. */
   .cmd{
-    display:grid;grid-template-columns:8px 1fr auto;gap:3px 11px;
+    display:grid;grid-template-columns:10px 1fr auto;gap:3px 11px;
     align-items:baseline;padding:7px 0;
     border-bottom:1px solid var(--trait);font-size:15px;
   }
@@ -83,11 +83,19 @@
     grid-column:2 / -1;font-size:13px;color:var(--encre-doux);
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   }
+  /* La forme distingue autant que la couleur : un rond plein pour ce qui est
+     réglé, un triangle pointe en bas pour ce qui reste à encaisser. Lisible
+     de nuit, et sans dépendre de la distinction rouge / vert. */
   .cmd .pastille{
-    width:8px;height:8px;border-radius:50%;flex-shrink:0;
-    background:var(--alerte);
+    width:0;height:0;flex-shrink:0;align-self:center;
+    border-left:5px solid transparent;
+    border-right:5px solid transparent;
+    border-top:9px solid #c0392b;
   }
-  .cmd .pastille.ok{background:var(--ok)}
+  .cmd .pastille.ok{
+    width:9px;height:9px;border:none;border-radius:50%;
+    background:#2f7d32;
+  }
 
   .liens{display:flex;gap:10px;flex-wrap:wrap}
   .lien{
