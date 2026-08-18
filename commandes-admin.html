@@ -288,6 +288,7 @@ async function charger() {
 
     afficher();
     publierProduction();
+    publierCharges();
   } catch (e) {
     console.error(e);
     $("liste").innerHTML = '<div class="vide">Les commandes n\'ont pas pu être chargées.</div>';
@@ -591,6 +592,80 @@ async function publierProduction() {
   } catch (e) {
     console.error("Publication production", e);
     signaler("Publication vers l'ERP impossible.", "err");
+  }
+}
+
+
+/* ---------- Charge de production ----------
+   La vitrine ne peut pas additionner les commandes des autres clients :
+   depuis les règles Firestore, chacun ne lit que les siennes. On publie donc,
+   pour chaque jour à venir, ce qui est déjà commandé par produit — un document
+   par date, en lecture publique.
+
+   Le checkout incrémente ces compteurs au moment de la commande, mais c'est
+   ici que se fait la vérité : à chaque ouverture de cette page, tout est
+   recalculé depuis les commandes réelles. Un incrément manqué, une annulation,
+   une modification à la main : tout se corrige tout seul.
+
+   Attention au filtre : contrairement à la production, une commande reçue mais
+   pas encore confirmée occupe déjà le four. Elle compte donc. */
+const OCCUPANTS = ["nouvelle", "confirmee", "en production", "prete"];
+
+// Deux inventaires identiques doivent produire le même texte, quel que soit
+// l'ordre d'insertion des produits : sinon on réécrit pour rien.
+function empreinte(produits) {
+  return JSON.stringify(Object.keys(produits).sort().map(k => [k, produits[k]]));
+}
+
+async function publierCharges() {
+  try {
+    const aujourdhui = iso(new Date());
+
+    // Un inventaire vide par jour de la fenêtre : les jours sans commande
+    // doivent être publiés à zéro, sinon une annulation laisserait
+    // l'ancienne charge en place.
+    const parJour = {};
+    for (let i = 0; i <= FENETRE_JOURS; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      parJour[iso(d)] = {};
+    }
+
+    commandes.forEach(c => {
+      const jour = parJour[c.date_retrait];
+      if (!jour || !OCCUPANTS.includes(c.statut)) return;
+      (c.panier || []).forEach(l => {
+        const code = codeLigne(l);
+        if (!code) return;
+        jour[code] = (jour[code] || 0) + (Number(l.qte) || 0);
+      });
+    });
+
+    const s = await getDocs(collection(db, "charge"));
+    const publie = {};
+    s.forEach(d => publie[d.id] = d.data());
+
+    const paquet = writeBatch(db);
+    let ecrits = 0;
+
+    Object.entries(parJour).forEach(([date, produits]) => {
+      const avant = publie[date] ? (publie[date].produits || {}) : null;
+      if (avant && empreinte(avant) === empreinte(produits)) return;   // inchangé
+      paquet.set(doc(db, "charge", date),
+                 { date, produits, maj: new Date().toISOString() });
+      ecrits++;
+    });
+
+    // Les jours passés n'intéressent plus personne : on garde la collection courte.
+    Object.keys(publie).forEach(date => {
+      if (date < aujourdhui) { paquet.delete(doc(db, "charge", date)); ecrits++; }
+    });
+
+    if (ecrits) await paquet.commit();
+    console.log("Charges publiées :", ecrits, "jour(s) mis à jour.");
+  } catch (e) {
+    console.error("Publication des charges", e);
+    signaler("Publication des capacités impossible.", "err");
   }
 }
 
