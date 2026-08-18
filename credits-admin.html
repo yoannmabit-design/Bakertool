@@ -141,6 +141,11 @@ const MOTIFS = {
 
 let comptes = [];
 
+/* Groupes tarifaires. Ajouter un groupe = ajouter une ligne ici.
+   Un groupe saisi autrefois en texte libre reste conservé sur la fiche du
+   client même s'il ne figure pas dans cette liste. */
+const GROUPES = ["Reseller", "Bulk order"];
+
 /* ---------- Connexion ---------- */
 $("btnConnexion").onclick = async () => {
   try { await signInWithPopup(auth, new GoogleAuthProvider()); }
@@ -243,13 +248,19 @@ function carte(c) {
       <div class="ajout" style="border-bottom:1px dashed var(--trait);padding-bottom:14px">
         <div>
           <label>Groupe tarifaire</label>
-          <input type="text" class="g-nom" list="groupesConnus" placeholder="revendeur, café…">
+          <select class="g-nom">
+            <option value="">Aucun</option>
+            ${GROUPES.map(g => `<option value="${g}">${ech(g)}</option>`).join("")}
+            ${c.groupe && !GROUPES.includes(c.groupe)
+              ? `<option value="${ech(c.groupe)}">${ech(c.groupe)}</option>` : ""}
+          </select>
         </div>
         <div>
           <label>Remise (%)</label>
           <input type="number" class="g-remise montant" min="0" max="90" step="1">
         </div>
         <button class="action g-valider">Appliquer</button>
+        <button class="action g-groupe">Appliquer à tout le groupe</button>
       </div>
 
       <div class="ajout">
@@ -285,9 +296,62 @@ function carte(c) {
   el.querySelector(".g-nom").value    = c.groupe || "";
   el.querySelector(".g-remise").value = c.remise || "";
   el.querySelector(".g-valider").onclick = () => enregistrerGroupe(c, el);
+  el.querySelector(".g-groupe").onclick  = () => appliquerAuGroupe(c, el);
 
   el.querySelector(".m-valider").onclick = () => enregistrerMouvement(c, el);
   return el;
+}
+
+/* Applique le taux saisi à tous les comptes du même groupe.
+   Le tarif de groupe écrase les remises individuelles : la confirmation
+   annonce combien de comptes avaient déjà un taux différent. */
+async function appliquerAuGroupe(c, el) {
+  const groupe = el.querySelector(".g-nom").value.trim();
+  const remise = Math.min(90, Math.max(0, Number(el.querySelector(".g-remise").value) || 0));
+
+  if (!groupe) {
+    signaler("Choisissez d'abord un groupe.");
+    return;
+  }
+
+  const membres = comptes.filter(x => (x.groupe || "") === groupe);
+  if (!membres.length) {
+    signaler("Aucun compte dans ce groupe.");
+    return;
+  }
+
+  const ecarts = membres.filter(x => (Number(x.remise) || 0) !== remise);
+  let message = `Appliquer ${remise} % aux ${membres.length} compte(s) du groupe ` +
+    `« ${groupe} » ?`;
+  if (ecarts.length) {
+    message += `\n\n${ecarts.length} compte(s) ont aujourd'hui un taux différent ` +
+      `(${[...new Set(ecarts.map(x => (Number(x.remise) || 0) + " %"))].join(", ")}) : ` +
+      "ces remises individuelles seront écrasées.";
+  }
+  if (!confirm(message)) return;
+
+  const bouton = el.querySelector(".g-groupe");
+  bouton.disabled = true;
+  signaler("Application en cours…");
+
+  try {
+    // Firestore limite un lot à 500 écritures ; on découpe par prudence.
+    for (let i = 0; i < membres.length; i += 400) {
+      const paquet = writeBatch(db);
+      membres.slice(i, i + 400).forEach(x =>
+        paquet.set(doc(db, "comptes", x.id), { groupe, remise }, { merge: true }));
+      await paquet.commit();
+    }
+
+    membres.forEach(x => x.remise = remise);
+    afficher();
+    signaler(`${remise} % appliqué à ${membres.length} compte(s).`);
+  } catch (e) {
+    console.error(e);
+    signaler("L'application au groupe a échoué.");
+  } finally {
+    bouton.disabled = false;
+  }
 }
 
 /* ---------- Groupe tarifaire ----------
@@ -398,16 +462,6 @@ function signaler(texte) {
   clearTimeout(minuteur);
   minuteur = setTimeout(() => $("etat").classList.remove("vu"), 2600);
 }
-</script>
-<datalist id="groupesConnus"></datalist>
-<script>
-  document.addEventListener('input', () => {
-    const dl = document.getElementById('groupesConnus');
-    if (!dl) return;
-    const vus = [...document.querySelectorAll('.g-nom')]
-      .map(i => i.value.trim()).filter(Boolean);
-    dl.innerHTML = [...new Set(vus)].map(g => `<option value="${g}">`).join('');
-  });
 </script>
 </body>
 </html>
