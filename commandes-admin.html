@@ -97,6 +97,72 @@
   .cmd.b-remise     {border-left-color:#c3bcb0}
   .cmd.b-annulee    {border-left-color:#c1705f}
 
+  /* ---------- Modification d'une commande ---------- */
+  /* Ces deux classes n'existaient pas dans cette page : l'écran de
+     modification est le premier à avoir de vrais boutons d'action. */
+  .action{
+    background:var(--accent);color:#fff;border:none;padding:10px 18px;
+    border-radius:var(--r);font:inherit;font-size:14.5px;font-weight:600;cursor:pointer;
+  }
+  .action:disabled{opacity:.5;cursor:default}
+  .mineur{
+    background:none;border:1px solid var(--trait);color:var(--accent);
+    padding:9px 14px;border-radius:var(--r);font:inherit;font-size:14px;cursor:pointer;
+  }
+  .edition{
+    margin-top:14px;padding-top:14px;border-top:1px dashed var(--trait);
+  }
+  .edition .edit-l{
+    display:flex;align-items:center;gap:9px;padding:6px 0;
+    border-bottom:1px solid var(--trait);
+  }
+  .edition .edit-l .n{flex:1;font-size:14.5px}
+  .edition .edit-l .q{
+    width:62px;padding:6px 8px;border:1px solid var(--trait);
+    border-radius:var(--r);font:inherit;font-size:14.5px;text-align:center;
+  }
+  .edition .edit-l .p{
+    min-width:74px;text-align:right;font-variant-numeric:tabular-nums;font-size:14.5px;
+  }
+  .edition .edit-l .retirer{
+    background:none;border:none;color:var(--alerte);
+    font-size:15px;cursor:pointer;padding:4px 6px;
+  }
+  .edition .edit-vide{
+    padding:10px 0;color:var(--alerte);font-size:14px;
+  }
+  .edition .edit-ajout{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+  .edition .edit-ajout select{
+    flex:1;min-width:150px;padding:8px 10px;border:1px solid var(--trait);
+    border-radius:var(--r);background:#fff;font:inherit;font-size:14.5px;
+  }
+  .edition .edit-ajout .edit-qte{
+    width:70px;padding:8px;border:1px solid var(--trait);
+    border-radius:var(--r);font:inherit;font-size:14.5px;text-align:center;
+  }
+  .edition .edit-date{
+    display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:14px;
+  }
+  .edition .edit-date label{font-size:13.5px;color:var(--encre-doux)}
+  .edition .edit-date input{
+    padding:8px 10px;border:1px solid var(--trait);border-radius:var(--r);
+    font:inherit;font-size:14.5px;
+  }
+  .edition .edit-avertit{font-size:13px;color:var(--alerte);flex:1;min-width:150px}
+  .edition .edit-bilan{margin-top:14px;font-size:14.5px}
+  .edition .edit-bilan .l{
+    display:flex;justify-content:space-between;gap:12px;padding:3px 0;
+  }
+  .edition .edit-bilan .l.somme{
+    border-top:1px solid var(--trait);margin-top:6px;padding-top:7px;font-weight:600;
+  }
+  .edition .edit-bilan .l.ecart{color:var(--alerte);font-weight:600}
+  .edition .edit-alerte{
+    margin-top:10px;padding:10px 12px;border-radius:var(--r);
+    background:#f6e2de;color:var(--alerte);font-size:13.5px;line-height:1.45;
+  }
+  .edition .edit-actions{display:flex;gap:9px;margin-top:14px;flex-wrap:wrap}
+
   .coche{width:19px;height:19px;flex-shrink:0;accent-color:var(--accent);cursor:pointer}
   .jour{display:flex;align-items:center;gap:10px}
   .jour .tout{
@@ -202,6 +268,9 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChang
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, collection, getDocs, doc, getDoc, setDoc, updateDoc, writeBatch, increment }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+// Même règle de prix que la vitrine et le checkout : un article ajouté ici
+// suit le tarif de groupe et le code promo exactement comme à la commande.
+import { calculerPrix, prixUnitaire, rayonDe } from "./promo.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDuq8KS8M_Z8U7BlSp6MvE-6Y9OYYaDujE",
@@ -236,6 +305,7 @@ const FENETRE_JOURS = 10;
 
 let commandes = [], filtre = "actives";
 let joursFermes = [];   // 0 = lundi
+let catalogue = {};     // { code : { nom, prix_vente, rayon } } — pour la modification
 let stockLimite = {};   // { code produit : true } — produits à stock décompté
 let nomVersCode = {};   // rattrapage : nom du produit -> code, pour les commandes d'avant les codes
 let abonnements = [];   // échéances d'abonnement à ajouter à la production
@@ -282,11 +352,17 @@ async function charger() {
 
     try {
       const cat = await getDocs(collection(db, "boutique_produits"));
-      stockLimite = {}; nomVersCode = {};
+      stockLimite = {}; nomVersCode = {}; catalogue = {};
       cat.forEach(d => {
         const v = d.data();
         if (v.mode_stock === "limite") stockLimite[d.id] = true;
         if (v.nom) nomVersCode[cle(v.nom)] = d.id;
+        catalogue[d.id] = {
+          nom: v.nom || d.id,
+          prix_vente: Number(v.prix_vente) || 0,
+          rayon: rayonDe(v),
+          publie: v.publie !== false
+        };
       });
     } catch (e) { console.error(e); }
 
@@ -430,7 +506,10 @@ function carte(c) {
             `<option value="${v}">${t}</option>`).join("")}
         </select>
         <a class="lien lienClient" target="_blank" rel="noopener">WhatsApp client</a>
+        <button type="button" class="mineur btnModifier">Modifier la commande</button>
       </div>
+
+      <div class="edition" hidden></div>
     </div>`;
 
   el.querySelector(".nom").textContent = c.client?.nom || "—";
@@ -463,6 +542,12 @@ function carte(c) {
   coche.onchange = () => {
     coche.checked ? selection.add(c.id) : selection.delete(c.id);
     majLot();
+  };
+
+  el.querySelector(".btnModifier").onclick = () => {
+    const zone = el.querySelector(".edition");
+    if (!zone.hidden) { zone.hidden = true; zone.innerHTML = ""; return; }
+    ouvrirModification(c, el);
   };
 
   const selS = el.querySelector(".selStatut");
@@ -748,6 +833,282 @@ function appliquerStock(paquet, c, nouveauStatut) {
       { stock: increment(a.signe * (l.qte || 0)) });
   });
   return a.drapeau;
+}
+
+
+/* ---------- Modification d'une commande ----------
+   Ajouter, retirer, changer une quantité, déplacer la date — y compris sur
+   un jour de fermeture, pour les commandes spéciales.
+
+   Le prix : les lignes sont recalculées avec la même fonction que la vitrine
+   et le checkout, à partir du prix catalogue et de la remise portée par la
+   commande. Un article ajouté suit donc le tarif de groupe et le code promo
+   comme s'il avait été commandé le jour même.
+
+   Le stock : recalculé automatiquement, mais seulement si la commande a déjà
+   été confirmée — avant confirmation, rien n'a été déduit.
+
+   Le crédit : jamais touché. Si le total change alors qu'un crédit a été
+   prélevé, l'écart est signalé et se règle à la main depuis la page Crédit. */
+
+// Prix catalogue d'une ligne, avec repli sur le prix facturé si le produit
+// a disparu du catalogue.
+function prixBaseLigne(l) {
+  const code = codeLigne(l);
+  const fiche = code ? catalogue[code] : null;
+  return fiche ? fiche.prix_vente : (Number(l.prix) || 0);
+}
+
+function rayonLigne(l) {
+  const code = codeLigne(l);
+  return (code && catalogue[code]) ? catalogue[code].rayon : "Other";
+}
+
+// Recalcule prix unitaires, sous-total et total d'un panier donné.
+function recalculer(c, panier) {
+  const fiche = c.code_promo
+    ? { valeur: c.code_promo.valeur, type: c.code_promo.type,
+        rayons: c.code_promo.rayons || [] }
+    : null;
+
+  const pourCalcul = panier.map(l => ({
+    qte: Number(l.qte) || 0,
+    prixBase: prixBaseLigne(l),
+    rayon: rayonLigne(l)
+  }));
+
+  const calcul = calculerPrix(pourCalcul, Number(c.remise) || 0, fiche);
+
+  const lignes = panier.map(l => ({
+    code: codeLigne(l) || l.code || null,
+    nom: l.nom,
+    qte: Number(l.qte) || 0,
+    prix: prixUnitaire(prixBaseLigne(l), Number(c.remise) || 0, calcul.source)
+  }));
+
+  const frais = c.frais_a_confirmer ? 0 : (Number(c.frais_livraison) || 0);
+
+  return {
+    lignes, calcul,
+    sous_total: calcul.sousTotal,
+    total: calcul.sousTotal + frais
+  };
+}
+
+/* Écarts de stock entre l'ancien et le nouveau panier.
+   Positif = pièces à rendre au stock, négatif = pièces à retirer. */
+function ecartsStock(avant, apres) {
+  const compte = (panier) => {
+    const t = {};
+    (panier || []).forEach(l => {
+      const code = codeLigne(l);
+      if (code && stockLimite[code]) t[code] = (t[code] || 0) + (Number(l.qte) || 0);
+    });
+    return t;
+  };
+  const a = compte(avant), b = compte(apres);
+  const ecarts = {};
+  new Set([...Object.keys(a), ...Object.keys(b)]).forEach(code => {
+    const d = (a[code] || 0) - (b[code] || 0);
+    if (d !== 0) ecarts[code] = d;
+  });
+  return ecarts;
+}
+
+function jourFerme(iso) {
+  if (!iso) return false;
+  const d = new Date(iso + "T12:00:00");
+  return joursFermes.includes((d.getDay() + 6) % 7);
+}
+
+/* ---------- Écran de modification ---------- */
+function ouvrirModification(c, el) {
+  // Copie de travail : rien n'est touché tant que l'on n'enregistre pas.
+  let panier = (c.panier || []).map(l => Object.assign({}, l));
+  let date = c.date_retrait || "";
+
+  const zone = el.querySelector(".edition");
+  zone.hidden = false;
+
+  const choixProduits = Object.entries(catalogue)
+    .filter(([, f]) => f.publie)
+    .sort((a, b) => a[1].nom.localeCompare(b[1].nom))
+    .map(([code, f]) => `<option value="${code}">${echapper(f.nom)}</option>`)
+    .join("");
+
+  function dessiner() {
+    const r = recalculer(c, panier);
+    const ecartTotal = r.total - (Number(c.total) || 0);
+    const credit = Number(c.credit_utilise) || 0;
+
+    zone.innerHTML = `
+      <div class="edit-lignes"></div>
+
+      <div class="edit-ajout">
+        <select class="edit-produit">${choixProduits}</select>
+        <input type="number" class="edit-qte" min="1" step="1" value="1">
+        <button type="button" class="mineur edit-plus">Ajouter</button>
+      </div>
+
+      <div class="edit-date">
+        <label>Date de retrait</label>
+        <input type="date" class="edit-jour" value="${date}">
+        <span class="edit-avertit"></span>
+      </div>
+
+      <div class="edit-bilan">
+        <div class="l"><span>Sous-total</span><span>${peso(r.sous_total)}</span></div>
+        ${c.frais_a_confirmer ? "" : (Number(c.frais_livraison) > 0
+          ? `<div class="l"><span>${echapper(c.option?.nom || "Livraison")}</span>
+             <span>${peso(c.frais_livraison)}</span></div>` : "")}
+        <div class="l somme"><span>Total</span><span>${peso(r.total)}</span></div>
+        ${ecartTotal !== 0
+          ? `<div class="l ecart"><span>Écart avec le total actuel</span>
+             <span>${ecartTotal > 0 ? "+" : ""}${peso(ecartTotal)}</span></div>` : ""}
+        ${credit > 0 && ecartTotal !== 0
+          ? `<div class="edit-alerte">${peso(credit)} de crédit ont déjà été
+             annoncés sur cette commande. Le solde du client n'est pas modifié :
+             réglez l'écart de ${peso(Math.abs(ecartTotal))} à la main depuis la
+             page Crédit.</div>` : ""}
+      </div>
+
+      <div class="edit-actions">
+        <button type="button" class="action edit-ok">Enregistrer les modifications</button>
+        <button type="button" class="mineur edit-annuler">Annuler</button>
+      </div>`;
+
+    // Lignes du panier
+    const zl = zone.querySelector(".edit-lignes");
+    if (!panier.length) {
+      zl.innerHTML = '<div class="edit-vide">Plus aucun article. La commande ne peut pas être vide.</div>';
+    } else {
+      panier.forEach((l, i) => {
+        const ligne = document.createElement("div");
+        ligne.className = "edit-l";
+        ligne.innerHTML = `
+          <span class="n"></span>
+          <input type="number" class="q" min="1" step="1" value="${Number(l.qte) || 1}">
+          <span class="p">${peso(r.lignes[i].prix * (Number(l.qte) || 0))}</span>
+          <button type="button" class="retirer" aria-label="Retirer">✕</button>`;
+        ligne.querySelector(".n").textContent = l.nom || codeLigne(l) || "?";
+        ligne.querySelector(".q").onchange = (e) => {
+          const v = Math.max(1, Number(e.target.value) || 1);
+          panier[i].qte = v;
+          dessiner();
+        };
+        ligne.querySelector(".retirer").onclick = () => {
+          panier.splice(i, 1);
+          dessiner();
+        };
+        zl.appendChild(ligne);
+      });
+    }
+
+    // Ajout d'un produit
+    zone.querySelector(".edit-plus").onclick = () => {
+      const code = zone.querySelector(".edit-produit").value;
+      const qte = Math.max(1, Number(zone.querySelector(".edit-qte").value) || 1);
+      const fiche = catalogue[code];
+      if (!fiche) return;
+      const deja = panier.find(l => codeLigne(l) === code);
+      if (deja) deja.qte = (Number(deja.qte) || 0) + qte;   // pas de doublon
+      else panier.push({ code, nom: fiche.nom, qte, prix: fiche.prix_vente });
+      dessiner();
+    };
+
+    // Date, y compris un jour de fermeture
+    const champJour = zone.querySelector(".edit-jour");
+    const avertit = zone.querySelector(".edit-avertit");
+    const majAvertissement = () => {
+      avertit.textContent = jourFerme(champJour.value)
+        ? "Jour de fermeture — autorisé, mais rien d'autre n'est cuit ce jour-là."
+        : "";
+    };
+    majAvertissement();
+    champJour.onchange = () => { date = champJour.value; majAvertissement(); };
+
+    zone.querySelector(".edit-annuler").onclick = () => {
+      zone.hidden = true;
+      zone.innerHTML = "";
+    };
+
+    zone.querySelector(".edit-ok").onclick = () => enregistrerModification(c, panier, date);
+  }
+
+  dessiner();
+}
+
+async function enregistrerModification(c, panier, date) {
+  if (!panier.length)
+    return signaler("Une commande ne peut pas être vide. Annulez-la plutôt.", "err");
+  if (!date)
+    return signaler("La date de retrait est obligatoire.", "err");
+
+  const r = recalculer(c, panier);
+  const ecarts = ecartsStock(c.panier, r.lignes);
+  // Le stock n'a été touché qu'à la confirmation : avant, il n'y a rien à rendre.
+  const toucherStock = !!c.stock_deduit;
+
+  const resume = [
+    `${(c.panier || []).length} ligne(s) → ${r.lignes.length}`,
+    `total ${peso(c.total)} → ${peso(r.total)}`,
+    c.date_retrait !== date ? `date ${c.date_retrait} → ${date}` : null,
+    toucherStock && Object.keys(ecarts).length
+      ? "le stock sera ajusté en conséquence" : null
+  ].filter(Boolean).join("\n");
+
+  if (!confirm("Enregistrer ces modifications ?\n\n" + resume)) return;
+
+  try {
+    const paquet = writeBatch(db);
+
+    paquet.update(doc(db, "commandes", c.id), {
+      panier: r.lignes,
+      date_retrait: date,
+      sous_total: r.calcul.sousTotal,
+      sous_total_brut: r.calcul.base,
+      remise_montant: r.calcul.economie,
+      remise_source: r.calcul.source,
+      code_promo: c.code_promo
+        ? Object.assign({}, c.code_promo,
+            { montant: r.calcul.source === "promo" ? r.calcul.economie : 0 })
+        : null,
+      total: r.total,
+      modifiee_le: new Date().toISOString(),
+      modifiee_par: auth.currentUser?.email || ""
+    });
+
+    if (toucherStock) {
+      Object.entries(ecarts).forEach(([code, d]) => {
+        paquet.update(doc(db, "boutique_produits", code), { stock: increment(d) });
+      });
+    }
+
+    await paquet.commit();
+
+    // Mise à jour de la copie locale, sans recharger toute la page.
+    c.panier = r.lignes;
+    c.date_retrait = date;
+    c.sous_total = r.calcul.sousTotal;
+    c.total = r.total;
+    c.remise_source = r.calcul.source;
+
+    commandes.sort((a, b) =>
+      (a.date_retrait || "").localeCompare(b.date_retrait || "") ||
+      (b.cree_le || "").localeCompare(a.cree_le || ""));
+
+    afficher();
+    publierProduction();
+    publierCharges();
+
+    const credit = Number(c.credit_utilise) || 0;
+    signaler(credit > 0
+      ? "Commande modifiée. Vérifiez le crédit du client, il n'a pas été ajusté."
+      : "Commande modifiée.", "ok");
+  } catch (e) {
+    console.error(e);
+    signaler("La modification n'a pas pu être enregistrée.", "err");
+  }
 }
 
 /* ---------- Traitement par lot ---------- */
