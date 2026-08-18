@@ -17,17 +17,17 @@
   *{box-sizing:border-box}
   body{
     margin:0;background:var(--creme);color:var(--encre);
-    font:16px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+    font:18px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
   }
   header{
     background:var(--encre);color:var(--creme);padding:14px 18px;
     display:flex;align-items:center;gap:12px;flex-wrap:wrap;
   }
-  header h1{font-size:17px;margin:0;font-weight:600}
-  header .qui{margin-left:auto;font-size:13px;opacity:.72}
+  header h1{font-size:19px;margin:0;font-weight:600}
+  header .qui{margin-left:auto;font-size:14.5px;opacity:.72}
   header button{
     background:transparent;border:1px solid #4a443c;color:var(--creme);
-    padding:8px 13px;border-radius:var(--r);font-size:13.5px;cursor:pointer;
+    padding:8px 13px;border-radius:var(--r);font-size:15px;cursor:pointer;
   }
   main{max-width:860px;margin:0 auto;padding:22px 16px 60px}
 
@@ -39,19 +39,19 @@
     background:var(--papier);border:1px solid var(--trait);
     border-radius:var(--r);padding:15px;
   }
-  .chiffre .v{font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.1}
-  .chiffre .e{font-size:13px;color:var(--encre-doux);margin-top:4px}
+  .chiffre .v{font-size:29px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.1}
+  .chiffre .e{font-size:14.5px;color:var(--encre-doux);margin-top:4px}
   .chiffre.attention .v{color:var(--alerte)}
 
   .carte{
     background:var(--papier);border:1px solid var(--trait);
     border-radius:var(--r);padding:18px;margin-bottom:16px;
   }
-  .carte h2{font-size:15px;margin:0 0 4px}
-  .carte p.aide{font-size:13.5px;color:var(--encre-doux);margin:0 0 14px}
+  .carte h2{font-size:17px;margin:0 0 4px}
+  .carte p.aide{font-size:15px;color:var(--encre-doux);margin:0 0 14px}
 
   .jour{
-    font-size:13.5px;color:var(--encre-doux);font-weight:600;
+    font-size:15px;color:var(--encre-doux);font-weight:600;
     margin:16px 0 7px;
   }
   .jour:first-child{margin-top:0}
@@ -59,18 +59,18 @@
      de préparation — tous les Lalamove ensemble, tous les retraits ensemble. */
   .mode{
     display:flex;align-items:baseline;gap:8px;
-    font-size:12.5px;letter-spacing:.05em;text-transform:uppercase;
+    font-size:14px;letter-spacing:.05em;text-transform:uppercase;
     color:var(--encre-doux);margin:11px 0 3px;
   }
   .mode .compte{
-    font-size:11.5px;letter-spacing:0;text-transform:none;opacity:.75;
+    font-size:13px;letter-spacing:0;text-transform:none;opacity:.75;
   }
   /* Deux lignes au maximum : nom et montant sur la première, statut sur la
      seconde. Le mode n'est plus répété, il sert de titre au groupe. */
   .cmd{
     display:grid;grid-template-columns:10px 1fr auto;gap:3px 11px;
     align-items:baseline;padding:7px 0;
-    border-bottom:1px solid var(--trait);font-size:15px;
+    border-bottom:1px solid var(--trait);font-size:17px;
   }
   .cmd:last-child{border-bottom:none}
   .cmd .pastille{grid-row:1}
@@ -80,7 +80,7 @@
   }
   .cmd .montant{grid-column:3;font-variant-numeric:tabular-nums}
   .cmd .quoi{
-    grid-column:2 / -1;font-size:13px;color:var(--encre-doux);
+    grid-column:2 / -1;font-size:14.5px;color:var(--encre-doux);
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   }
   /* La forme distingue autant que la couleur : un rond plein pour ce qui est
@@ -104,15 +104,15 @@
     padding:15px;text-decoration:none;color:var(--encre);
   }
   .lien:hover{border-color:var(--accent)}
-  .lien b{display:block;font-size:15px}
-  .lien span{font-size:13px;color:var(--encre-doux)}
+  .lien b{display:block;font-size:17px}
+  .lien span{font-size:14.5px;color:var(--encre-doux)}
 
-  .vide{padding:26px;text-align:center;color:var(--encre-doux);font-size:14.5px}
+  .vide{padding:26px;text-align:center;color:var(--encre-doux);font-size:16.5px}
   .connexion{max-width:400px;margin:14vh auto;text-align:center;padding:0 20px}
-  .connexion h1{font-size:22px;margin:0 0 20px}
+  .connexion h1{font-size:25px;margin:0 0 20px}
   .connexion button{
     background:var(--accent);color:#fff;border:none;padding:12px 22px;
-    border-radius:var(--r);font-size:15px;font-weight:600;cursor:pointer;
+    border-radius:var(--r);font-size:17px;font-weight:600;cursor:pointer;
   }
 </style>
 </head>
@@ -121,7 +121,7 @@
 <div id="ecranConnexion" class="connexion">
   <h1>Administration</h1>
   <button id="btnConnexion">Se connecter avec Google</button>
-  <p id="msgConnexion" style="margin-top:18px;font-size:14px"></p>
+  <p id="msgConnexion" style="margin-top:18px;font-size:16px"></p>
 </div>
 
 <div id="app" hidden>
