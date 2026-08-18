@@ -47,6 +47,27 @@
     border-radius:var(--r);padding:20px;margin-bottom:18px;
   }
   .carte h2{margin:0 0 4px;font-size:16px;letter-spacing:.01em}
+  /* Cartes repliables : le titre sert de bouton. */
+  .carte > h2[role="button"]{
+    cursor:pointer;display:flex;align-items:center;gap:9px;
+    margin:0;padding:2px 0 6px;user-select:none;
+  }
+  .carte > h2[role="button"]::before{
+    content:"";width:0;height:0;flex:0 0 auto;
+    border-left:6px solid var(--encre-doux);
+    border-top:4.5px solid transparent;border-bottom:4.5px solid transparent;
+    transform:rotate(90deg);transform-origin:center;
+  }
+  .carte > h2[role="button"]:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+  .carte.repliee{padding:14px 20px}
+  .carte.repliee > h2[role="button"]{padding-bottom:0}
+  .carte.repliee > h2[role="button"]::before{transform:rotate(0deg)}
+  .carte > .carte-corps{padding-top:6px}
+  .carte > .carte-corps[hidden]{display:none}
+  .plis{display:flex;justify-content:flex-end;margin:-14px 0 16px}
+  @media (prefers-reduced-motion:no-preference){
+    .carte > h2[role="button"]::before{transition:transform .15s}
+  }
   .carte p.aide{margin:0 0 16px;font-size:13.5px;color:var(--encre-doux)}
   label{display:block;font-size:13px;color:var(--encre-doux);margin-bottom:5px}
   input[type=text],input[type=number],textarea,select{
@@ -162,6 +183,10 @@
       <button role="tab" id="ongletParams" aria-selected="true">Paramètres</button>
       <button role="tab" id="ongletProduits" aria-selected="false">Produits en vente</button>
       <button role="tab" id="ongletCodes" aria-selected="false">Codes promo</button>
+    </div>
+
+    <div class="plis">
+      <button class="mineur" id="btnPlis" type="button">Tout déplier</button>
     </div>
 
     <!-- ---------- PARAMÈTRES ---------- -->
@@ -489,6 +514,7 @@ function ouvrir(onglet) {
   });
   // Les codes promo s'enregistrent un par un : la barre du bas n'a pas de sens ici.
   $("barreEnregistrer").hidden = (onglet === "codes");
+  majLibellePlis();
 }
 $("ongletParams").onclick   = () => ouvrir("params");
 $("ongletProduits").onclick = () => ouvrir("produits");
@@ -1082,6 +1108,9 @@ function modifierCode(c) {
   $("btnCodeAnnuler").hidden = false;
   majTypeCode();
   etatCode("Modification en cours.");
+  // Le formulaire peut être replié : on l'ouvre avant d'y envoyer le curseur.
+  const carte = deplierPour($("cpCode"));
+  if (carte) carte.scrollIntoView({ block: "nearest", behavior: "smooth" });
   $("cpLibelle").focus();
 }
 
@@ -1207,6 +1236,93 @@ async function basculerCode(c) {
     etatCode("La modification a échoué.", "err");
   }
 }
+
+/* ============================================================
+   10. CARTES REPLIABLES
+   Le titre de chaque carte sert de bouton. Le contenu reste dans la page,
+   simplement masqué : l'enregistrement lit les champs repliés comme les autres.
+   L'état est retenu d'une visite à l'autre.
+   ============================================================ */
+const CLE_PLIS = "boutique-admin.cartes";
+let etatPlis = {};
+try { etatPlis = JSON.parse(localStorage.getItem(CLE_PLIS) || "{}"); } catch (e) { etatPlis = {}; }
+
+function memoriserPlis() {
+  try { localStorage.setItem(CLE_PLIS, JSON.stringify(etatPlis)); } catch (e) {}
+}
+
+function plier(carte, ouvert) {
+  const titre = carte.querySelector(":scope > h2");
+  const corps = carte.querySelector(":scope > .carte-corps");
+  carte.classList.toggle("repliee", !ouvert);
+  if (titre) titre.setAttribute("aria-expanded", String(ouvert));
+  if (corps) corps.hidden = !ouvert;
+  etatPlis[carte.dataset.pli] = ouvert;
+  memoriserPlis();
+}
+
+// Déplie la carte qui contient un élément donné — utile quand un bouton
+// de la liste renvoie vers un formulaire replié.
+function deplierPour(element) {
+  const carte = element && element.closest(".carte");
+  if (carte && carte.classList.contains("repliee")) plier(carte, true);
+  return carte;
+}
+
+function cartesVisibles() {
+  return [...document.querySelectorAll("main section:not([hidden]) .carte")];
+}
+
+function majLibellePlis() {
+  const cartes = cartesVisibles();
+  const btn = $("btnPlis");
+  if (!btn) return;
+  btn.hidden = cartes.length < 2;
+  const toutOuvert = cartes.length > 0 && cartes.every(c => !c.classList.contains("repliee"));
+  btn.textContent = toutOuvert ? "Tout replier" : "Tout déplier";
+}
+
+function rendrePliables() {
+  document.querySelectorAll("main .carte").forEach(carte => {
+    const titre = carte.querySelector(":scope > h2");
+    if (!titre || carte.dataset.pli) return;
+
+    // Le titre du formulaire des codes change au fil des modifications :
+    // la clé est figée à l'initialisation.
+    const cle = (titre.textContent || "").trim().slice(0, 48);
+    carte.dataset.pli = cle;
+
+    const corps = document.createElement("div");
+    corps.className = "carte-corps";
+    while (titre.nextSibling) corps.appendChild(titre.nextSibling);
+    carte.appendChild(corps);
+
+    titre.setAttribute("role", "button");
+    titre.tabIndex = 0;
+    titre.addEventListener("click", () => {
+      plier(carte, carte.classList.contains("repliee"));
+      majLibellePlis();
+    });
+    titre.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); titre.click(); }
+    });
+
+    // Les six cartes des paramètres arrivent repliées : c'est là que le
+    // défilement gênait. Les autres onglets n'ont qu'une ou deux cartes.
+    const defaut = !carte.closest("#vueParams");
+    plier(carte, etatPlis[cle] ?? defaut);
+  });
+  majLibellePlis();
+}
+
+$("btnPlis").onclick = () => {
+  const cartes = cartesVisibles();
+  const ouvrirTout = cartes.some(c => c.classList.contains("repliee"));
+  cartes.forEach(c => plier(c, ouvrirTout));
+  majLibellePlis();
+};
+
+rendrePliables();
 
 async function supprimerCode(c) {
   if (!confirm("Supprimer définitivement le code " + c.id + " ?\n\n" +
