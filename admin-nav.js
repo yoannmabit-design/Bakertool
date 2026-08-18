@@ -1,283 +1,124 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Administration — Yoann's French Bakery</title>
-<meta name="theme-color" content="#1a1a1a">
-<link rel="icon" href="logo.png" type="image/png">
-<link rel="apple-touch-icon" href="logo.png">
-<link rel="manifest" href="manifest.json">
-<style>
-  :root{
-    --creme:#fdf6ec;--papier:#fffdf9;--encre:#1f1b16;
-    --encre-doux:#6b6157;--trait:#e2d7c6;--accent:#2f4858;
-    --alerte:#8c2f22;--ok:#3d6b3d;--r:6px;
-  }
-  *{box-sizing:border-box}
-  body{
-    margin:0;background:var(--creme);color:var(--encre);
-    font:16px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
-  }
-  header{
-    background:var(--encre);color:var(--creme);padding:14px 18px;
-    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
-  }
-  header h1{font-size:17px;margin:0;font-weight:600}
-  header .qui{margin-left:auto;font-size:13px;opacity:.72}
-  header button{
-    background:transparent;border:1px solid #4a443c;color:var(--creme);
-    padding:8px 13px;border-radius:var(--r);font-size:13.5px;cursor:pointer;
-  }
-  main{max-width:860px;margin:0 auto;padding:22px 16px 60px}
+/* ============================================================
+   Barre de navigation commune aux pages d'administration.
+   À inclure dans chaque page : <script src="admin-nav.js" defer></script>
+   Aucune iframe : chaque page reste autonome, seule la barre est partagée.
 
-  .chiffres{
-    display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
-    gap:12px;margin-bottom:24px;
-  }
-  .chiffre{
-    background:var(--papier);border:1px solid var(--trait);
-    border-radius:var(--r);padding:15px;
-  }
-  .chiffre .v{font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.1}
-  .chiffre .e{font-size:13px;color:var(--encre-doux);margin-top:4px}
-  .chiffre.attention .v{color:var(--alerte)}
+   La barre porte aussi le garde-fou de nom de fichier : chaque page
+   affiche sous quel nom elle doit être enregistrée, et prévient si son
+   contenu ne correspond pas à ce nom. Une page enregistrée par erreur
+   sur un autre fichier se signale ainsi dès son ouverture, au lieu de
+   passer inaperçue jusqu'à ce qu'un menu mène à la mauvaise page.
+   ============================================================ */
+(function () {
+  /* titre : libellé dans le menu.
+     attendu : titre propre de la page, c'est-à-dire le premier segment de
+     la balise <title>, avant le tiret ou la barre verticale. C'est lui qui
+     sert de contrôle : il doit correspondre au fichier ouvert. */
+  const PAGES = [
+    { fichier: "admin.html",                 titre: "Accueil",     attendu: "Administration" },
+    { fichier: "commandes-admin.html",       titre: "Commandes",   attendu: "Commandes" },
+    { fichier: "abonnements-admin.html",     titre: "Abonnements", attendu: "Abonnements" },
+    { fichier: "credits-admin.html",         titre: "Crédit",      attendu: "Crédit clients" },
+    { fichier: "clients-admin.html",         titre: "Clients",     attendu: "Clients" },
+    { fichier: "boutique-admin.html",        titre: "Boutique",    attendu: "Boutique" },
+    { fichier: "produits-identifiants.html", titre: "Produits",    attendu: "Identifiants produits" }
+  ];
 
-  .carte{
-    background:var(--papier);border:1px solid var(--trait);
-    border-radius:var(--r);padding:18px;margin-bottom:16px;
-  }
-  .carte h2{font-size:15px;margin:0 0 4px}
-  .carte p.aide{font-size:13.5px;color:var(--encre-doux);margin:0 0 14px}
+  const ici = location.pathname.split("/").pop() || "admin.html";
 
-  .jour{
-    font-size:13.5px;color:var(--encre-doux);font-weight:600;
-    margin:16px 0 7px;
-  }
-  .jour:first-child{margin-top:0}
-  .cmd{
-    display:flex;gap:11px;align-items:baseline;padding:8px 0;
-    border-bottom:1px solid var(--trait);font-size:15px;flex-wrap:wrap;
-  }
-  .cmd:last-child{border-bottom:none}
-  .cmd .nom{flex:1;min-width:110px;font-weight:600}
-  .cmd .quoi{font-size:13px;color:var(--encre-doux)}
-  .cmd .montant{font-variant-numeric:tabular-nums}
-  .cmd .pastille{
-    width:8px;height:8px;border-radius:50%;flex-shrink:0;
-    background:var(--alerte);
-  }
-  .cmd .pastille.ok{background:var(--ok)}
-
-  .liens{display:flex;gap:10px;flex-wrap:wrap}
-  .lien{
-    display:block;flex:1;min-width:150px;background:var(--papier);
-    border:1px solid var(--trait);border-radius:var(--r);
-    padding:15px;text-decoration:none;color:var(--encre);
-  }
-  .lien:hover{border-color:var(--accent)}
-  .lien b{display:block;font-size:15px}
-  .lien span{font-size:13px;color:var(--encre-doux)}
-
-  .vide{padding:26px;text-align:center;color:var(--encre-doux);font-size:14.5px}
-  .connexion{max-width:400px;margin:14vh auto;text-align:center;padding:0 20px}
-  .connexion h1{font-size:22px;margin:0 0 20px}
-  .connexion button{
-    background:var(--accent);color:#fff;border:none;padding:12px 22px;
-    border-radius:var(--r);font-size:15px;font-weight:600;cursor:pointer;
-  }
-</style>
-</head>
-<body>
-
-<div id="ecranConnexion" class="connexion">
-  <h1>Administration</h1>
-  <button id="btnConnexion">Se connecter avec Google</button>
-  <p id="msgConnexion" style="margin-top:18px;font-size:14px"></p>
-</div>
-
-<div id="app" hidden>
-  <header>
-    <h1>Yoann's French Bakery</h1>
-    <span class="qui" id="qui"></span>
-    <button id="btnDeconnexion">Quitter</button>
-  </header>
-
-  <main>
-    <div class="chiffres" id="chiffres"></div>
-
-    <div class="carte">
-      <h2>Commandes à venir</h2>
-      <p class="aide">Les sept prochains jours. Point rouge : reste à encaisser.</p>
-      <div id="avenir"><div class="vide">Chargement…</div></div>
-    </div>
-
-    <div class="liens">
-      <a class="lien" href="commandes-admin.html">
-        <b>Commandes</b><span>Statuts, encaissements, étiquettes</span></a>
-      <a class="lien" href="boutique-admin.html">
-        <b>Boutique</b><span>Produits, points de retrait, paiements</span></a>
-      <a class="lien" href="clients-admin.html">
-        <b>Clients</b><span>Fiches, tags et groupes</span></a>
-      <a class="lien" href="credits-admin.html">
-        <b>Crédit</b><span>Comptes clients et rechargements</span></a>
-      <a class="lien" href="abonnements-admin.html">
-        <b>Abonnements</b><span>Bread plans, échéances, absences</span></a>
-      <a class="lien" href="produits-identifiants.html">
-        <b>Produits</b><span>Codes de référence</span></a>
-      <a class="lien" href="affiche.html">
-        <b>Affiche</b><span>QR code à imprimer pour le marché</span></a>
-    </div>
-  </main>
-</div>
-
-<script src="admin-nav.js" defer></script>
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
-  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, collection, getDocs, doc, getDoc }
-  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-
-const firebaseConfig = {
-  apiKey: "AIzaSyDuq8KS8M_Z8U7BlSp6MvE-6Y9OYYaDujE",
-  authDomain: "bakertools-ae124.firebaseapp.com",
-  projectId: "bakertools-ae124",
-  storageBucket: "bakertools-ae124.firebasestorage.app",
-  messagingSenderId: "978584667113",
-  appId: "1:978584667113:web:868cc89788aff27717c178"
-};
-
-const app  = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db   = getFirestore(app);
-const $    = (id) => document.getElementById(id);
-const peso = (n) => "₱" + Number(n || 0).toLocaleString("en-PH");
-
-const LIBELLES = {
-  "nouvelle":"Nouvelle", "confirmee":"Confirmée", "en production":"En production",
-  "prete":"Prête", "remise":"Remise", "annulee":"Annulée"
-};
-
-$("btnConnexion").onclick = async () => {
-  try { await signInWithPopup(auth, new GoogleAuthProvider()); }
-  catch (e) {
-    $("msgConnexion").textContent = "Connexion impossible. Autorisez les fenêtres surgissantes.";
-    console.error(e);
-  }
-};
-$("btnDeconnexion").onclick = () => signOut(auth);
-
-onAuthStateChanged(auth, async (user) => {
-  if (!user) { $("app").hidden = true; $("ecranConnexion").hidden = false; return; }
-
-  let autorise = false;
-  try { autorise = (await getDoc(doc(db, "admins", user.uid))).exists(); }
-  catch (e) { console.error(e); }
-
-  if (!autorise) {
-    await signOut(auth);
-    $("msgConnexion").innerHTML =
-      "Ce compte n'a pas accès.<br>Identifiant : <code>" + user.uid + "</code>";
-    return;
-  }
-  $("ecranConnexion").hidden = true;
-  $("app").hidden = false;
-  $("qui").textContent = user.email;
-  charger();
-});
-
-/* ---------- Données ---------- */
-function iso(d) {
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-    .toISOString().slice(0, 10);
-}
-
-async function charger() {
-  let commandes = [];
-  try {
-    const s = await getDocs(collection(db, "commandes"));
-    s.forEach(d => commandes.push({ id: d.id, ...d.data() }));
-  } catch (e) {
-    console.error(e);
-    $("avenir").innerHTML = '<div class="vide">Chargement impossible.</div>';
-    return;
-  }
-
-  const auj = iso(new Date());
-  const dans7 = iso(new Date(Date.now() + 7 * 86400000));
-  const mois = auj.slice(0, 7);
-  const vivantes = commandes.filter(c => c.statut !== "annulee");
-
-  const aTraiter = vivantes.filter(c => c.statut !== "remise");
-  const duJour   = vivantes.filter(c => c.date_retrait === auj);
-  const impayees = vivantes.filter(c => (c.paiement?.statut || "en attente") === "en attente");
-  const duMois   = vivantes.filter(c => (c.date_retrait || "").startsWith(mois));
-
-  chiffre([
-    { v: duJour.length,   e: "pour aujourd'hui" },
-    { v: aTraiter.length, e: "à traiter" },
-    { v: peso(impayees.reduce((t, c) => t + (c.total || 0), 0)),
-      e: "reste à encaisser", attention: impayees.length > 0 },
-    { v: peso(duMois.reduce((t, c) => t + (c.total || 0), 0)), e: "ce mois-ci" }
-  ]);
-
-  const avenir = vivantes
-    .filter(c => c.date_retrait >= auj && c.date_retrait <= dans7 && c.statut !== "remise")
-    .sort((a, b) => (a.date_retrait || "").localeCompare(b.date_retrait || ""));
-
-  afficherAvenir(avenir, auj);
-}
-
-function chiffre(liste) {
-  $("chiffres").innerHTML = liste.map(c =>
-    `<div class="chiffre ${c.attention ? "attention" : ""}">
-       <div class="v">${c.v}</div><div class="e">${c.e}</div></div>`).join("");
-}
-
-function dateLongue(isoJour, auj) {
-  const d = new Date(isoJour + "T12:00:00");
-  const texte = d.toLocaleDateString("fr-FR",
-    { weekday: "long", day: "numeric", month: "long" });
-  const ecart = Math.round(
-    (new Date(isoJour + "T12:00:00") - new Date(auj + "T12:00:00")) / 86400000);
-  if (ecart === 0) return "Aujourd'hui — " + texte;
-  if (ecart === 1) return "Demain — " + texte;
-  return texte;
-}
-
-function afficherAvenir(liste, auj) {
-  const zone = $("avenir");
-  if (!liste.length) {
-    zone.innerHTML = '<div class="vide">Rien de prévu dans les sept prochains jours.</div>';
-    return;
-  }
-
-  zone.innerHTML = "";
-  let jour = null;
-  liste.forEach(c => {
-    if (c.date_retrait !== jour) {
-      jour = c.date_retrait;
-      const t = document.createElement("div");
-      t.className = "jour";
-      t.textContent = dateLongue(jour, auj);
-      zone.appendChild(t);
+  const style = document.createElement("style");
+  style.textContent = `
+    .nav-admin{
+      background:#12100d;padding:0 14px;display:flex;gap:2px;
+      overflow-x:auto;-webkit-overflow-scrolling:touch;
     }
+    .nav-admin a{
+      color:#c9c0b4;text-decoration:none;font-size:14px;
+      padding:12px 15px;white-space:nowrap;border-bottom:2px solid transparent;
+      font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+    }
+    .nav-admin a:hover{color:#fdf6ec}
+    .nav-admin a[aria-current="page"]{
+      color:#fdf6ec;font-weight:600;border-bottom-color:#fdf6ec;
+    }
+    .nom-fichier{
+      font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+      font-size:11.5px;font-weight:400;letter-spacing:0;
+      opacity:.55;margin-left:9px;white-space:nowrap;
+    }
+    .alerte-fichier{
+      background:#8c2f22;color:#fff;padding:12px 16px;font-size:14px;
+      line-height:1.45;
+      font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+    }
+    .alerte-fichier b{display:block;margin-bottom:3px}
+    .alerte-fichier code{
+      font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+      background:rgba(0,0,0,.25);padding:1px 5px;border-radius:3px;
+    }
+    @media print{
+      .nav-admin,.alerte-fichier,.nom-fichier{display:none !important}
+    }
+  `;
+  document.head.appendChild(style);
 
-    const paye = (c.paiement?.statut || "en attente") === "paye";
-    const el = document.createElement("div");
-    el.className = "cmd";
-    el.innerHTML = `
-      <span class="pastille ${paye ? "ok" : ""}"></span>
-      <span class="nom"></span>
-      <span class="quoi"></span>
-      <span class="montant">${peso(c.total)}</span>`;
-    el.querySelector(".nom").textContent = c.client?.nom || "—";
-    el.querySelector(".quoi").textContent =
-      [LIBELLES[c.statut] || c.statut, c.option?.nom].filter(Boolean).join(" · ");
-    zone.appendChild(el);
+  const barre = document.createElement("nav");
+  barre.className = "nav-admin";
+  barre.setAttribute("aria-label", "Administration");
+  PAGES.forEach(p => {
+    const a = document.createElement("a");
+    a.href = p.fichier;
+    a.textContent = p.titre;
+    if (p.fichier === ici) a.setAttribute("aria-current", "page");
+    barre.appendChild(a);
   });
-}
-</script>
-</body>
-</html>
+
+  document.body.insertBefore(barre, document.body.firstChild);
+
+  /* ---------- Garde-fou de nom de fichier ---------- */
+
+  // Le titre propre de la page : ce qui précède le premier tiret cadratin
+  // ou la première barre verticale.
+  function titrePropre() {
+    return (document.title || "").split(/[—|]/)[0].trim();
+  }
+
+  // Comparaison indulgente sur la casse, les accents et les espaces.
+  function pareil(a, b) {
+    const net = (s) => (s || "").toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, " ").trim();
+    return net(a) === net(b);
+  }
+
+  // Le nom du fichier, affiché à côté du titre de la page.
+  const cible = document.querySelector("header h1") || document.querySelector("h1");
+  if (cible) {
+    const marque = document.createElement("span");
+    marque.className = "nom-fichier";
+    marque.textContent = ici;
+    marque.title = "Nom du fichier — enregistrez la page sous ce nom.";
+    cible.appendChild(marque);
+  }
+
+  // Une page inconnue du menu n'est pas contrôlée : rien à comparer.
+  const fiche = PAGES.find(p => p.fichier === ici);
+  if (fiche && !pareil(titrePropre(), fiche.attendu)) {
+    const vu = titrePropre() || "sans titre";
+    const alerte = document.createElement("div");
+    alerte.className = "alerte-fichier";
+    alerte.innerHTML =
+      "<b>Ce fichier ne contient pas la page attendue.</b>" +
+      "Le fichier <code>" + ici + "</code> devrait contenir la page " +
+      "<b>" + fiche.attendu + "</b>, mais il contient <b>" + vu + "</b>. " +
+      "C'est le signe d'un enregistrement sous le mauvais nom : ne réenregistrez " +
+      "pas cette page ici avant d'avoir vérifié, l'historique GitHub du fichier " +
+      "permet de récupérer la bonne version.";
+    document.body.insertBefore(alerte, barre.nextSibling);
+  }
+
+  // Installation possible sur mobile, et consultation hors ligne au fournil.
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw-admin.js").catch(() => {});
+  }
+})();
