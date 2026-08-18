@@ -126,6 +126,14 @@
   .produit .cat{font-size:13.5px;color:var(--encre-doux);text-transform:uppercase;letter-spacing:.05em}
   .produit .detail{margin-top:14px;padding-top:14px;border-top:1px dashed var(--trait)}
   .produit .detail[hidden]{display:none}
+  .produit .tete{cursor:pointer;user-select:none}
+  .produit .plier{
+    background:none;border:none;color:var(--encre-doux);
+    font-size:15px;cursor:pointer;padding:4px 6px;margin-left:auto;
+    transition:transform .15s;
+  }
+  .produit .plier[aria-expanded="true"]{transform:rotate(180deg)}
+  .produit .plier:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .bascule{display:flex;align-items:center;gap:7px;font-size:16px;margin:0;color:var(--encre);cursor:pointer}
   .cp{
     border:1px solid var(--trait);border-radius:var(--r);
@@ -485,7 +493,12 @@ function rayonParDefaut(categorieERP) {
 
 let orphelins = [];
 let sansCode  = [];
-let produits = [];   // { id, nom, categorie, publie, prix, description, photo,
+/* Fiches dépliées. Publier et déplier sont deux choses distinctes : on doit
+   pouvoir replier une fiche publiée pour retrouver le fil de la liste, et
+   ouvrir une fiche non publiée pour préparer son prix avant la mise en vente. */
+let ouverts = new Set();
+
+let produits = [];   // { id, nom, categorie, publie, prix, description, photo, notice,
                      //   disponible, abonnement, rayon, mode_stock, stock }
 
 /* ============================================================
@@ -780,6 +793,7 @@ async function chargerProduits() {
         prix: p.prix_vente ?? it.prixVente ?? it.prix ?? 0,
         description: p.description_client || "",
         photo: p.photo_url || "",
+        notice: p.notice || "",
         disponible: p.disponible !== false,
         // Champ absent = disponible : les produits publiés avant l'existence
         // de ce réglage restent proposés à l'abonnement.
@@ -878,8 +892,10 @@ function afficherProduits() {
         <span class="nom"></span>
         <span class="code"></span>
         <span class="cat"></span>
+        <button type="button" class="plier" aria-expanded="${ouverts.has(p.id)}"
+          aria-label="Déplier la fiche">&#9662;</button>
       </div>
-      <div class="detail" ${p.publie ? "" : "hidden"}>
+      <div class="detail" ${ouverts.has(p.id) ? "" : "hidden"}>
         <div class="grille">
           <div>
             <label>Prix de vente (₱)</label>
@@ -899,6 +915,17 @@ function afficherProduits() {
         <div style="margin-top:12px">
           <label>Description pour le client</label>
           <textarea class="desc" placeholder="Pur levain, farine de blé et de seigle."></textarea>
+        </div>
+        <div style="margin-top:12px">
+          <label>Notice à télécharger <span style="opacity:.7">(facultatif)</span></label>
+          <input type="text" class="notice" placeholder="notices/pate-pizza.pdf">
+          <p class="aide" style="margin:6px 0 0">
+            Mode d'emploi proposé au client sur la fiche produit et après sa
+            commande — cuisson d'une pâte surgelée, façonnage de croissants prêts
+            à cuire. Déposez le PDF dans le dossier <code>notices/</code> du dépôt
+            de la boutique et indiquez ici son chemin. Une adresse complète
+            commençant par https:// fonctionne aussi.
+          </p>
         </div>
         <label class="bascule" style="margin-top:12px">
           <input type="checkbox" class="dispo"> Disponible à la commande
@@ -936,6 +963,7 @@ function afficherProduits() {
     bloc.querySelector(".cat").textContent = p.rayon + " · " + p.categorie;
     bloc.querySelector(".prix").value       = p.prix;
     bloc.querySelector(".photo").value      = p.photo;
+    bloc.querySelector(".notice").value     = p.notice;
     bloc.querySelector(".desc").value       = p.description;
     bloc.querySelector(".dispo").checked    = p.disponible;
     bloc.querySelector(".abo").checked      = p.abonnement;
@@ -958,13 +986,34 @@ function afficherProduits() {
     champCap.oninput = (e) => p.capacite_jour = Math.max(0, Number(e.target.value) || 0);
 
     const detail = bloc.querySelector(".detail");
+    const plier = bloc.querySelector(".plier");
+
+    const basculer = (ouvrir) => {
+      detail.hidden = !ouvrir;
+      plier.setAttribute("aria-expanded", String(ouvrir));
+      if (ouvrir) ouverts.add(p.id); else ouverts.delete(p.id);
+    };
+
+    plier.onclick = (e) => {
+      e.stopPropagation();
+      basculer(detail.hidden);
+    };
+    // Le titre entier est cliquable, sauf la case Publier.
+    bloc.querySelector(".tete").onclick = (e) => {
+      if (e.target.closest(".bascule")) return;
+      basculer(detail.hidden);
+    };
+
     bloc.querySelector(".pub").onchange = (e) => {
       p.publie = e.target.checked;
-      detail.hidden = !p.publie;
       bloc.classList.toggle("publie", p.publie);
+      // Publier ouvre la fiche : il y a un prix à saisir. Dépublier ne la
+      // ferme pas, on veut souvent vérifier ce qu'elle contenait.
+      if (p.publie) basculer(true);
     };
     bloc.querySelector(".prix").oninput  = (e) => p.prix = Number(e.target.value) || 0;
     bloc.querySelector(".photo").oninput = (e) => p.photo = e.target.value;
+    bloc.querySelector(".notice").oninput = (e) => p.notice = e.target.value;
     bloc.querySelector(".desc").oninput  = (e) => p.description = e.target.value;
     bloc.querySelector(".dispo").onchange = (e) => p.disponible = e.target.checked;
     bloc.querySelector(".abo").onchange   = (e) => p.abonnement = e.target.checked;
@@ -1055,6 +1104,8 @@ $("btnEnregistrer").onclick = async () => {
           prix_vente: Number(p.prix) || 0,
           description_client: p.description.trim(),
           photo_url: p.photo.trim(),
+          // Notice de mise en œuvre, lue par la vitrine et la confirmation.
+          notice: p.notice.trim(),
           disponible: p.disponible,
           abonnement: p.abonnement,
           mode_stock: p.mode_stock,
