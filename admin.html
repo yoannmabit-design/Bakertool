@@ -55,14 +55,34 @@
     margin:16px 0 7px;
   }
   .jour:first-child{margin-top:0}
+  /* Regroupement par mode à l'intérieur d'une journée : c'est la logique
+     de préparation — tous les Lalamove ensemble, tous les retraits ensemble. */
+  .mode{
+    display:flex;align-items:baseline;gap:8px;
+    font-size:12.5px;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--encre-doux);margin:11px 0 3px;
+  }
+  .mode .compte{
+    font-size:11.5px;letter-spacing:0;text-transform:none;opacity:.75;
+  }
+  /* Deux lignes au maximum : nom et montant sur la première, statut sur la
+     seconde. Le mode n'est plus répété, il sert de titre au groupe. */
   .cmd{
-    display:flex;gap:11px;align-items:baseline;padding:8px 0;
-    border-bottom:1px solid var(--trait);font-size:15px;flex-wrap:wrap;
+    display:grid;grid-template-columns:8px 1fr auto;gap:3px 11px;
+    align-items:baseline;padding:7px 0;
+    border-bottom:1px solid var(--trait);font-size:15px;
   }
   .cmd:last-child{border-bottom:none}
-  .cmd .nom{flex:1;min-width:110px;font-weight:600}
-  .cmd .quoi{font-size:13px;color:var(--encre-doux)}
-  .cmd .montant{font-variant-numeric:tabular-nums}
+  .cmd .pastille{grid-row:1}
+  .cmd .nom{
+    grid-column:2;font-weight:600;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .cmd .montant{grid-column:3;font-variant-numeric:tabular-nums}
+  .cmd .quoi{
+    grid-column:2 / -1;font-size:13px;color:var(--encre-doux);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
   .cmd .pastille{
     width:8px;height:8px;border-radius:50%;flex-shrink:0;
     background:var(--alerte);
@@ -254,28 +274,55 @@ function afficherAvenir(liste, auj) {
   }
 
   zone.innerHTML = "";
-  let jour = null;
-  liste.forEach(c => {
-    if (c.date_retrait !== jour) {
-      jour = c.date_retrait;
-      const t = document.createElement("div");
-      t.className = "jour";
-      t.textContent = dateLongue(jour, auj);
-      zone.appendChild(t);
-    }
 
-    const paye = (c.paiement?.statut || "en attente") === "paye";
-    const el = document.createElement("div");
-    el.className = "cmd";
-    el.innerHTML = `
-      <span class="pastille ${paye ? "ok" : ""}"></span>
-      <span class="nom"></span>
-      <span class="quoi"></span>
-      <span class="montant">${peso(c.total)}</span>`;
-    el.querySelector(".nom").textContent = c.client?.nom || "—";
-    el.querySelector(".quoi").textContent =
-      [LIBELLES[c.statut] || c.statut, c.option?.nom].filter(Boolean).join(" · ");
-    zone.appendChild(el);
+  /* Deux niveaux : la journée, puis le mode de retrait ou de livraison.
+     L'ordre chronologique est conservé — la carte sert d'abord à savoir ce
+     qui sort demain. */
+  const parJour = new Map();
+  liste.forEach(c => {
+    const jour = c.date_retrait || "";
+    if (!parJour.has(jour)) parJour.set(jour, new Map());
+    const modes = parJour.get(jour);
+    const mode = c.option?.nom || "Sans mode";
+    if (!modes.has(mode)) modes.set(mode, []);
+    modes.get(mode).push(c);
+  });
+
+  parJour.forEach((modes, jour) => {
+    const t = document.createElement("div");
+    t.className = "jour";
+    t.textContent = dateLongue(jour, auj);
+    zone.appendChild(t);
+
+    // Le mode le plus chargé en premier : c'est par là que commence le travail.
+    [...modes.entries()]
+      .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+      .forEach(([mode, cmds]) => {
+        const m = document.createElement("div");
+        m.className = "mode";
+        m.innerHTML = '<span class="nom-mode"></span>' +
+          `<span class="compte">${cmds.length}</span>`;
+        m.querySelector(".nom-mode").textContent = mode;
+        zone.appendChild(m);
+
+        cmds.forEach(c => {
+          const paye = (c.paiement?.statut || "en attente") === "paye";
+          const el = document.createElement("div");
+          el.className = "cmd";
+          el.innerHTML = `
+            <span class="pastille ${paye ? "ok" : ""}"></span>
+            <span class="nom"></span>
+            <span class="montant">${peso(c.total)}</span>
+            <span class="quoi"></span>`;
+          el.querySelector(".nom").textContent = c.client?.nom || "—";
+          // Le mode est déjà le titre du groupe : la seconde ligne ne porte
+          // que l'avancement et l'état du paiement.
+          el.querySelector(".quoi").textContent =
+            [LIBELLES[c.statut] || c.statut,
+             paye ? "payé" : "à encaisser"].filter(Boolean).join(" · ");
+          zone.appendChild(el);
+        });
+      });
   });
 }
 </script>
