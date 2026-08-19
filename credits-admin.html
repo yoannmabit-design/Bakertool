@@ -247,13 +247,10 @@ function carte(c) {
     <div class="detail" hidden>
       <div class="ajout" style="border-bottom:1px dashed var(--trait);padding-bottom:14px">
         <div>
-          <label>Groupe tarifaire</label>
-          <select class="g-nom">
-            <option value="">Aucun</option>
-            ${GROUPES.map(g => `<option value="${g}">${ech(g)}</option>`).join("")}
-            ${c.groupe && !GROUPES.includes(c.groupe)
-              ? `<option value="${ech(c.groupe)}">${ech(c.groupe)}</option>` : ""}
-          </select>
+          <label>Groupe tarifaire <span style="opacity:.7">(se règle dans Clients)</span></label>
+          <div class="g-nom-vue" style="padding:10px 11px;border:1px solid var(--trait);
+               border-radius:var(--r);background:#f2ece2;color:var(--encre-doux);
+               font-size:17px;min-height:44px"></div>
         </div>
         <div>
           <label>Remise (%)</label>
@@ -293,7 +290,7 @@ function carte(c) {
     if (!detail.hidden && c.mouvements === null) await chargerMouvements(c, el);
   };
 
-  el.querySelector(".g-nom").value    = c.groupe || "";
+  el.querySelector(".g-nom-vue").textContent = c.groupe || "Aucun";
   el.querySelector(".g-remise").value = c.remise || "";
   el.querySelector(".g-valider").onclick = () => enregistrerGroupe(c, el);
   el.querySelector(".g-groupe").onclick  = () => appliquerAuGroupe(c, el);
@@ -306,11 +303,11 @@ function carte(c) {
    Le tarif de groupe écrase les remises individuelles : la confirmation
    annonce combien de comptes avaient déjà un taux différent. */
 async function appliquerAuGroupe(c, el) {
-  const groupe = el.querySelector(".g-nom").value.trim();
+  const groupe = (c.groupe || "").trim();
   const remise = Math.min(90, Math.max(0, Number(el.querySelector(".g-remise").value) || 0));
 
   if (!groupe) {
-    signaler("Choisissez d'abord un groupe.");
+    signaler("Ce compte n'appartient à aucun groupe — réglez-le dans la page Clients.");
     return;
   }
 
@@ -339,7 +336,7 @@ async function appliquerAuGroupe(c, el) {
     for (let i = 0; i < membres.length; i += 400) {
       const paquet = writeBatch(db);
       membres.slice(i, i + 400).forEach(x =>
-        paquet.set(doc(db, "comptes", x.id), { groupe, remise }, { merge: true }));
+        paquet.set(doc(db, "comptes", x.id), { remise }, { merge: true }));
       await paquet.commit();
     }
 
@@ -357,8 +354,11 @@ async function appliquerAuGroupe(c, el) {
 /* ---------- Groupe tarifaire ----------
    La remise vit sur le compte du client, pas dans les paramètres publics :
    vos conditions ne sont lisibles que par lui et par vous. */
+/* La remise seule s'enregistre ici. L'appartenance à un groupe est un
+   attribut du client : elle se règle depuis la page Clients, et cette page
+   ne fait plus que la lire — un champ, un seul endroit où l'écrire. */
 async function enregistrerGroupe(c, el) {
-  const groupe = el.querySelector(".g-nom").value.trim();
+  const groupe = c.groupe || "";
   const remise = Math.min(90, Math.max(0, Number(el.querySelector(".g-remise").value) || 0));
 
   if (!confirm(remise > 0
@@ -367,8 +367,8 @@ async function enregistrerGroupe(c, el) {
     : `Retirer la remise de ${c.nom || c.email} ?`)) return;
 
   try {
-    await setDoc(doc(db, "comptes", c.id), { groupe, remise }, { merge: true });
-    c.groupe = groupe; c.remise = remise;
+    await setDoc(doc(db, "comptes", c.id), { remise }, { merge: true });
+    c.remise = remise;
     afficher();
     signaler(remise > 0 ? `Remise de ${remise} % appliquée.` : "Remise retirée.");
   } catch (e) {
