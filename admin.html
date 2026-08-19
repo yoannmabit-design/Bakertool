@@ -136,6 +136,8 @@
   }
   .art .nom{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .art .code{font-size:13.5px;color:var(--encre-doux);margin-left:7px}
+  /* Journée sans article : une simple mention, pas un titre de groupe. */
+  .art-vide{font-size:15px;color:var(--encre-doux);padding:6px 0}
 
   .liens{display:flex;gap:10px;flex-wrap:wrap}
   .lien{
@@ -301,7 +303,7 @@ function arriveeLe(c) {
    du produit (BUT-CRO, PAI-CHO…) et jamais sur le nom : deux libellés
    différents pour un même code doivent se cumuler. */
 function lignesArticles(c) {
-  const src = c.articles || c.lignes || c.produits || c.items || [];
+  const src = c.panier || c.articles || c.lignes || c.produits || c.items || [];
   if (!Array.isArray(src)) return [];
   return src.map(l => {
     const nom = l.nom || l.libelle || l.titre || l.produit || "—";
@@ -535,7 +537,7 @@ function afficherResume(liste, auj) {
 
     if (!articles.length) {
       const v = document.createElement("div");
-      v.className = "mode";
+      v.className = "art-vide";
       v.textContent = "Aucun article";
       zone.appendChild(v);
       return;
