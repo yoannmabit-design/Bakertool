@@ -151,6 +151,9 @@
     font-size:13.5px;color:var(--encre-doux);background:#f2ece1;
     padding:2px 8px;border-radius:11px;white-space:nowrap;
   }
+  .cp .cp-periode{
+    font-size:13.5px;color:var(--encre-doux);white-space:nowrap;
+  }
   .cp .cp-etat{font-size:13.5px;text-transform:uppercase;letter-spacing:.05em}
   .cp .cp-etat.on{color:var(--ok)}
   .cp .cp-etat.off{color:var(--encre-doux)}
@@ -409,6 +412,17 @@
           <div class="jours" id="cpRayons"></div>
         </div>
 
+        <div class="ligne" style="margin-top:14px">
+          <div>
+            <label for="cpDebut">Valable à partir du <span style="opacity:.7">(vide = tout de suite)</span></label>
+            <input type="date" id="cpDebut">
+          </div>
+          <div>
+            <label for="cpFin">Jusqu'au <span style="opacity:.7">(vide = sans fin)</span></label>
+            <input type="date" id="cpFin">
+          </div>
+        </div>
+
         <label class="bascule" style="margin-top:14px">
           <input type="checkbox" id="cpActif" checked> Code actif
         </label>
@@ -420,8 +434,9 @@
         </p>
 
         <p class="aide" style="margin:10px 0 0">
-          La limite d'usage par client arrive à l'étape suivante. Le champ
-          correspondant est déjà créé dans la fiche, vide.
+          Les deux bornes sont incluses : un code s'arrêtant le 20 reste valable
+          toute la journée du 20. Un code hors de ses dates est refusé au client
+          sans qu'il soit besoin de le désactiver.
         </p>
 
         <div class="ligne" style="margin:18px 0 0">
@@ -1214,6 +1229,8 @@ function viderFormuleCode() {
   $("cpValeur").value = 10;
   $("cpLibelle").value = "";
   ecrireRayons([]);
+  $("cpDebut").value = "";
+  $("cpFin").value = "";
   $("cpActif").checked = true;
   $("btnCodeAnnuler").hidden = true;
   majTypeCode();
@@ -1231,6 +1248,8 @@ function modifierCode(c) {
   $("cpValeur").value = Number(c.valeur) || 0;
   $("cpLibelle").value = c.libelle || "";
   ecrireRayons(c.rayons);
+  $("cpDebut").value = c.date_debut || "";
+  $("cpFin").value = c.date_fin || "";
   $("cpActif").checked = c.actif !== false;
   $("btnCodeAnnuler").hidden = false;
   majTypeCode();
@@ -1264,16 +1283,21 @@ function afficherCodes() {
   }
 
   codes.forEach(c => {
-    const actif = c.actif !== false;
+    const coche = c.actif !== false;
+    const p = periodeCode(c);
+    // Un code coché mais hors de ses dates est refusé au client : le dire,
+    // sinon on cherche pourquoi il ne marche pas alors qu'il est « actif ».
+    const actif = coche && p.enCours;
     const bloc = document.createElement("div");
     bloc.className = "cp" + (actif ? "" : " inactif");
     bloc.innerHTML = `
       <span class="cp-code"></span>
       <span class="cp-valeur"></span>
       <span class="cp-portee"></span>
+      <span class="cp-periode"></span>
       <span class="cp-libelle"></span>
-      <span class="cp-etat ${actif ? "on" : "off"}">${actif ? "Actif" : "Inactif"}</span>
-      <button class="mineur cp-bascule" type="button">${actif ? "Désactiver" : "Activer"}</button>
+      <span class="cp-etat ${actif ? "on" : "off"}">${p.etat(coche)}</span>
+      <button class="mineur cp-bascule" type="button">${coche ? "Désactiver" : "Activer"}</button>
       <button class="mineur cp-modifier" type="button">Modifier</button>
       <button class="retirer cp-supprimer" type="button">Supprimer</button>`;
 
@@ -1282,12 +1306,49 @@ function afficherCodes() {
     bloc.querySelector(".cp-portee").textContent  = libellePortee(c);
     bloc.querySelector(".cp-libelle").textContent = c.libelle || "";
 
+    const zonePeriode = bloc.querySelector(".cp-periode");
+    zonePeriode.textContent = p.libelle;
+    if (!p.libelle) zonePeriode.hidden = true;
+
     bloc.querySelector(".cp-bascule").onclick   = () => basculerCode(c);
     bloc.querySelector(".cp-modifier").onclick  = () => modifierCode(c);
     bloc.querySelector(".cp-supprimer").onclick = () => supprimerCode(c);
 
     zone.appendChild(bloc);
   });
+}
+
+/* Période de validité d'un code, telle que la vitrine la lira. Les bornes
+   sont incluses des deux côtés. */
+function periodeCode(c) {
+  const jour = new Date().toISOString().slice(0, 10);
+  const d = c.date_debut || null;
+  const f = c.date_fin || null;
+
+  const pasEncore = d && jour < d;
+  const fini      = f && jour > f;
+  const enCours   = !pasEncore && !fini;
+
+  const jj = (iso) => {
+    const x = new Date(iso + "T12:00:00");
+    return x.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+  };
+
+  let libelle = "";
+  if (d && f)      libelle = "du " + jj(d) + " au " + jj(f);
+  else if (d)      libelle = "à partir du " + jj(d);
+  else if (f)      libelle = "jusqu'au " + jj(f);
+
+  return {
+    enCours,
+    libelle,
+    etat: (coche) => {
+      if (!coche) return "Inactif";
+      if (pasEncore) return "À venir";
+      if (fini) return "Expiré";
+      return "Actif";
+    }
+  };
 }
 
 /* Écriture : on relit d'abord le serveur et on repose tel quel
@@ -1299,12 +1360,13 @@ async function ecrireCode(id, champs) {
 
   await setDoc(ref, {
     ...existant,
-    ...champs,
-    // Créés vides s'ils n'existent pas encore, jamais écrasés ensuite.
+    // Valeurs par défaut avant la fusion : un champ absent naît vide, mais
+    // ce que l'appelant fournit fait foi (les dates sont maintenant saisies).
     date_debut:        existant.date_debut        ?? null,
     date_fin:          existant.date_fin          ?? null,
     limite_par_client: existant.limite_par_client ?? null,
     usages:            existant.usages            ?? {},
+    ...champs,
     cree_le: existant.cree_le || new Date().toISOString(),
     maj_le:  new Date().toISOString()
   });
@@ -1314,6 +1376,8 @@ $("btnCodeEnregistrer").onclick = async () => {
   const id = normaliserCode($("cpCode").value);
   const type = $("cpType").value;
   const valeur = Number($("cpValeur").value);
+  const debut = $("cpDebut").value || null;
+  const fin   = $("cpFin").value   || null;
 
   if (id.length < 3) {
     etatCode("Le code doit compter au moins 3 caractères (lettres, chiffres, tiret).", "err");
@@ -1325,6 +1389,10 @@ $("btnCodeEnregistrer").onclick = async () => {
   }
   if (type === "pourcentage" && valeur > 100) {
     etatCode("Un pourcentage ne peut pas dépasser 100.", "err");
+    return;
+  }
+  if (debut && fin && fin < debut) {
+    etatCode("La date de fin est antérieure à la date de début.", "err");
     return;
   }
   // En création seulement : ne pas écraser un code existant sans le dire.
@@ -1342,6 +1410,8 @@ $("btnCodeEnregistrer").onclick = async () => {
       rayons: lireRayons(),
       type,
       valeur: Math.round(valeur),
+      date_debut: debut,
+      date_fin: fin,
       actif: $("cpActif").checked
     });
     viderFormuleCode();
