@@ -490,7 +490,7 @@ function carte(c) {
   el.innerHTML = `
     <div class="tete">
       <input type="checkbox" class="coche" aria-label="Sélectionner">
-      <span class="ref">${c.numero || c.id}</span>
+      <span class="ref">${echapper(c.numero || c.id)}</span>
       <span class="nom"></span>
       ${c.abonnement_id ? `<span class="etiq bleue">Abonnement${
         c.abonnement_rang ? " " + c.abonnement_rang +
@@ -504,7 +504,8 @@ function carte(c) {
     <div class="resume"></div>
     <div class="detail" hidden>
       <div class="lignes"></div>
-      <p class="info" style="margin-top:11px"><b>Contact</b> ${c.client?.telephone || ""}</p>
+      <p class="info" style="margin-top:11px"><b>Contact</b> ${
+        echapper(c.client?.telephone || "")}</p>
       ${c.client?.adresse ? '<p class="info adresse"></p>' : ""}
       ${c.option?.lieu ? '<p class="info lieu"></p>' : ""}
       ${c.notes ? '<p class="info notes"></p>' : ""}
