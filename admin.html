@@ -13,6 +13,9 @@
     --creme:#fdf6ec;--papier:#fffdf9;--encre:#1f1b16;
     --encre-doux:#6b6157;--trait:#e2d7c6;--accent:#2f4858;
     --alerte:#8c2f22;--ok:#3d6b3d;--r:6px;
+    /* Liserés de suivi : violet au repos, orange tant que des commandes
+       arrivées depuis la dernière consultation n'ont pas été ouvertes. */
+    --violet:#6b4c9a;--orange:#d97b1f;
   }
   *{box-sizing:border-box}
   body{
@@ -49,6 +52,28 @@
   }
   .carte h2{font-size:17px;margin:0 0 4px}
   .carte p.aide{font-size:15px;color:var(--encre-doux);margin:0 0 14px}
+
+  /* Carte principale : liseré de suivi à gauche, comme sur les autres pages. */
+  .carte.suivi{border-left:4px solid var(--violet)}
+  .carte.suivi.nouveau{border-left-color:var(--orange)}
+
+  /* En-tête cliquable de la carte repliable. */
+  .entete{
+    display:flex;align-items:baseline;gap:10px;width:100%;
+    background:none;border:none;padding:0;margin:0;
+    font:inherit;color:inherit;text-align:left;cursor:pointer;
+  }
+  .entete h2{flex:1}
+  .entete .marque{
+    font-size:13.5px;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--orange);font-weight:600;
+  }
+  .entete .chevron{
+    font-size:14px;color:var(--encre-doux);flex-shrink:0;
+    transition:transform .15s ease;
+  }
+  .carte.ouverte .entete .chevron{transform:rotate(180deg)}
+  .entete:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 
   .jour{
     font-size:15px;color:var(--encre-doux);font-weight:600;
@@ -97,6 +122,21 @@
     background:#2f7d32;
   }
 
+  /* Résumé des produits : une ligne par article, la quantité d'abord car
+     c'est elle qu'on lit en sortant du congélateur. */
+  .art{
+    display:grid;grid-template-columns:3.2em 1fr;gap:11px;
+    align-items:baseline;padding:6px 0;
+    border-bottom:1px solid var(--trait);font-size:17px;
+  }
+  .art:last-child{border-bottom:none}
+  .art .q{
+    font-variant-numeric:tabular-nums;font-weight:600;font-size:20px;
+    text-align:right;
+  }
+  .art .nom{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .art .code{font-size:13.5px;color:var(--encre-doux);margin-left:7px}
+
   .liens{display:flex;gap:10px;flex-wrap:wrap}
   .lien{
     display:block;flex:1;min-width:150px;background:var(--papier);
@@ -134,10 +174,21 @@
   <main>
     <div class="chiffres" id="chiffres"></div>
 
-    <div class="carte">
-      <h2>Commandes à venir</h2>
+    <div class="carte suivi" id="carteAvenir">
+      <button class="entete" id="basculeAvenir" aria-expanded="false" aria-controls="avenir">
+        <h2>Commandes à venir</h2>
+        <span class="marque" id="marqueAvenir" hidden>Nouveau</span>
+        <span class="chevron" aria-hidden="true">▼</span>
+      </button>
       <p class="aide">Les sept prochains jours. Point rouge : reste à encaisser.</p>
-      <div id="avenir"><div class="vide">Chargement…</div></div>
+      <div id="avenirReplie"><div class="vide">Chargement…</div></div>
+      <div id="avenir" hidden></div>
+    </div>
+
+    <div class="carte suivi" id="carteResume">
+      <h2>Résumé des produits</h2>
+      <p class="aide">Articles à sortir, commandes confirmées uniquement.</p>
+      <div id="resume"><div class="vide">Chargement…</div></div>
     </div>
 
     <div class="liens">
@@ -187,6 +238,14 @@ const LIBELLES = {
   "prete":"Prête", "remise":"Remise", "annulee":"Annulée"
 };
 
+/* Statuts retenus pour le résumé des produits : la commande est engagée et
+   il faut sortir la marchandise. « Nouvelle » en est exclue — non confirmée,
+   elle ne doit pas faire produire. */
+const STATUTS_FERMES = ["confirmee", "en production", "prete"];
+
+const CLE_REPLI = "yfb-admin-avenir-ouvert";
+const CLE_VU    = "yfb-admin-avenir-vu";
+
 $("btnConnexion").onclick = async () => {
   try { await signInWithPopup(auth, new GoogleAuthProvider()); }
   catch (e) {
@@ -221,6 +280,37 @@ function iso(d) {
     .toISOString().slice(0, 10);
 }
 
+/* Horodatage d'arrivée de la commande. Le champ n'a pas de nom unique selon
+   l'origine du document : on essaie les formes connues, y compris les
+   Timestamp Firestore. Retourne null si aucune n'est présente — dans ce cas
+   le suivi « nouveau » reste muet plutôt que de mentir. */
+function arriveeLe(c) {
+  const brut = c.cree_le ?? c.date_creation ?? c.createdAt ?? c.horodatage ?? null;
+  if (brut == null) return null;
+  if (typeof brut === "number") return brut;
+  if (typeof brut === "string") {
+    const t = Date.parse(brut);
+    return isNaN(t) ? null : t;
+  }
+  if (typeof brut.toMillis === "function") return brut.toMillis();
+  if (typeof brut.seconds === "number") return brut.seconds * 1000;
+  return null;
+}
+
+/* Lignes d'articles d'une commande. Le regroupement se fait sur le code fixe
+   du produit (BUT-CRO, PAI-CHO…) et jamais sur le nom : deux libellés
+   différents pour un même code doivent se cumuler. */
+function lignesArticles(c) {
+  const src = c.articles || c.lignes || c.produits || c.items || [];
+  if (!Array.isArray(src)) return [];
+  return src.map(l => {
+    const nom = l.nom || l.libelle || l.titre || l.produit || "—";
+    const code = l.id || l.code || l.produit_id || l.reference || "";
+    const qte = Number(l.quantite ?? l.qte ?? l.quantity ?? l.nombre ?? 0);
+    return { code: code || nom, nom, qte: isNaN(qte) ? 0 : qte };
+  }).filter(l => l.qte > 0);
+}
+
 async function charger() {
   let commandes = [];
   try {
@@ -228,7 +318,8 @@ async function charger() {
     s.forEach(d => commandes.push({ id: d.id, ...d.data() }));
   } catch (e) {
     console.error(e);
-    $("avenir").innerHTML = '<div class="vide">Chargement impossible.</div>';
+    $("avenirReplie").innerHTML = '<div class="vide">Chargement impossible.</div>';
+    $("resume").innerHTML = '<div class="vide">Chargement impossible.</div>';
     return;
   }
 
@@ -255,6 +346,8 @@ async function charger() {
     .sort((a, b) => (a.date_retrait || "").localeCompare(b.date_retrait || ""));
 
   afficherAvenir(avenir, auj);
+  afficherResume(avenir.filter(c => STATUTS_FERMES.includes(c.statut)), auj);
+  installerSuivi(avenir);
 }
 
 function chiffre(liste) {
@@ -274,11 +367,94 @@ function dateLongue(isoJour, auj) {
   return texte;
 }
 
+/* ---------- Repli et signal « nouveau » ---------- */
+
+/* La consultation vaut acquittement : déplier la carte horodate la lecture et
+   éteint l'orange. Le signal ne se rallume que si une commande arrive après
+   cet horodatage. */
+function installerSuivi(liste) {
+  const carte   = $("carteAvenir");
+  const bascule = $("basculeAvenir");
+  const marque  = $("marqueAvenir");
+
+  const derniere = liste
+    .map(arriveeLe)
+    .filter(t => t != null)
+    .reduce((max, t) => (t > max ? t : max), 0);
+
+  const vu = Number(localStorage.getItem(CLE_VU) || 0);
+
+  const acquitter = () => {
+    if (derniere > 0) localStorage.setItem(CLE_VU, String(derniere));
+    carte.classList.remove("nouveau");
+    marque.hidden = true;
+  };
+
+  if (derniere > 0 && derniere > vu) {
+    carte.classList.add("nouveau");
+    marque.hidden = false;
+  }
+
+  const ouvrir = (etat) => {
+    carte.classList.toggle("ouverte", etat);
+    $("avenir").hidden = !etat;
+    $("avenirReplie").hidden = etat;
+    bascule.setAttribute("aria-expanded", etat ? "true" : "false");
+    localStorage.setItem(CLE_REPLI, etat ? "1" : "0");
+    if (etat) acquitter();
+  };
+
+  bascule.onclick = () => ouvrir($("avenir").hidden);
+  ouvrir(localStorage.getItem(CLE_REPLI) === "1");
+}
+
+/* ---------- Commandes à venir ---------- */
+function ligneCommande(c) {
+  const paye = (c.paiement?.statut || "en attente") === "paye";
+  const el = document.createElement("div");
+  el.className = "cmd";
+  el.innerHTML = `
+    <span class="pastille ${paye ? "ok" : ""}"></span>
+    <span class="nom"></span>
+    <span class="montant">${peso(c.total)}</span>
+    <span class="quoi"></span>`;
+  el.querySelector(".nom").textContent = c.client?.nom || "—";
+  el.querySelector(".quoi").textContent =
+    [LIBELLES[c.statut] || c.statut,
+     paye ? "payé" : "à encaisser"].filter(Boolean).join(" · ");
+  return el;
+}
+
 function afficherAvenir(liste, auj) {
   const zone = $("avenir");
+  const apercu = $("avenirReplie");
+
   if (!liste.length) {
     zone.innerHTML = '<div class="vide">Rien de prévu dans les sept prochains jours.</div>';
+    apercu.innerHTML = '<div class="vide">Rien de prévu dans les sept prochains jours.</div>';
     return;
+  }
+
+  /* Aperçu replié : la commande arrivée en dernier. À défaut d'horodatage,
+     la première du calendrier — la plus proche à sortir. */
+  const triArrivee = [...liste].sort((a, b) => (arriveeLe(b) || 0) - (arriveeLe(a) || 0));
+  const derniere = triArrivee.find(c => arriveeLe(c) != null) || liste[0];
+
+  apercu.innerHTML = "";
+  const t = document.createElement("div");
+  t.className = "jour";
+  t.textContent = dateLongue(derniere.date_retrait || auj, auj)
+    + " · " + (derniere.option?.nom || "Sans mode");
+  apercu.appendChild(t);
+  apercu.appendChild(ligneCommande(derniere));
+
+  const reste = liste.length - 1;
+  if (reste > 0) {
+    const p = document.createElement("div");
+    p.className = "mode";
+    p.textContent = reste === 1
+      ? "1 autre commande" : reste + " autres commandes";
+    apercu.appendChild(p);
   }
 
   zone.innerHTML = "";
@@ -313,24 +489,68 @@ function afficherAvenir(liste, auj) {
         m.querySelector(".nom-mode").textContent = mode;
         zone.appendChild(m);
 
-        cmds.forEach(c => {
-          const paye = (c.paiement?.statut || "en attente") === "paye";
-          const el = document.createElement("div");
-          el.className = "cmd";
-          el.innerHTML = `
-            <span class="pastille ${paye ? "ok" : ""}"></span>
-            <span class="nom"></span>
-            <span class="montant">${peso(c.total)}</span>
-            <span class="quoi"></span>`;
-          el.querySelector(".nom").textContent = c.client?.nom || "—";
-          // Le mode est déjà le titre du groupe : la seconde ligne ne porte
-          // que l'avancement et l'état du paiement.
-          el.querySelector(".quoi").textContent =
-            [LIBELLES[c.statut] || c.statut,
-             paye ? "payé" : "à encaisser"].filter(Boolean).join(" · ");
-          zone.appendChild(el);
-        });
+        cmds.forEach(c => zone.appendChild(ligneCommande(c)));
       });
+  });
+}
+
+/* ---------- Résumé des produits ---------- */
+/* Une journée de livraison, une liste plate d'articles cumulés. Ce qui compte
+   ici n'est pas la commande mais la quantité totale à sortir. Les lignes à
+   zéro ne s'affichent pas. */
+function afficherResume(liste, auj) {
+  const zone = $("resume");
+
+  if (!liste.length) {
+    zone.innerHTML = '<div class="vide">Aucune commande confirmée sur les sept prochains jours.</div>';
+    return;
+  }
+
+  const parJour = new Map();
+  liste.forEach(c => {
+    const jour = c.date_retrait || "";
+    if (!parJour.has(jour)) parJour.set(jour, { articles: new Map(), commandes: 0 });
+    const j = parJour.get(jour);
+    j.commandes += 1;
+    lignesArticles(c).forEach(l => {
+      const cumul = j.articles.get(l.code) || { nom: l.nom, code: l.code, qte: 0 };
+      cumul.qte += l.qte;
+      j.articles.set(l.code, cumul);
+    });
+  });
+
+  zone.innerHTML = "";
+
+  [...parJour.keys()].sort().forEach(jour => {
+    const j = parJour.get(jour);
+    const articles = [...j.articles.values()]
+      .filter(a => a.qte > 0)
+      .sort((a, b) => b.qte - a.qte || a.nom.localeCompare(b.nom));
+
+    const t = document.createElement("div");
+    t.className = "jour";
+    t.textContent = dateLongue(jour, auj)
+      + " · " + j.commandes + (j.commandes > 1 ? " commandes" : " commande");
+    zone.appendChild(t);
+
+    if (!articles.length) {
+      const v = document.createElement("div");
+      v.className = "mode";
+      v.textContent = "Aucun article";
+      zone.appendChild(v);
+      return;
+    }
+
+    articles.forEach(a => {
+      const el = document.createElement("div");
+      el.className = "art";
+      el.innerHTML = '<span class="q"></span>' +
+        '<span class="nom"><span class="libelle"></span><span class="code"></span></span>';
+      el.querySelector(".q").textContent = a.qte;
+      el.querySelector(".libelle").textContent = a.nom;
+      el.querySelector(".code").textContent = a.code === a.nom ? "" : a.code;
+      zone.appendChild(el);
+    });
   });
 }
 </script>
