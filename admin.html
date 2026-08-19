@@ -138,6 +138,16 @@
   .art .code{font-size:13.5px;color:var(--encre-doux);margin-left:7px}
   /* Journée sans article : une simple mention, pas un titre de groupe. */
   .art-vide{font-size:15px;color:var(--encre-doux);padding:6px 0}
+  /* En-tête de catégorie de production, avec le total de la fournée. */
+  .categorie{
+    display:flex;align-items:baseline;gap:8px;
+    font-size:14px;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--encre-doux);margin:12px 0 3px;
+  }
+  .categorie .compte{
+    font-size:13px;letter-spacing:0;text-transform:none;opacity:.75;
+    font-variant-numeric:tabular-nums;
+  }
 
   .liens{display:flex;gap:10px;flex-wrap:wrap}
   .lien{
@@ -248,6 +258,39 @@ const STATUTS_FERMES = ["confirmee", "en production", "prete"];
 const CLE_REPLI = "yfb-admin-avenir-ouvert";
 const CLE_VU    = "yfb-admin-avenir-vu";
 
+/* Ordre d'affichage des catégories dans le résumé : l'ordre du geste, pas
+   l'ordre alphabétique. Ce qui n'est pas listé ici passe ensuite, par ordre
+   alphabétique, et « Autres » ferme la marche. */
+const ORDRE_CATEGORIES = ["Viennoiseries", "Pains"];
+const CATEGORIE_DEFAUT = "Autres";
+
+/* Catalogue produits, chargé une fois : le panier ne porte que le code, la
+   catégorie se lit sur la fiche produit. Elle suit donc si tu la changes. */
+const PRODUITS = new Map();
+
+async function chargerProduits() {
+  try {
+    const s = await getDocs(collection(db, "boutique_produits"));
+    s.forEach(d => {
+      const p = d.data();
+      PRODUITS.set(p.code || d.id, {
+        nom: p.nom || d.id,
+        categorie: p.categorie || p.rayon || CATEGORIE_DEFAUT
+      });
+    });
+  } catch (e) {
+    // Sans catalogue, tout retombe dans « Autres » : la carte reste utile.
+    console.error(e);
+  }
+}
+
+function rangCategorie(nom) {
+  const i = ORDRE_CATEGORIES.indexOf(nom);
+  if (i !== -1) return i;
+  if (nom === CATEGORIE_DEFAUT) return ORDRE_CATEGORIES.length + 1;
+  return ORDRE_CATEGORIES.length;
+}
+
 $("btnConnexion").onclick = async () => {
   try { await signInWithPopup(auth, new GoogleAuthProvider()); }
   catch (e) {
@@ -306,14 +349,22 @@ function lignesArticles(c) {
   const src = c.panier || c.articles || c.lignes || c.produits || c.items || [];
   if (!Array.isArray(src)) return [];
   return src.map(l => {
-    const nom = l.nom || l.libelle || l.titre || l.produit || "—";
-    const code = l.id || l.code || l.produit_id || l.reference || "";
+    const code = l.code || l.id || l.produit_id || l.reference || "";
+    const fiche = PRODUITS.get(code);
+    const nom = fiche?.nom || l.nom || l.libelle || l.titre || l.produit || "—";
     const qte = Number(l.quantite ?? l.qte ?? l.quantity ?? l.nombre ?? 0);
-    return { code: code || nom, nom, qte: isNaN(qte) ? 0 : qte };
+    return {
+      code: code || nom,
+      nom,
+      categorie: fiche?.categorie || CATEGORIE_DEFAUT,
+      qte: isNaN(qte) ? 0 : qte
+    };
   }).filter(l => l.qte > 0);
 }
 
 async function charger() {
+  await chargerProduits();
+
   let commandes = [];
   try {
     const s = await getDocs(collection(db, "commandes"));
@@ -515,7 +566,8 @@ function afficherResume(liste, auj) {
     const j = parJour.get(jour);
     j.commandes += 1;
     lignesArticles(c).forEach(l => {
-      const cumul = j.articles.get(l.code) || { nom: l.nom, code: l.code, qte: 0 };
+      const cumul = j.articles.get(l.code)
+        || { nom: l.nom, code: l.code, categorie: l.categorie, qte: 0 };
       cumul.qte += l.qte;
       j.articles.set(l.code, cumul);
     });
@@ -525,9 +577,7 @@ function afficherResume(liste, auj) {
 
   [...parJour.keys()].sort().forEach(jour => {
     const j = parJour.get(jour);
-    const articles = [...j.articles.values()]
-      .filter(a => a.qte > 0)
-      .sort((a, b) => b.qte - a.qte || a.nom.localeCompare(b.nom));
+    const articles = [...j.articles.values()].filter(a => a.qte > 0);
 
     const t = document.createElement("div");
     t.className = "jour";
@@ -543,16 +593,39 @@ function afficherResume(liste, auj) {
       return;
     }
 
+    /* Catégorie de production, puis quantité décroissante à l'intérieur.
+       Le total par catégorie donne le volume d'une fournée d'un coup d'œil. */
+    const parCategorie = new Map();
     articles.forEach(a => {
-      const el = document.createElement("div");
-      el.className = "art";
-      el.innerHTML = '<span class="q"></span>' +
-        '<span class="nom"><span class="libelle"></span><span class="code"></span></span>';
-      el.querySelector(".q").textContent = a.qte;
-      el.querySelector(".libelle").textContent = a.nom;
-      el.querySelector(".code").textContent = a.code === a.nom ? "" : a.code;
-      zone.appendChild(el);
+      if (!parCategorie.has(a.categorie)) parCategorie.set(a.categorie, []);
+      parCategorie.get(a.categorie).push(a);
     });
+
+    [...parCategorie.keys()]
+      .sort((a, b) => rangCategorie(a) - rangCategorie(b) || a.localeCompare(b))
+      .forEach(categorie => {
+        const lignes = parCategorie.get(categorie)
+          .sort((a, b) => b.qte - a.qte || a.nom.localeCompare(b.nom));
+        const total = lignes.reduce((t, a) => t + a.qte, 0);
+
+        const c = document.createElement("div");
+        c.className = "categorie";
+        c.innerHTML = '<span class="nom-cat"></span><span class="compte"></span>';
+        c.querySelector(".nom-cat").textContent = categorie;
+        c.querySelector(".compte").textContent = total;
+        zone.appendChild(c);
+
+        lignes.forEach(a => {
+          const el = document.createElement("div");
+          el.className = "art";
+          el.innerHTML = '<span class="q"></span>' +
+            '<span class="nom"><span class="libelle"></span><span class="code"></span></span>';
+          el.querySelector(".q").textContent = a.qte;
+          el.querySelector(".libelle").textContent = a.nom;
+          el.querySelector(".code").textContent = a.code === a.nom ? "" : a.code;
+          zone.appendChild(el);
+        });
+      });
   });
 }
 </script>
