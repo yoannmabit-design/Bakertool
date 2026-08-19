@@ -175,49 +175,76 @@
     a.title = dit;
   }
 
-  async function compter() {
-    let fb, fs;
-    try {
-      [fb, fs] = await Promise.all([
-        import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js"),
-        import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js")
-      ]);
-    } catch { return; }   // hors ligne : le menu reste utilisable
+  /* Ce script s'exécute avant le module de la page : au premier regard,
+     Firebase n'est pas encore initialisé. On attend son apparition au
+     lieu d'abandonner, sans quoi aucune pastille ne s'afficherait au
+     chargement. */
+  async function attendreApp(fb, msMax) {
+    const fin = Date.now() + (msMax || 12000);
+    while (Date.now() < fin) {
+      if (fb.getApps().length) return fb.getApp();
+      await new Promise(r => setTimeout(r, 150));
+    }
+    return null;
+  }
 
-    // La page a déjà initialisé Firebase ; on se greffe dessus plutôt
-    // que d'ouvrir une seconde connexion.
-    let db;
+  async function compterSur(q, fs) {
+    // L'agrégation évite de rapatrier les documents ; si elle est
+    // refusée ou indisponible, on compte à l'ancienne.
     try {
-      const apps = fb.getApps();
-      if (!apps.length) return;   // page sans Firebase : rien à compter
-      db = fs.getFirestore(fb.getApp());
-    } catch { return; }
-
-    for (const t of ATTENTES) {
-      try {
-        const q = fs.query(fs.collection(db, t.collection),
-                           fs.where(t.champ, "==", t.valeur));
-        const n = (await fs.getCountFromServer(q)).data().count;
-        poserPastille(t.fichier, n, n > 1 ? t.plusieurs : t.un);
-      } catch {
-        // Règles Firestore ou connexion : on laisse le menu tel quel
-        // plutôt que d'afficher un zéro qui serait un mensonge.
-      }
+      return (await fs.getCountFromServer(q)).data().count;
+    } catch {
+      return (await fs.getDocs(q)).size;
     }
   }
 
-  /* L'administration s'authentifie après le chargement de la page : on
-     attend l'état de connexion, sans quoi les lectures partiraient trop
-     tôt et seraient refusées. */
+  let occupe = false;
+  async function compter() {
+    if (occupe) return;
+    occupe = true;
+    try {
+      const [fb, fs] = await Promise.all([
+        import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js"),
+        import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js")
+      ]);
+
+      const app = await attendreApp(fb);
+      if (!app) return;               // page sans Firebase : rien à compter
+      const db = fs.getFirestore(app);
+
+      for (const t of ATTENTES) {
+        try {
+          const q = fs.query(fs.collection(db, t.collection),
+                             fs.where(t.champ, "==", t.valeur));
+          const n = await compterSur(q, fs);
+          poserPastille(t.fichier, n, n > 1 ? t.plusieurs : t.un);
+        } catch (e) {
+          // Règles Firestore ou connexion : on laisse le menu tel quel
+          // plutôt que d'afficher un zéro qui serait un mensonge.
+          console.warn("Pastille " + t.collection + " :", e && e.code);
+        }
+      }
+    } catch {
+      // hors ligne : le menu reste utilisable
+    } finally {
+      occupe = false;
+    }
+  }
+
+  /* L'administration s'authentifie après le chargement : on attend
+     l'état de connexion, sans quoi les lectures partiraient trop tôt et
+     seraient refusées. */
   (async function () {
     try {
-      const auth = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js");
-      const fb = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
-      if (!fb.getApps().length) return;
-      auth.onAuthStateChanged(auth.getAuth(fb.getApp()), (u) => { if (u) compter(); });
+      const [auth, fb] = await Promise.all([
+        import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js"),
+        import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js")
+      ]);
+      const app = await attendreApp(fb);
+      if (!app) return;
+      auth.onAuthStateChanged(auth.getAuth(app), (u) => { if (u) compter(); });
     } catch {
-      // Page sans authentification : on tente quand même une lecture.
-      compter();
+      compter();   // page sans authentification : on tente quand même
     }
   })();
 
