@@ -41,6 +41,15 @@
     .nav-admin a[aria-current="page"]{
       color:#fdf6ec;font-weight:600;border-bottom-color:#fdf6ec;
     }
+    /* Pastille d'attente : le chiffre porte l'information, la couleur ne
+       fait que la rendre visible de loin. Un daltonien lit le compte. */
+    .nav-admin .pastille{
+      display:inline-flex;align-items:center;justify-content:center;
+      min-width:18px;height:18px;padding:0 5px;margin-left:7px;
+      border-radius:9px;background:#ffc400;color:#12100d;
+      font-size:11.5px;font-weight:700;line-height:1;
+      position:relative;top:-1px;
+    }
     .nom-fichier{
       font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
       font-size:11.5px;font-weight:400;letter-spacing:0;
@@ -57,7 +66,7 @@
       background:rgba(0,0,0,.25);padding:1px 5px;border-radius:3px;
     }
     @media print{
-      .nav-admin,.alerte-fichier,.nom-fichier{display:none !important}
+      .nav-admin,.alerte-fichier,.nom-fichier,.pastille{display:none !important}
     }
   `;
   document.head.appendChild(style);
@@ -65,11 +74,13 @@
   const barre = document.createElement("nav");
   barre.className = "nav-admin";
   barre.setAttribute("aria-label", "Administration");
+  const liens = {};
   PAGES.forEach(p => {
     const a = document.createElement("a");
     a.href = p.fichier;
     a.textContent = p.titre;
     if (p.fichier === ici) a.setAttribute("aria-current", "page");
+    liens[p.fichier] = a;
     barre.appendChild(a);
   });
 
@@ -116,6 +127,105 @@
       "permet de récupérer la bonne version.";
     document.body.insertBefore(alerte, barre.nextSibling);
   }
+
+  /* ---------- Pastilles d'attente ----------
+     Ce qui est arrivé et attend une décision : commandes reçues non
+     confirmées, abonnements à valider. Visible depuis toutes les pages,
+     et non depuis le seul accueil : le travail se fait surtout dans
+     Commandes, c'est là qu'il faut être prévenu.
+
+     Les commandes issues d'un abonnement validé naissent confirmées et
+     ne comptent donc pas : la pastille ne signale que ce qui demande
+     réellement une décision.
+
+     Le menu ne doit jamais casser une page : tout échec est silencieux,
+     et l'absence de pastille est un état normal. */
+  const ATTENTES = [
+    { fichier: "commandes-admin.html",   collection: "commandes",
+      champ: "statut", valeur: "nouvelle",
+      un: "commande à confirmer", plusieurs: "commandes à confirmer" },
+    { fichier: "abonnements-admin.html", collection: "abonnements",
+      champ: "statut", valeur: "nouveau",
+      un: "abonnement à valider", plusieurs: "abonnements à valider" }
+  ];
+
+  function poserPastille(fichier, nombre, mot) {
+    const a = liens[fichier];
+    if (!a) return;
+    let el = a.querySelector(".pastille");
+
+    if (!nombre) {
+      if (el) el.remove();
+      a.removeAttribute("aria-label");
+      a.removeAttribute("title");
+      return;
+    }
+
+    if (!el) {
+      el = document.createElement("span");
+      el.className = "pastille";
+      el.setAttribute("aria-hidden", "true");   // le libellé du lien le dit déjà
+      a.appendChild(el);
+    }
+    el.textContent = nombre > 99 ? "99+" : String(nombre);
+
+    const dit = (a.firstChild ? a.firstChild.textContent : "") +
+                " — " + nombre + " " + mot;
+    a.setAttribute("aria-label", dit);
+    a.title = dit;
+  }
+
+  async function compter() {
+    let fb, fs;
+    try {
+      [fb, fs] = await Promise.all([
+        import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js"),
+        import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js")
+      ]);
+    } catch { return; }   // hors ligne : le menu reste utilisable
+
+    // La page a déjà initialisé Firebase ; on se greffe dessus plutôt
+    // que d'ouvrir une seconde connexion.
+    let db;
+    try {
+      const apps = fb.getApps();
+      if (!apps.length) return;   // page sans Firebase : rien à compter
+      db = fs.getFirestore(fb.getApp());
+    } catch { return; }
+
+    for (const t of ATTENTES) {
+      try {
+        const q = fs.query(fs.collection(db, t.collection),
+                           fs.where(t.champ, "==", t.valeur));
+        const n = (await fs.getCountFromServer(q)).data().count;
+        poserPastille(t.fichier, n, n > 1 ? t.plusieurs : t.un);
+      } catch {
+        // Règles Firestore ou connexion : on laisse le menu tel quel
+        // plutôt que d'afficher un zéro qui serait un mensonge.
+      }
+    }
+  }
+
+  /* L'administration s'authentifie après le chargement de la page : on
+     attend l'état de connexion, sans quoi les lectures partiraient trop
+     tôt et seraient refusées. */
+  (async function () {
+    try {
+      const auth = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js");
+      const fb = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
+      if (!fb.getApps().length) return;
+      auth.onAuthStateChanged(auth.getAuth(fb.getApp()), (u) => { if (u) compter(); });
+    } catch {
+      // Page sans authentification : on tente quand même une lecture.
+      compter();
+    }
+  })();
+
+  // Un abonnement peut arriver pendant que la page est ouverte : on
+  // rafraîchit au retour sur l'onglet plutôt qu'en boucle.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") compter();
+  });
 
   // Installation possible sur mobile, et consultation hors ligne au fournil.
   if ("serviceWorker" in navigator) {
