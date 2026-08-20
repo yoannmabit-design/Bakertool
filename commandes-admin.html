@@ -627,6 +627,23 @@ async function materialiserAbonnements() {
     if (commandes.some(c => c.id === id)) continue;   // déjà générée
 
     const sousTotal = (a.panier || []).reduce((t, l) => t + (l.qte || 0) * (l.prix || 0), 0);
+
+    /* Le code promo retenu à la souscription est figé sur l'abonnement :
+       on n'interroge pas la fiche du code, qui a pu changer depuis. Il
+       couvre tout le plan par défaut, ou la seule première échéance quand
+       il a été restreint. Le rang suit la première livraison effective :
+       un report déplace donc la remise avec elle, ce qui est bien le sens
+       d'un geste d'accueil. */
+    const p = a.promo || null;
+    const remiseCode = p ? Number(p.remise_livraison) || 0 : 0;
+    const couvertes = p
+      ? (p.premiere_livraison_seulement === true
+          ? 1
+          : (Number(p.livraisons_couvertes) || (a.echeances || []).length))
+      : 0;
+    const remise = (remiseCode > 0 && rang <= couvertes) ? remiseCode : 0;
+
+    const frais = Number(a.frais_livraison) || 0;
     const commande = {
       numero: "ABO-" + date.slice(5).replace("-", "") + "-" +
               (a.client?.nom || "").slice(0, 3).toUpperCase(),
@@ -641,9 +658,18 @@ async function materialiserAbonnements() {
       },
       panier: (a.panier || []).map(l => ({ code: l.code, nom: l.nom, qte: l.qte, prix: l.prix })),
       sous_total: sousTotal,
-      frais_livraison: Number(a.frais_livraison) || 0,
+      // Même forme que les commandes du checkout : l'édition de commande
+      // et le recalcul lisent cet objet, pas une chaîne.
+      remise_source: remise > 0 ? "promo" : "aucune",
+      code_promo: remise > 0
+        ? { code: p.code, type: p.type || "pourcentage",
+            valeur: Number(p.valeur) || 0,
+            rayons: Array.isArray(p.rayons) ? p.rayons : [],
+            montant: remise }
+        : null,
+      frais_livraison: frais,
       frais_a_confirmer: false,
-      total: sousTotal + (Number(a.frais_livraison) || 0),
+      total: Math.max(0, sousTotal - remise) + frais,
       option: a.option || {},
       date_retrait: date,
       creneau: "",
