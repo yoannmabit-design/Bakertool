@@ -466,7 +466,10 @@ function dateLongue(iso) {
   const d = new Date(iso + "T12:00:00");
   const texte = d.toLocaleDateString("fr-FR",
     { weekday: "long", day: "numeric", month: "long" });
-  const auj = new Date(); auj.setHours(0, 0, 0, 0);
+  // Les deux repères sont pris à midi : comparer une date à midi avec un
+  // aujourd'hui à minuit donnait un demi-jour d'écart, arrondi à un jour
+  // entier — toutes les journées étaient annoncées avec un jour d'avance.
+  const auj = new Date(); auj.setHours(12, 0, 0, 0);
   const ecart = Math.round((d - auj) / 86400000);
   if (ecart === 0) return "Aujourd'hui — " + texte;
   if (ecart === 1) return "Demain — " + texte;
