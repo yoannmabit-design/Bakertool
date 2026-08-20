@@ -427,6 +427,18 @@
           <input type="checkbox" id="cpActif" checked> Code actif
         </label>
 
+        <label class="bascule" style="margin-top:10px">
+          <input type="checkbox" id="cpPremiereSeule">
+          Sur un abonnement, réservé à la première livraison
+        </label>
+
+        <p class="aide" style="margin:14px 0 0">
+          Sans cette case, un code utilisé sur un abonnement s'applique à
+          toutes les livraisons du plan. Un code à 15 % sur huit livraisons
+          coûte donc huit fois : à cocher pour un geste ponctuel, à laisser
+          décoché pour un tarif durable lié à une population.
+        </p>
+
         <p class="aide" style="margin:14px 0 0">
           La remise ne portera que sur les produits des rayons cochés. Un montant
           fixe plus élevé que la part concernée est ramené à cette part : la
@@ -1232,6 +1244,7 @@ function viderFormuleCode() {
   $("cpDebut").value = "";
   $("cpFin").value = "";
   $("cpActif").checked = true;
+  $("cpPremiereSeule").checked = false;
   $("btnCodeAnnuler").hidden = true;
   majTypeCode();
   etatCode("");
@@ -1251,6 +1264,7 @@ function modifierCode(c) {
   $("cpDebut").value = c.date_debut || "";
   $("cpFin").value = c.date_fin || "";
   $("cpActif").checked = c.actif !== false;
+  $("cpPremiereSeule").checked = c.premiere_livraison_seulement === true;
   $("btnCodeAnnuler").hidden = false;
   majTypeCode();
   etatCode("Modification en cours.");
@@ -1304,6 +1318,14 @@ function afficherCodes() {
     bloc.querySelector(".cp-code").textContent    = c.id;
     bloc.querySelector(".cp-valeur").textContent  = libelleValeur(c);
     bloc.querySelector(".cp-portee").textContent  = libellePortee(c);
+    // La restriction se voit dans la liste : sans cela, il faudrait ouvrir
+    // chaque code pour savoir lequel court sur tout un plan.
+    if (c.premiere_livraison_seulement === true) {
+      const m = document.createElement("span");
+      m.className = "cp-portee";
+      m.textContent = "1ʳᵉ livraison seule";
+      bloc.querySelector(".cp-portee").after(m);
+    }
     bloc.querySelector(".cp-libelle").textContent = c.libelle || "";
 
     const zonePeriode = bloc.querySelector(".cp-periode");
@@ -1412,7 +1434,9 @@ $("btnCodeEnregistrer").onclick = async () => {
       valeur: Math.round(valeur),
       date_debut: debut,
       date_fin: fin,
-      actif: $("cpActif").checked
+      actif: $("cpActif").checked,
+      // Portée sur un abonnement : tout le plan par défaut.
+      premiere_livraison_seulement: $("cpPremiereSeule").checked
     });
     viderFormuleCode();
     await chargerCodes();
