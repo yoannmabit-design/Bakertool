@@ -50,6 +50,11 @@
       font-size:11.5px;font-weight:700;line-height:1;
       position:relative;top:-1px;
     }
+    /* Variante "alerte" : un solde négatif n'est pas juste une tâche en
+       attente comme une commande à confirmer, c'est un compte client dans
+       le rouge — couleur distincte pour ne pas la noyer parmi les
+       pastilles jaunes neutres. */
+    .nav-admin .pastille.alerte{background:#d32f2f;color:#fff}
     .nom-fichier{
       font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
       font-size:11.5px;font-weight:400;letter-spacing:0;
@@ -149,21 +154,28 @@
       un: "abonnement à valider", plusieurs: "abonnements à valider" }
   ];
 
-  function poserPastille(fichier, nombre, mot) {
+  /* Solde négatif : une comparaison "<", pas une égalité — logique à part
+     de ATTENTES, avec sa propre pastille rouge plutôt que la jaune neutre. */
+  const ALERTE_SOLDE = { fichier: "credits-admin.html", collection: "comptes",
+    champ: "solde", un: "compte en négatif", plusieurs: "comptes en négatif" };
+
+  function poserPastille(fichier, nombre, mot, classe) {
     const a = liens[fichier];
     if (!a) return;
-    let el = a.querySelector(".pastille");
+    let el = a.querySelector(".pastille" + (classe ? "." + classe : ":not(.alerte)"));
 
     if (!nombre) {
       if (el) el.remove();
-      a.removeAttribute("aria-label");
-      a.removeAttribute("title");
+      if (!a.querySelector(".pastille")) {
+        a.removeAttribute("aria-label");
+        a.removeAttribute("title");
+      }
       return;
     }
 
     if (!el) {
       el = document.createElement("span");
-      el.className = "pastille";
+      el.className = "pastille" + (classe ? " " + classe : "");
       el.setAttribute("aria-hidden", "true");   // le libellé du lien le dit déjà
       a.appendChild(el);
     }
@@ -223,6 +235,16 @@
           // plutôt que d'afficher un zéro qui serait un mensonge.
           console.warn("Pastille " + t.collection + " :", e && e.code);
         }
+      }
+
+      try {
+        const t = ALERTE_SOLDE;
+        const q = fs.query(fs.collection(db, t.collection),
+                           fs.where(t.champ, "<", 0));
+        const n = await compterSur(q, fs);
+        poserPastille(t.fichier, n, n > 1 ? t.plusieurs : t.un, "alerte");
+      } catch (e) {
+        console.warn("Pastille comptes (solde négatif) :", e && e.code);
       }
     } catch {
       // hors ligne : le menu reste utilisable
