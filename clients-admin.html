@@ -334,10 +334,15 @@ $("btnImporter").onclick = async () => {
     const existants = {};
     clients.forEach(c => existants[c.telephone] = c);
 
-    const paquet = writeBatch(db);
+    // Un lot Firestore accepte au maximum 500 écritures : au-delà, on en
+    // ouvre un nouveau plutôt que de laisser commit() échouer d'un coup
+    // sur tout l'import dès que l'historique dépasse ce seuil.
+    const LOT_MAX = 450;
+    let paquet = writeBatch(db);
+    let dansLot = 0;
     let ajoutes = 0, majs = 0;
 
-    Object.values(parTel).forEach(e => {
+    for (const e of Object.values(parTel)) {
       const ancien = existants[e.telephone];
       // Les statistiques sont recalculées ; tags, groupe et notes restent à vous.
       const fiche = {
@@ -355,9 +360,15 @@ $("btnImporter").onclick = async () => {
       };
       paquet.set(doc(db, "clients", e.telephone), fiche);
       ancien ? majs++ : ajoutes++;
-    });
 
-    await paquet.commit();
+      if (++dansLot >= LOT_MAX) {
+        await paquet.commit();
+        paquet = writeBatch(db);
+        dansLot = 0;
+      }
+    }
+    if (dansLot > 0) await paquet.commit();
+
     await charger();
     etat(`${ajoutes} client(s) ajouté(s), ${majs} mis à jour.`, "ok");
   } catch (e) {
@@ -643,24 +654,24 @@ function etat(texte, type = "") {
   $("etat").textContent = texte;
   $("etat").className = "etat " + type;
 }
+
+// Alimentée d'abord par les segments réellement utilisés (appelée depuis
+// afficher(), donc dès le chargement des clients) — complétée en direct
+// par ce que l'admin est en train de taper ailleurs, pour proposer aussi
+// un segment tout juste créé sans avoir à recharger. Doit rester dans ce
+// module : elle lit `clients`, qui n'existe que dans cette portée.
+function majSuggestionsGroupes() {
+  const dl = document.getElementById('groupesConnus');
+  if (!dl) return;
+  const saisis = [...document.querySelectorAll('.c-groupe')]
+    .map(i => i.value.trim()).filter(Boolean);
+  const existants = clients.map(c => c.groupe).filter(Boolean);
+  dl.innerHTML = [...new Set(['Test', ...existants, ...saisis])]
+    .map(g => `<option value="${g}">`).join('');
+}
+document.addEventListener('input', majSuggestionsGroupes);
 </script>
 
 <datalist id="groupesConnus"></datalist>
-<script>
-  // Alimentée d'abord par les segments réellement utilisés (appelée
-  // depuis afficher(), donc dès le chargement des clients) — complétée
-  // en direct par ce que l'admin est en train de taper ailleurs, pour
-  // proposer aussi un segment tout juste créé sans avoir à recharger.
-  function majSuggestionsGroupes() {
-    const dl = document.getElementById('groupesConnus');
-    if (!dl) return;
-    const saisis = [...document.querySelectorAll('.c-groupe')]
-      .map(i => i.value.trim()).filter(Boolean);
-    const existants = clients.map(c => c.groupe).filter(Boolean);
-    dl.innerHTML = [...new Set(['Test', ...existants, ...saisis])]
-      .map(g => `<option value="${g}">`).join('');
-  }
-  document.addEventListener('input', majSuggestionsGroupes);
-</script>
 </body>
 </html>
