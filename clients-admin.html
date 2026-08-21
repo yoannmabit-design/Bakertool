@@ -73,7 +73,7 @@
     font-size:13px;padding:2px 8px;border-radius:10px;
     background:#e8eef1;color:var(--accent);
   }
-  .puce.groupe{background:#efe6d8;color:var(--encre-doux);font-weight:600}
+  .puce.groupe{font-weight:600}
 
   .detail{margin-top:14px;padding-top:14px;border-top:1px dashed var(--trait)}
   .detail[hidden]{display:none}
@@ -159,6 +159,26 @@ const $    = (id) => document.getElementById(id);
 const peso = (n) => "₱" + Number(n || 0).toLocaleString("en-PH");
 
 let clients = [];        // { id, nom, telephone, adresse, groupe, tags[], notes, nb_commandes, total_depense, derniere_commande, archive }
+
+/* 12 couleurs pastel distinctes, dans l'esprit des badges déjà utilisés
+   sur le site (fond doux, texte foncé assorti). Un même segment garde
+   toujours la même couleur d'une ouverture à l'autre — une couleur qui
+   changerait à chaque rechargement rendrait le repérage visuel inutile
+   plutôt que de l'aider. Au-delà de 12 segments distincts, deux segments
+   peuvent partager une couleur (limite demandée) ; le texte du badge
+   reste dans tous les cas le vrai repère fiable. */
+const PALETTE_SEGMENTS = [
+  ["#efe6d8", "#8a5a1c"], ["#dfe8ee", "#2d5771"], ["#e2eede", "#33632f"],
+  ["#f6e2de", "#8c2f22"], ["#e6e3f0", "#4a4270"], ["#eae6df", "#6d665c"],
+  ["#fbead2", "#8a5a1c"], ["#dde9e6", "#2f6a5c"], ["#f0e0ea", "#7a3560"],
+  ["#e4e9f5", "#3a4a7a"], ["#f5e8d8", "#7a5620"], ["#e0eaea", "#3a6666"]
+];
+
+function couleurSegment(nom) {
+  let h = 0;
+  for (const car of String(nom)) h = (h * 31 + car.charCodeAt(0)) >>> 0;
+  return PALETTE_SEGMENTS[h % PALETTE_SEGMENTS.length];
+}
 const modifies = new Set();
 
 /* Comptes clients de la boutique, indexés par téléphone. Le groupe tarifaire
@@ -359,6 +379,7 @@ function ech(t) {
 }
 
 function afficher() {
+  majSuggestionsGroupes();
   const f = $("recherche").value.trim().toLowerCase();
   const g = $("filtreGroupe").value;
   const voirMasques = $("voirMasques").checked;
@@ -432,7 +453,13 @@ function carte(c) {
 
   el.querySelector(".nom").textContent = c.nom || "—";
   el.querySelector(".tel").textContent = c.telephone;
-  if (c.groupe) el.querySelector(".puce.groupe").textContent = c.groupe;
+  if (c.groupe) {
+    const puceGroupe = el.querySelector(".puce.groupe");
+    puceGroupe.textContent = c.groupe;
+    const [fond, encre] = couleurSegment(c.groupe);
+    puceGroupe.style.background = fond;
+    puceGroupe.style.color = encre;
+  }
   const puces = [...el.querySelectorAll(".puce:not(.groupe)")];
   c.tags.forEach((t, i) => { if (puces[i]) puces[i].textContent = t; });
 
@@ -620,16 +647,20 @@ function etat(texte, type = "") {
 
 <datalist id="groupesConnus"></datalist>
 <script>
-  // Alimente la liste de suggestions de groupes au fil des saisies.
-  document.addEventListener('input', () => {
+  // Alimentée d'abord par les segments réellement utilisés (appelée
+  // depuis afficher(), donc dès le chargement des clients) — complétée
+  // en direct par ce que l'admin est en train de taper ailleurs, pour
+  // proposer aussi un segment tout juste créé sans avoir à recharger.
+  function majSuggestionsGroupes() {
     const dl = document.getElementById('groupesConnus');
     if (!dl) return;
-    const vus = [...document.querySelectorAll('.c-groupe')]
+    const saisis = [...document.querySelectorAll('.c-groupe')]
       .map(i => i.value.trim()).filter(Boolean);
-    // « Test » est toujours proposé : c'est lui qui autorise la suppression.
-    dl.innerHTML = [...new Set(['Test'].concat(vus))]
+    const existants = clients.map(c => c.groupe).filter(Boolean);
+    dl.innerHTML = [...new Set(['Test', ...existants, ...saisis])]
       .map(g => `<option value="${g}">`).join('');
-  });
+  }
+  document.addEventListener('input', majSuggestionsGroupes);
 </script>
 </body>
 </html>
