@@ -76,6 +76,10 @@
   .etiq.rouge{background:#f6e2de;color:var(--alerte)}
   .etiq.verte{background:#e2eede;color:var(--ok)}
   .etiq.bleue{background:#dfe8ee;color:var(--accent)}
+  /* COD : ni payé ni "à encaisser en ligne" — l'argent arrive à la
+     remise, pas de preuve à vérifier. Une couleur neutre à part pour ne
+     pas la confondre avec l'alerte rouge d'un paiement en ligne manquant. */
+  .etiq.cod{background:#eae6df;color:#6d665c}
 
   /* Une couleur par statut, du plus froid au plus chaud : la commande
      avance vers le pain prêt, puis s'éteint une fois remise. */
@@ -300,6 +304,15 @@ const LIBELLES = {
 };
 const PAIEMENTS = { "en attente":"En attente", "paye":"Payé", "rembourse":"Remboursé" };
 
+/* Libellés des moyens de paiement choisis au checkout (c.paiement.methode).
+   "especes" est le seul réglé à la remise : c'est lui qui déclenche le
+   badge COD plutôt que "À encaisser". Les autres attendent une preuve
+   (GCash, Maya, virement) et gardent le badge rouge existant. */
+const MOYENS_PAIEMENT = {
+  gcash: "GCash", maya: "Maya", virement: "Virement", especes: "Cash"
+};
+function estCOD(c) { return c.paiement?.methode === "especes"; }
+
 // « en production » contient une espace : on la retire pour en faire une classe.
 const CLASSE_STATUT = {
   "nouvelle":"nouvelle", "confirmee":"confirmee", "en production":"production",
@@ -501,7 +514,10 @@ function carte(c) {
       ${c.credit_utilise > 0 ? `<span class="etiq">crédit ${peso(c.credit_utilise)}</span>` : ""}
       <span class="etiq st-${CLASSE_STATUT[c.statut] || "nouvelle"}">${
         LIBELLES[c.statut] || c.statut}</span>
-      <span class="etiq ${paye ? "verte" : "rouge"}">${paye ? "Payé" : "À encaisser"}</span>
+      ${c.paiement?.methode ? `<span class="etiq">${
+        echapper(MOYENS_PAIEMENT[c.paiement.methode] || c.paiement.methode)}</span>` : ""}
+      <span class="etiq ${paye ? "verte" : (estCOD(c) ? "cod" : "rouge")}">${
+        paye ? "Payé" : (estCOD(c) ? "COD" : "À encaisser")}</span>
       <span class="montant">${peso(c.total)}</span>
     </div>
     <div class="resume"></div>
