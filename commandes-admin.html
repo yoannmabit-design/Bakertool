@@ -48,6 +48,17 @@
   }
   .cmd.impaye{border-left:4px solid var(--alerte)}
   .cmd.reglee{border-left:4px solid var(--ok)}
+  /* Repérage temporaire en arrivant depuis "Commandes à venir" sur
+     l'accueil — un halo qui s'estompe, pour ne pas laisser une carte
+     encadrée en permanence après le premier coup d'œil. */
+  .cmd.cible{
+    animation:surligne-cmd 2.6s ease-out;
+  }
+  @keyframes surligne-cmd{
+    0%   {box-shadow:0 0 0 3px var(--accent)}
+    75%  {box-shadow:0 0 0 3px var(--accent)}
+    100% {box-shadow:0 0 0 0 transparent}
+  }
   .tete{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;cursor:pointer}
   .tete .ref{font-family:ui-monospace,monospace;font-size:14.5px;color:var(--encre-doux)}
   .tete .nom{font-weight:600;flex:1;min-width:120px}
@@ -159,6 +170,14 @@
     font:inherit;font-size:16.5px;
   }
   .edition .edit-avertit{font-size:14.5px;color:var(--alerte);flex:1;min-width:150px}
+  .edition .edit-livraison-champ{
+    display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:14px;
+  }
+  .edition .edit-livraison-champ label{font-size:15px;color:var(--encre-doux)}
+  .edition .edit-livraison-champ select{
+    padding:8px 10px;border:1px solid var(--trait);border-radius:var(--r);
+    font:inherit;font-size:16.5px;background:#fff;min-width:220px;
+  }
   .edition .edit-bilan{margin-top:14px;font-size:16.5px}
   .edition .edit-bilan .l{
     display:flex;justify-content:space-between;gap:12px;padding:3px 0;
@@ -324,6 +343,7 @@ const FENETRE_JOURS = 10;
 
 let commandes = [], filtre = "actives";
 let joursFermes = [];   // 0 = lundi
+let optionsRetrait = []; // options de retrait/livraison — pour la modification
 let catalogue = {};     // { code : { nom, prix_vente, rayon } } — pour la modification
 let stockLimite = {};   // { code produit : true } — produits à stock décompté
 let nomVersCode = {};   // rattrapage : nom du produit -> code, pour les commandes d'avant les codes
@@ -366,7 +386,10 @@ async function charger() {
     // Quels produits ont un stock à décompter ?
     try {
       const p = await getDoc(doc(db, "parametres", "boutique"));
-      if (p.exists()) joursFermes = p.data().jours_fermes || [];
+      if (p.exists()) {
+        joursFermes = p.data().jours_fermes || [];
+        optionsRetrait = p.data().options_retrait || [];
+      }
     } catch (e) { console.error(e); }
 
     try {
@@ -412,10 +435,43 @@ async function charger() {
     afficher();
     publierProduction();
     publierCharges();
+    allerVersCommandeCiblee();
   } catch (e) {
     console.error(e);
     $("liste").innerHTML = '<div class="vide">Les commandes n\'ont pas pu être chargées.</div>';
   }
+}
+
+/* ---------- Arrivée depuis la page d'accueil ("Commandes à venir") ---------- */
+// Le lien pointe vers ?commande=ID. On force la vue "Toutes" pour être
+// sûr de la trouver même si son statut sort du filtre actif par défaut
+// (remise, annulée...), puis on l'amène à l'écran et on la met en
+// évidence un instant — sans quoi, en fin de liste, elle se noierait
+// exactement comme depuis la page d'accueil, ce qui annulerait l'intérêt
+// du lien.
+function allerVersCommandeCiblee() {
+  const id = new URLSearchParams(location.search).get("commande");
+  if (!id) return;
+
+  const cible = commandes.find(c => c.id === id);
+  if (!cible) return;
+
+  if (filtre !== "toutes") {
+    filtre = "toutes";
+    $("filtres").querySelectorAll("button").forEach(b =>
+      b.setAttribute("aria-pressed", b.dataset.f === "toutes"));
+    afficher();
+  }
+
+  // Nettoie l'URL pour qu'un rechargement ou un retour en arrière ne
+  // re-déclenche pas le même repérage indéfiniment.
+  history.replaceState(null, "", location.pathname);
+
+  const el = document.getElementById("cmd-" + id);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.classList.add("cible");
+  setTimeout(() => el.classList.remove("cible"), 2600);
 }
 
 /* ---------- Filtres ---------- */
@@ -493,6 +549,7 @@ function dateLongue(iso) {
 function carte(c) {
   const paye = (c.paiement?.statut || "en attente") === "paye";
   const el = document.createElement("div");
+  el.id = "cmd-" + c.id;
   // Confirmée et payée : la commande n'attend plus rien de vous.
   const rienAFaire = paye && ["confirmee", "en production", "prete", "remise"]
     .includes(c.statut);
@@ -922,7 +979,7 @@ function rayonLigne(l) {
 }
 
 // Recalcule prix unitaires, sous-total et total d'un panier donné.
-function recalculer(c, panier) {
+function recalculer(c, panier, option) {
   const fiche = c.code_promo
     ? { valeur: c.code_promo.valeur, type: c.code_promo.type,
         rayons: c.code_promo.rayons || [] }
@@ -943,11 +1000,18 @@ function recalculer(c, panier) {
     prix: prixUnitaire(prixBaseLigne(l), Number(c.remise) || 0, calcul.source)
   }));
 
-  const frais = c.frais_a_confirmer ? 0 : (Number(c.frais_livraison) || 0);
+  // Le mode de livraison peut être changé dans l'écran de modification :
+  // sans changement, on retombe sur le tarif déjà enregistré sur la commande.
+  const o = option || null;
+  const fraisAConfirmer = o ? !!o.tarif_variable : !!c.frais_a_confirmer;
+  const frais = fraisAConfirmer ? 0 :
+    (o ? (Number(o.tarif) || 0) : (Number(c.frais_livraison) || 0));
 
   return {
     lignes, calcul,
     sous_total: calcul.sousTotal,
+    frais_livraison: frais,
+    frais_a_confirmer: fraisAConfirmer,
     total: calcul.sousTotal + frais
   };
 }
@@ -983,6 +1047,16 @@ function ouvrirModification(c, el) {
   // Copie de travail : rien n'est touché tant que l'on n'enregistre pas.
   let panier = (c.panier || []).map(l => Object.assign({}, l));
   let date = c.date_retrait || "";
+  // Mode de livraison en cours d'édition : si la commande utilise une
+  // option qui a depuis été supprimée des paramètres boutique, elle reste
+  // proposée en tête de liste pour ne pas la perdre silencieusement.
+  let optionCourante = optionsRetrait.find(o => o.nom === c.option?.nom) ||
+    (c.option?.nom ? { nom: c.option.nom, type: c.option.type,
+                        lieu: c.option.lieu, tarif: c.frais_livraison,
+                        tarif_variable: c.frais_a_confirmer } : null);
+  const optionsProposees = optionCourante &&
+    !optionsRetrait.some(o => o.nom === optionCourante.nom)
+    ? [optionCourante, ...optionsRetrait] : optionsRetrait;
 
   const zone = el.querySelector(".edition");
   zone.hidden = false;
@@ -994,7 +1068,7 @@ function ouvrirModification(c, el) {
     .join("");
 
   function dessiner() {
-    const r = recalculer(c, panier);
+    const r = recalculer(c, panier, optionCourante);
     const ecartTotal = r.total - (Number(c.total) || 0);
     const credit = Number(c.credit_utilise) || 0;
 
@@ -1013,11 +1087,21 @@ function ouvrirModification(c, el) {
         <span class="edit-avertit"></span>
       </div>
 
+      <div class="edit-livraison-champ">
+        <label>Mode de retrait / livraison</label>
+        <select class="edit-livraison">
+          ${optionsProposees.map(o => `<option value="${echapper(o.nom)}"${
+            optionCourante && o.nom === optionCourante.nom ? " selected" : ""
+          }>${echapper(o.nom)}${o.tarif_variable ? " (tarif à confirmer)" :
+            (Number(o.tarif) > 0 ? " — " + peso(Number(o.tarif)) : "")}</option>`).join("")}
+        </select>
+      </div>
+
       <div class="edit-bilan">
         <div class="l"><span>Sous-total</span><span>${peso(r.sous_total)}</span></div>
-        ${c.frais_a_confirmer ? "" : (Number(c.frais_livraison) > 0
-          ? `<div class="l"><span>${echapper(c.option?.nom || "Livraison")}</span>
-             <span>${peso(c.frais_livraison)}</span></div>` : "")}
+        ${r.frais_a_confirmer ? "" : (r.frais_livraison > 0
+          ? `<div class="l"><span>${echapper(optionCourante?.nom || "Livraison")}</span>
+             <span>${peso(r.frais_livraison)}</span></div>` : "")}
         <div class="l somme"><span>Total</span><span>${peso(r.total)}</span></div>
         ${ecartTotal !== 0
           ? `<div class="l ecart"><span>Écart avec le total actuel</span>
@@ -1084,32 +1168,42 @@ function ouvrirModification(c, el) {
     majAvertissement();
     champJour.onchange = () => { date = champJour.value; majAvertissement(); };
 
+    // Mode de retrait/livraison
+    zone.querySelector(".edit-livraison").onchange = (e) => {
+      optionCourante = optionsProposees.find(o => o.nom === e.target.value) || null;
+      dessiner();
+    };
+
     zone.querySelector(".edit-annuler").onclick = () => {
       zone.hidden = true;
       zone.innerHTML = "";
     };
 
-    zone.querySelector(".edit-ok").onclick = () => enregistrerModification(c, panier, date);
+    zone.querySelector(".edit-ok").onclick = () =>
+      enregistrerModification(c, panier, date, optionCourante);
   }
 
   dessiner();
 }
 
-async function enregistrerModification(c, panier, date) {
+async function enregistrerModification(c, panier, date, option) {
   if (!panier.length)
     return signaler("Une commande ne peut pas être vide. Annulez-la plutôt.", "err");
   if (!date)
     return signaler("La date de retrait est obligatoire.", "err");
 
-  const r = recalculer(c, panier);
+  const r = recalculer(c, panier, option);
   const ecarts = ecartsStock(c.panier, r.lignes);
   // Le stock n'a été touché qu'à la confirmation : avant, il n'y a rien à rendre.
   const toucherStock = !!c.stock_deduit;
+
+  const changeLivraison = option && option.nom !== c.option?.nom;
 
   const resume = [
     `${(c.panier || []).length} ligne(s) → ${r.lignes.length}`,
     `total ${peso(c.total)} → ${peso(r.total)}`,
     c.date_retrait !== date ? `date ${c.date_retrait} → ${date}` : null,
+    changeLivraison ? `mode ${c.option?.nom || "—"} → ${option.nom}` : null,
     toucherStock && Object.keys(ecarts).length
       ? "le stock sera ajusté en conséquence" : null
   ].filter(Boolean).join("\n");
@@ -1130,6 +1224,11 @@ async function enregistrerModification(c, panier, date) {
         ? Object.assign({}, c.code_promo,
             { montant: r.calcul.source === "promo" ? r.calcul.economie : 0 })
         : null,
+      option: option
+        ? { nom: option.nom, type: option.type, lieu: option.lieu || "" }
+        : (c.option || null),
+      frais_livraison: r.frais_livraison,
+      frais_a_confirmer: r.frais_a_confirmer,
       total: r.total,
       modifiee_le: new Date().toISOString(),
       modifiee_par: auth.currentUser?.email || ""
@@ -1149,6 +1248,11 @@ async function enregistrerModification(c, panier, date) {
     c.sous_total = r.calcul.sousTotal;
     c.total = r.total;
     c.remise_source = r.calcul.source;
+    if (option) {
+      c.option = { nom: option.nom, type: option.type, lieu: option.lieu || "" };
+      c.frais_livraison = r.frais_livraison;
+      c.frais_a_confirmer = r.frais_a_confirmer;
+    }
 
     commandes.sort((a, b) =>
       (a.date_retrait || "").localeCompare(b.date_retrait || "") ||
