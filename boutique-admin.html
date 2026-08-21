@@ -106,6 +106,18 @@
     border:1px solid var(--trait);border-radius:var(--r);
     padding:14px;margin-bottom:12px;background:#fff;
   }
+  /* Glisser-déposer : poignée dédiée plutôt que tout le bloc, pour ne
+     pas gêner la sélection de texte dans les champs juste en dessous. */
+  .option{position:relative;padding-left:38px}
+  .option .poignee{
+    position:absolute;left:8px;top:14px;width:22px;height:28px;
+    cursor:grab;display:flex;align-items:center;justify-content:center;
+    color:var(--encre-doux);font-size:16px;line-height:1;border-radius:4px;
+    touch-action:none;user-select:none;
+  }
+  .option .poignee:hover{background:#f1ede5}
+  .option.glisse{opacity:.4}
+  .option.survole{border-top:2px solid var(--accent)}
   .jours{display:flex;gap:8px;flex-wrap:wrap}
   .jours label{
     display:flex;align-items:center;gap:6px;font-size:16px;color:var(--encre);
@@ -597,6 +609,7 @@ function ajouterOption(o = {}) {
   const bloc = document.createElement("div");
   bloc.className = "option";
   bloc.innerHTML = `
+    <div class="poignee" title="Glisser pour réordonner" aria-hidden="true">⠿</div>
     <div class="ligne">
       <div>
         <label>Nom affiché au client</label>
@@ -677,9 +690,47 @@ function ajouterOption(o = {}) {
   };
 
   bloc.querySelector(".retirer").onclick = () => bloc.remove();
+  activerGlisser(bloc);
   $("listeOptions").appendChild(bloc);
 }
 $("btnAjoutOption").onclick = () => ajouterOption();
+
+/* Glisser-déposer limité à la poignée : le bloc entier n'est "draggable"
+   que pendant qu'on tient la poignée, sinon un simple clic dans un champ
+   texte ou un select lancerait un drag involontaire. */
+function activerGlisser(bloc) {
+  const poignee = bloc.querySelector(".poignee");
+  poignee.addEventListener("mousedown", () => { bloc.draggable = true; });
+  poignee.addEventListener("touchstart", () => { bloc.draggable = true; },
+                            { passive: true });
+  bloc.addEventListener("dragend", () => {
+    bloc.draggable = false;
+    bloc.classList.remove("glisse");
+    [...$("listeOptions").children].forEach(b => b.classList.remove("survole"));
+  });
+
+  bloc.addEventListener("dragstart", e => {
+    bloc.classList.add("glisse");
+    e.dataTransfer.effectAllowed = "move";
+  });
+
+  bloc.addEventListener("dragover", e => {
+    e.preventDefault();
+    bloc.classList.add("survole");
+  });
+  bloc.addEventListener("dragleave", () => bloc.classList.remove("survole"));
+
+  bloc.addEventListener("drop", e => {
+    e.preventDefault();
+    bloc.classList.remove("survole");
+    const enCours = document.querySelector(".option.glisse");
+    if (!enCours || enCours === bloc) return;
+    const liste = $("listeOptions");
+    const avant = [...liste.children].indexOf(bloc) <
+                  [...liste.children].indexOf(enCours);
+    liste.insertBefore(enCours, avant ? bloc : bloc.nextSibling);
+  });
+}
 
 function lireOptions() {
   return [...document.querySelectorAll("#listeOptions .option")].map(b => ({
