@@ -13,6 +13,7 @@
     --creme:#fdf6ec;--papier:#fffdf9;--encre:#1f1b16;
     --encre-doux:#6b6157;--trait:#e2d7c6;--accent:#2f4858;
     --alerte:#8c2f22;--ok:#3d6b3d;--r:6px;
+    --vide:#5a5285;--recent:#a85a1c;
   }
   *{box-sizing:border-box}
   body{
@@ -56,8 +57,16 @@
     border-left:4px solid #7a2331;
     border-radius:var(--r);padding:14px;margin-bottom:10px;
   }
+  /* Violet : la fiche n'a jamais eu de commande — il n'y a encore rien
+     dessus à part le téléphone. Orange : la dernière commande date de
+     moins d'une semaine. Ni l'un ni l'autre : couleur par défaut
+     ci-dessus, inchangée. */
+  .client.vide{border-left-color:var(--vide)}
+  .client.recent{border-left-color:var(--recent)}
   /* Bleu quand la fiche est ouverte : on voit d'un coup d'œil où l'on
-     travaille dans une longue liste. */
+     travaille dans une longue liste — l'emporte sur violet/orange,
+     puisque savoir où l'on est en train de travailler prime sur l'état
+     de contenu pendant qu'on la consulte. */
   .client.ouvert{border-left-color:#2f4858}
   .client.archive{opacity:.66}
   .client.archive .tete .nom::after{
@@ -423,7 +432,13 @@ function afficher() {
 function carte(c) {
   const cpt = compteDe(c);
   const el = document.createElement("div");
-  el.className = "client" + (estMasque(c) ? " archive" : "");
+  // Violet si aucune commande jamais passée, orange si la dernière date
+  // de moins d'une semaine — l'ouverture de la fiche (classe "ouvert",
+  // ajoutée plus bas au clic) l'emportera visuellement sur les deux.
+  const ilYA7JOURS = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const classeEtat = !c.nb_commandes ? " vide"
+    : (c.derniere_commande >= ilYA7JOURS ? " recent" : "");
+  el.className = "client" + classeEtat + (estMasque(c) ? " archive" : "");
   el.innerHTML = `
     <div class="tete">
       <span class="nom"></span>
