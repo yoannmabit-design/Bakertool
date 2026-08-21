@@ -640,6 +640,12 @@ function ajouterOption(o = {}) {
           <input type="checkbox" class="o-adresse"> Demander l'adresse du client
         </label>
       </div>
+      <div class="o-adresse-connue-bloc">
+        <label class="bascule" style="margin-top:22px">
+          <input type="checkbox" class="o-adresse-connue">
+          Adresse déjà connue — ne demander que le n° d'unité
+        </label>
+      </div>
       <div style="max-width:170px">
         <label>Tarif abonné (₱)</label>
         <input type="number" class="o-abo" min="0" step="1" placeholder="tarif normal">
@@ -668,6 +674,7 @@ function ajouterOption(o = {}) {
   bloc.querySelector(".o-tarif").value    = o.tarif ?? 0;
   bloc.querySelector(".o-variable").checked = !!o.tarif_variable;
   bloc.querySelector(".o-adresse").checked  = !!o.demander_adresse;
+  bloc.querySelector(".o-adresse-connue").checked = !!o.adresse_connue;
   bloc.querySelector(".o-abo").value        =
     (o.tarif_abonne === null || o.tarif_abonne === undefined) ? "" : o.tarif_abonne;
   bloc.querySelector(".o-lieu").value     = o.lieu || "";
@@ -683,10 +690,25 @@ function ajouterOption(o = {}) {
   variable.onchange = majTarif;
   majTarif();
 
+  // "Adresse déjà connue" n'a de sens que si l'adresse est demandée —
+  // masqué et décoché sinon, pour ne pas laisser un réglage orphelin actif.
+  const adresse = bloc.querySelector(".o-adresse");
+  const adresseConnue = bloc.querySelector(".o-adresse-connue");
+  const blocAdresseConnue = bloc.querySelector(".o-adresse-connue-bloc");
+  const majAdresseConnue = () => {
+    blocAdresseConnue.hidden = !adresse.checked;
+    if (!adresse.checked) adresseConnue.checked = false;
+  };
+  adresse.addEventListener("change", majAdresseConnue);
+  majAdresseConnue();
+
   // Une livraison suppose presque toujours une adresse.
   const type = bloc.querySelector(".o-type");
   type.onchange = () => {
-    if (type.value === "livraison") bloc.querySelector(".o-adresse").checked = true;
+    if (type.value === "livraison") {
+      adresse.checked = true;
+      majAdresseConnue();
+    }
   };
 
   bloc.querySelector(".retirer").onclick = () => bloc.remove();
@@ -739,6 +761,7 @@ function lireOptions() {
     tarif: Number(b.querySelector(".o-tarif").value) || 0,
     tarif_variable: b.querySelector(".o-variable").checked,
     demander_adresse: b.querySelector(".o-adresse").checked,
+    adresse_connue: b.querySelector(".o-adresse-connue").checked,
     tarif_abonne: b.querySelector(".o-abo").value.trim() === ""
       ? null : Number(b.querySelector(".o-abo").value) || 0,
     lieu: b.querySelector(".o-lieu").value.trim(),
