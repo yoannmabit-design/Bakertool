@@ -784,7 +784,22 @@ function iso(d) {
     .toISOString().slice(0, 10);
 }
 
+// Le jour que l'ERP doit préparer : le plus proche qui a encore des
+// commandes en attente de pesées ("confirmée", pas encore en production).
+// Dès que la dernière commande confirmée d'une date passe "en production",
+// cette date sort du calcul et l'ERP bascule tout seul sur la suivante —
+// c'est le geste de faire avancer une commande qui déclenche le
+// changement de jour, pas l'heure qu'il est.
 function prochaineLivraison() {
+  const dates = commandes
+    .filter(c => c.statut === "confirmee" && c.date_retrait)
+    .map(c => c.date_retrait);
+  if (dates.length) return dates.sort()[0];
+
+  // Repli : plus aucune commande en attente de pesées (tout est déjà en
+  // production, ou rien n'est encore confirmé) — on retombe sur le
+  // prochain jour ouvré, pour ne jamais publier une date qui ne veut
+  // plus rien dire.
   const d = new Date(); d.setHours(0, 0, 0, 0);
   for (let i = 0; i < 14; i++) {
     if (!joursFermes.includes((d.getDay() + 6) % 7)) return iso(d);
