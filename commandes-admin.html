@@ -32,7 +32,13 @@
   }
   main{max-width:820px;margin:0 auto;padding:20px 16px 120px}
 
-  .filtres{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:20px}
+  .filtres{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}
+  #recherche{
+    display:block;width:100%;box-sizing:border-box;padding:10px 13px;
+    margin-bottom:20px;border:1px solid var(--trait);border-radius:var(--r);
+    font:inherit;font-size:16px;background:#fff;color:var(--encre);
+  }
+  #recherche:focus{outline:2px solid var(--accent);outline-offset:1px}
   .filtres button{
     border:1px solid var(--trait);background:transparent;color:var(--encre-doux);
     padding:8px 15px;border-radius:var(--r);font-size:16px;cursor:pointer;
@@ -270,6 +276,8 @@
       <button data-f="impayees" aria-pressed="false">Impayées</button>
       <button data-f="toutes" aria-pressed="false">Toutes</button>
     </div>
+    <input type="search" id="recherche"
+           placeholder="Chercher un client ou un article…">
     <div id="liste"><div class="vide">Chargement…</div></div>
   </main>
 </div>
@@ -420,15 +428,10 @@ async function charger() {
     const s = await getDocs(collection(db, "commandes"));
     commandes = [];
     s.forEach(d => commandes.push({ id: d.id, ...d.data() }));
-    // Les plus proches en premier, puis les plus récemment reçues.
-    commandes.sort((a, b) =>
-      (a.date_retrait || "").localeCompare(b.date_retrait || "") ||
-      (b.cree_le || "").localeCompare(a.cree_le || ""));
+    trierCommandes();
     const crees = await materialiserAbonnements();
     if (crees) {
-      commandes.sort((a, b) =>
-        (a.date_retrait || "").localeCompare(b.date_retrait || "") ||
-        (b.cree_le || "").localeCompare(a.cree_le || ""));
+      trierCommandes();
       signaler(crees + " commande(s) d'abonnement générée(s).");
     }
 
@@ -484,6 +487,17 @@ $("filtres").onclick = (e) => {
   afficher();
 };
 
+// Léger anti-rebond : évite de refiltrer toute la liste à chaque frappe
+// sur un historique de commandes qui peut être long.
+let attenteRecherche;
+$("recherche").addEventListener("input", (e) => {
+  clearTimeout(attenteRecherche);
+  attenteRecherche = setTimeout(() => {
+    recherche = normaliser(e.target.value.trim());
+    afficher();
+  }, 120);
+});
+
 function retenue(c) {
   if (filtre === "toutes") return true;
   if (filtre === "impayees")
@@ -491,14 +505,29 @@ function retenue(c) {
   return !["remise", "annulee"].includes(c.statut);
 }
 
+// Insensible aux accents : "eclair" doit trouver "éclair", pareil pour un nom client.
+function normaliser(s) {
+  return String(s || "").toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+let recherche = "";
+function correspond(c) {
+  if (!recherche) return true;
+  if (normaliser(c.client?.nom).includes(recherche)) return true;
+  return (c.panier || []).some(l => normaliser(l.nom).includes(recherche));
+}
+
 /* ---------- Affichage ---------- */
 function afficher() {
   const liste = $("liste");
-  const vues = commandes.filter(retenue);
+  const vues = commandes.filter(retenue).filter(correspond);
   liste.innerHTML = "";
 
   if (!vues.length) {
-    liste.innerHTML = '<div class="vide">Aucune commande dans cette vue.</div>';
+    liste.innerHTML = recherche
+      ? '<div class="vide">Aucune commande ne correspond à la recherche.</div>'
+      : '<div class="vide">Aucune commande dans cette vue.</div>';
     return;
   }
 
@@ -782,6 +811,16 @@ function codeLigne(l) {
 function iso(d) {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
     .toISOString().slice(0, 10);
+}
+
+// Ordre d'affichage : date de retrait, puis mode de retrait/livraison
+// (pour regrouper les commandes à préparer pour un même point de dépose
+// ou une même tournée), puis les plus récemment reçues en premier.
+function trierCommandes() {
+  commandes.sort((a, b) =>
+    (a.date_retrait || "").localeCompare(b.date_retrait || "")
+    || (a.option?.nom || "").localeCompare(b.option?.nom || "")
+    || (b.cree_le || "").localeCompare(a.cree_le || ""));
 }
 
 // Le jour que l'ERP doit préparer : le plus proche qui a encore des
@@ -1269,9 +1308,7 @@ async function enregistrerModification(c, panier, date, option) {
       c.frais_a_confirmer = r.frais_a_confirmer;
     }
 
-    commandes.sort((a, b) =>
-      (a.date_retrait || "").localeCompare(b.date_retrait || "") ||
-      (b.cree_le || "").localeCompare(a.cree_le || ""));
+    trierCommandes();
 
     afficher();
     publierProduction();
