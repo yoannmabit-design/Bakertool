@@ -123,7 +123,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, collection, getDocs, doc, getDoc, updateDoc,
+import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, deleteDoc,
          writeBatch, increment }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
@@ -238,6 +238,8 @@ function carte(a) {
       <div class="actions">
         ${a.statut === "nouveau" ? '<button class="action valider">Valider cet abonnement</button>' : ""}
         ${a.statut === "actif" ? '<button class="danger arreter">Arrêter</button>' : ""}
+        ${!(a.echeances || []).some(e => e.statut === "livree")
+          ? '<button class="danger supprimer">Supprimer</button>' : ""}
       </div>
     </div>`;
 
@@ -282,6 +284,8 @@ function carte(a) {
   if (bv) bv.onclick = () => valider(a);
   const ba = el.querySelector(".arreter");
   if (ba) ba.onclick = () => arreter(a);
+  const bd = el.querySelector(".supprimer");
+  if (bd) bd.onclick = () => supprimer(a);
 
   return el;
 }
@@ -308,6 +312,25 @@ async function arreter(a) {
     afficher();
     signaler("Abonnement arrêté.");
   } catch (e) { console.error(e); signaler("Échec."); }
+}
+
+/* Suppression définitive — pour un abonnement validé par erreur, un
+   doublon ou un test, plutôt que "Arrêter" qui laisse une trace
+   permanente dans la vue "Tous". Seulement proposée tant qu'aucune
+   échéance n'a été livrée (voir le bouton plus haut) : dès qu'une
+   livraison a réellement eu lieu — et donc, en mode crédit, débité un
+   solde client — supprimer effacerait cet historique. "Arrêter" reste
+   le bon geste dans ce cas. */
+async function supprimer(a) {
+  if (!confirm(`Supprimer définitivement l'abonnement de ${a.client?.nom} ?\n\n` +
+    "Aucune livraison n'a encore eu lieu — rien d'autre n'est affecté. " +
+    "Cette action est irréversible.")) return;
+  try {
+    await deleteDoc(doc(db, "abonnements", a.id));
+    abos = abos.filter(x => x.id !== a.id);
+    afficher();
+    signaler("Abonnement supprimé.");
+  } catch (e) { console.error(e); signaler("Échec de la suppression."); }
 }
 
 /* Une livraison marquée livrée prélève le crédit quand c'est le mode choisi.
