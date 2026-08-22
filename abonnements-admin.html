@@ -127,6 +127,13 @@ import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, deleteDoc,
          writeBatch, increment }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
+/* Le calcul du report vit dans abo.js, partagé avec compte.html côté
+   vitrine : un client qui se reporte lui-même et une échéance reportée
+   depuis l'administration doivent produire exactement le même résultat.
+   MAX_REPORTS n'est donc plus défini ici, mais lu depuis ce module. */
+import { MAX_REPORTS, reportsFaits, peutReporter, reporter as reporterAbo }
+  from "./abo.js";
+
 const firebaseConfig = {
   apiKey: "AIzaSyDuq8KS8M_Z8U7BlSp6MvE-6Y9OYYaDujE",
   authDomain: "bakertools-ae124.firebaseapp.com",
@@ -384,57 +391,40 @@ async function marquerLivree(a, i) {
 /* Le client s'absente : l'échéance est sautée et reportée à la fin,
    pour qu'il reçoive bien le nombre de livraisons payées.
    Plafonné à MAX_REPORTS : au-delà, l'échéance est perdue, sans quoi un
-   abonnement pourrait s'étirer indéfiniment. */
-const MAX_REPORTS = 2;
+   abonnement pourrait s'étirer indéfiniment.
 
-// Le compteur est stocké sur l'abonnement ; les plans créés avant son
-// existence repartent de zéro.
-function reportsFaits(a) {
-  return Number(a.reports) || 0;
-}
-
+   Ce report est demandé par le client — par téléphone, par message —
+   et relayé ici par vous : il consomme donc son quota, exactement comme
+   s'il l'avait fait lui-même depuis son compte. C'est ce qui le
+   distingue de "Je m'absente…" plus bas, qui décale vos propres
+   tournées sans jamais toucher à ce compteur. */
 async function sauter(a, i) {
+  const date = a.echeances[i]?.date;
   const faits = reportsFaits(a);
   const reste = faits < MAX_REPORTS;
 
   const message = reste
-    ? `Client absent le ${a.echeances[i].date} ?\n\n` +
+    ? `Client absent le ${date} ?\n\n` +
       "Cette livraison est reportée à la fin de l'abonnement.\n" +
       `Report ${faits + 1} sur ${MAX_REPORTS}.`
-    : `Client absent le ${a.echeances[i].date} ?\n\n` +
+    : `Client absent le ${date} ?\n\n` +
       `Les ${MAX_REPORTS} reports autorisés ont déjà été utilisés : cette ` +
       "livraison sera perdue, elle ne sera pas replacée à la fin.";
   if (!confirm(message)) return;
 
-  try {
-    const pas = a.cadence === "quinzaine" ? 14 : 7;
-    const echeances = a.echeances.map((e, n) =>
-      n === i ? { ...e, statut: "sautee" } : e);
+  // Aucun délai imposé à l'administration : le client a pu prévenir la
+  // veille, ce n'est pas à l'écran de le lui refuser.
+  const r = await reporterAbo(db, a.id, date, { origine: "client", delaiHeures: 0 });
 
-    const maj = { echeances };
-    let jusquA = null;
+  if (!r.ok) {
+    console.error(r.raison);
+    return signaler("Échec du report.");
+  }
 
-    if (reste) {
-      const derniere = echeances.filter(e => e.statut === "planifiee")
-        .map(e => e.date).sort().pop() || a.echeances[i].date;
-      const d = new Date(derniere + "T12:00:00");
-      d.setDate(d.getDate() + pas);
-      jusquA = iso(d);
-      echeances.push({ date: jusquA, statut: "planifiee" });
-      maj.reports = faits + 1;
-    }
-
-    // Sauter la dernière échéance sans report possible clôt le plan.
-    if (!echeances.some(e => e.statut === "planifiee")) maj.statut = "termine";
-
-    await updateDoc(doc(db, "abonnements", a.id), maj);
-    a.echeances = echeances;
-    if (maj.reports !== undefined) a.reports = maj.reports;
-    if (maj.statut) a.statut = maj.statut;
-    afficher();
-    signaler(jusquA ? "Livraison reportée au " + jusquA
+  Object.assign(a, r.abo);
+  afficher();
+  signaler(r.jusquA ? "Livraison reportée au " + r.jusquA
                     : "Livraison sautée, sans report.");
-  } catch (e) { console.error(e); signaler("Échec du report."); }
 }
 
 /* ---------- Absence du boulanger : décalage global ---------- */
