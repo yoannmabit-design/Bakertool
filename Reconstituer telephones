@@ -1,1 +1,134 @@
+/* ==========================================================
+   RECONSTITUTION DES TÉLÉPHONES SUR "comptes"
+   ==========================================================
+   Problème réglé par ce script :
+   compte.html n'a jamais eu de champ téléphone, et checkout.html
+   n'écrit le téléphone que sur la commande (commandes/{id}.client.telephone),
+   jamais sur le compte (comptes/{uid}). Résultat : clients-admin.html, qui
+   retrouve un compte par téléphone, ne trouve quasiment jamais rien.
 
+   Ce script répare les comptes EXISTANTS en reconstituant leur téléphone
+   à partir de leur commande la plus récente. Il ne change rien à la
+   correction déjà en place côté site (credits-admin.html) — c'est un
+   rattrapage ponctuel, à lancer une fois, pas un remplacement.
+
+   SÉCURITÉ :
+   - Par défaut, DRY-RUN : affiche ce qu'il ferait, n'écrit rien.
+   - Ajoute --apply pour écrire réellement.
+   - Ne touche JAMAIS un compte qui a déjà un téléphone non vide — aucun
+     risque d'écraser une valeur existante, même incorrecte.
+
+   PRÉREQUIS (à faire une seule fois) :
+   1. Installer Node.js si ce n'est pas déjà fait (nodejs.org).
+   2. Dans un dossier vide, sur ta machine :
+        npm install firebase-admin
+   3. Firebase Console → Paramètres du projet → Comptes de service
+      → "Générer une nouvelle clé privée" → un fichier .json se télécharge.
+      Mets-le dans le même dossier que ce script, renommé
+      "cle-service-compte.json" (ou change SERVICE_ACCOUNT_PATH ci-dessous).
+      Ce fichier est un secret : ne le partage jamais, ne le mets jamais
+      sur GitHub (ajoute-le à .gitignore si le dossier est versionné).
+
+   UTILISATION :
+     node reconstituer-telephones.js            → aperçu, rien n'est écrit
+     node reconstituer-telephones.js --apply    → écrit réellement
+   ========================================================== */
+
+const admin = require("firebase-admin");
+const path = require("path");
+
+const SERVICE_ACCOUNT_PATH = path.join(__dirname, "cle-service-compte.json");
+const APPLIQUER = process.argv.includes("--apply");
+
+admin.initializeApp({
+  credential: admin.credential.cert(require(SERVICE_ACCOUNT_PATH)),
+});
+const db = admin.firestore();
+
+// Même normalisation que clients-admin.html : on ne garde que les chiffres,
+// et seulement les 10 derniers, pour ignorer les préfixes (+63, 0…).
+function cleTel(t) {
+  const chiffres = String(t || "").replace(/\D/g, "");
+  return chiffres.length > 10 ? chiffres.slice(-10) : chiffres;
+}
+
+async function main() {
+  console.log(APPLIQUER
+    ? "Mode RÉEL : les téléphones manquants vont être écrits sur Firestore.\n"
+    : "Mode APERÇU (dry-run) : rien ne sera écrit. Relance avec --apply pour appliquer.\n");
+
+  // ---------- 1. Charger tous les comptes ----------
+  const comptesSnap = await db.collection("comptes").get();
+  const comptes = new Map(); // uid -> { telephone actuel }
+  comptesSnap.forEach((d) => {
+    comptes.set(d.id, { telephone: (d.data().telephone || "").trim() });
+  });
+  console.log(`${comptes.size} compte(s) trouvé(s).`);
+
+  const aCorriger = [...comptes.entries()].filter(([, c]) => !cleTel(c.telephone));
+  console.log(`${aCorriger.length} compte(s) sans téléphone exploitable.\n`);
+
+  if (aCorriger.length === 0) {
+    console.log("Rien à faire.");
+    return;
+  }
+
+  // ---------- 2. Charger toutes les commandes, trouver la plus récente par compte ----------
+  // Note : simple à ce volume (une boulangerie, pas des millions de commandes).
+  // Si un jour ça devient trop lourd, filtrer par compte_uid ferait un aller-retour
+  // par compte au lieu d'un chargement global — pas nécessaire pour l'instant.
+  const commandesSnap = await db.collection("commandes").get();
+  const dernierTelParCompte = new Map(); // uid -> { telephone, cree_le }
+
+  commandesSnap.forEach((d) => {
+    const v = d.data();
+    const uid = v.compte_uid;
+    const tel = (v.client && v.client.telephone || "").trim();
+    if (!uid || !cleTel(tel)) return;
+
+    const existant = dernierTelParCompte.get(uid);
+    if (!existant || (v.cree_le || "") > (existant.cree_le || "")) {
+      dernierTelParCompte.set(uid, { telephone: tel, cree_le: v.cree_le || "" });
+    }
+  });
+  console.log(`${dernierTelParCompte.size} compte(s) ont au moins une commande avec téléphone.\n`);
+
+  // ---------- 3. Préparer la liste des écritures ----------
+  const aEcrire = [];
+  const sansCommande = [];
+  for (const [uid] of aCorriger) {
+    const trouve = dernierTelParCompte.get(uid);
+    if (trouve) aEcrire.push({ uid, telephone: trouve.telephone });
+    else sansCommande.push(uid);
+  }
+
+  console.log(`→ ${aEcrire.length} compte(s) vont recevoir un téléphone reconstitué.`);
+  console.log(`→ ${sansCommande.length} compte(s) sans aucune commande exploitable (rien à faire pour eux) :`);
+  sansCommande.forEach((uid) => console.log("   - " + uid));
+  console.log("");
+
+  aEcrire.forEach(({ uid, telephone }) => {
+    console.log(`   ${uid}  →  ${telephone}`);
+  });
+
+  if (!APPLIQUER) {
+    console.log("\nAperçu terminé, rien n'a été écrit. Relance avec --apply pour appliquer réellement.");
+    return;
+  }
+
+  // ---------- 4. Écrire, par lots de 400 (limite Firestore : 500/lot) ----------
+  console.log("\nÉcriture en cours…");
+  for (let i = 0; i < aEcrire.length; i += 400) {
+    const lot = db.batch();
+    aEcrire.slice(i, i + 400).forEach(({ uid, telephone }) => {
+      lot.set(db.collection("comptes").doc(uid), { telephone }, { merge: true });
+    });
+    await lot.commit();
+  }
+  console.log(`Terminé : ${aEcrire.length} compte(s) mis à jour.`);
+}
+
+main().catch((err) => {
+  console.error("Erreur :", err);
+  process.exit(1);
+});
