@@ -272,9 +272,69 @@
     <h1>Commandes</h1>
     <span class="qui" id="qui"></span>
     <button id="btnRecharger">Actualiser</button>
+    <button id="btnNouvelleCommande" class="action">➕ Nouvelle commande</button>
     <button id="btnDeconnexion">Quitter</button>
   </header>
   <main>
+    <div class="cmd" id="panneauNouvelle" hidden style="border-left:3px solid var(--accent)">
+      <h2 style="margin:0 0 4px">Nouvelle commande</h2>
+      <p style="margin:0 0 10px;font-size:14.5px;color:var(--encre-doux)">
+        Pour un client qui commande par téléphone ou en personne — même
+        calcul de prix, mêmes options que la vitrine.
+      </p>
+      <div class="edition" style="border-top:none;padding-top:0;margin-top:0">
+
+        <div class="edit-livraison-champ">
+          <label>Téléphone</label>
+          <input type="tel" id="nc-tel" placeholder="09xx xxx xxxx" style="flex:1;min-width:180px;padding:8px 10px;border:1px solid var(--trait);border-radius:var(--r);font:inherit;font-size:16.5px">
+        </div>
+        <div id="nc-compte-etat" style="margin-top:6px;font-size:14.5px;color:var(--encre-doux)"></div>
+
+        <div class="edit-livraison-champ">
+          <label>Nom</label>
+          <input type="text" id="nc-nom" style="flex:1;min-width:180px;padding:8px 10px;border:1px solid var(--trait);border-radius:var(--r);font:inherit;font-size:16.5px">
+        </div>
+
+        <div class="edit-livraison-champ" id="nc-adresse-champ" hidden>
+          <label>Adresse</label>
+          <input type="text" id="nc-adresse" style="flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--trait);border-radius:var(--r);font:inherit;font-size:16.5px">
+        </div>
+
+        <div class="edit-lignes" id="nc-lignes"></div>
+
+        <div class="edit-ajout">
+          <select id="nc-produit"></select>
+          <input type="number" class="edit-qte" id="nc-qte" min="1" step="1" value="1">
+          <button type="button" class="mineur" id="nc-ajouter">Ajouter</button>
+        </div>
+
+        <div class="edit-livraison-champ" id="nc-promo-champ" hidden>
+          <label>Code promo</label>
+          <input type="text" id="nc-promo" placeholder="CODE" style="width:140px;padding:8px 10px;border:1px solid var(--trait);border-radius:var(--r);font:inherit;font-size:16.5px;text-transform:uppercase">
+          <button type="button" class="mineur" id="nc-promo-appliquer">Appliquer</button>
+          <span id="nc-promo-msg" style="font-size:14.5px"></span>
+        </div>
+
+        <div class="edit-date">
+          <label>Date de retrait</label>
+          <input type="date" id="nc-date">
+          <span class="edit-avertit" id="nc-avertit"></span>
+        </div>
+
+        <div class="edit-livraison-champ">
+          <label>Mode de retrait / livraison</label>
+          <select id="nc-livraison"></select>
+        </div>
+
+        <div class="edit-bilan" id="nc-bilan"></div>
+
+        <div class="edit-actions">
+          <button type="button" class="action" id="nc-creer">Créer la commande</button>
+          <button type="button" class="mineur" id="nc-annuler">Annuler</button>
+        </div>
+      </div>
+    </div>
+
     <div class="filtres" id="filtres">
       <button data-f="actives" aria-pressed="true">À traiter</button>
       <button data-f="impayees" aria-pressed="false">Impayées</button>
@@ -307,11 +367,13 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, collection, getDocs, doc, getDoc, setDoc, updateDoc, writeBatch, increment }
+import { getFirestore, collection, getDocs, doc, getDoc, setDoc, updateDoc, writeBatch, increment,
+         query, where, limit }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 // Même règle de prix que la vitrine et le checkout : un article ajouté ici
 // suit le tarif de groupe et le code promo exactement comme à la commande.
-import { calculerPrix, prixUnitaire, rayonDe } from "./promo.js";
+import { calculerPrix, prixUnitaire, rayonDe, chargerCode, verifierCode, usagesClient, normaliserCode }
+  from "./promo.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDuq8KS8M_Z8U7BlSp6MvE-6Y9OYYaDujE",
@@ -360,6 +422,15 @@ let catalogue = {};     // { code : { nom, prix_vente, rayon } } — pour la mod
 let stockLimite = {};   // { code produit : true } — produits à stock décompté
 let nomVersCode = {};   // rattrapage : nom du produit -> code, pour les commandes d'avant les codes
 let abonnements = [];   // échéances d'abonnement à ajouter à la production
+let clients = [];       // pour la recherche par téléphone en création de commande
+let comptes = [];       // idem, pour retrouver un tarif de groupe existant
+
+// Même normalisation que clients-admin.html : ne garder que les chiffres,
+// et seulement les 10 derniers, pour ignorer les préfixes (+63, 0…).
+function cleTel(t) {
+  const chiffres = String(t || "").replace(/\D/g, "");
+  return chiffres.length > 10 ? chiffres.slice(-10) : chiffres;
+}
 const selection = new Set();
 
 /* ---------- Connexion ---------- */
@@ -428,6 +499,18 @@ async function charger() {
       console.warn("Abonnements non lus (règles Firestore ?) :", e.message);
       abonnements = [];
     }
+
+    try {
+      const scl = await getDocs(collection(db, "clients"));
+      clients = [];
+      scl.forEach(d => clients.push({ id: d.id, ...d.data() }));
+    } catch (e) { console.error(e); clients = []; }
+
+    try {
+      const sco = await getDocs(collection(db, "comptes"));
+      comptes = [];
+      sco.forEach(d => comptes.push({ id: d.id, ...d.data() }));
+    } catch (e) { console.error(e); comptes = []; }
 
     const s = await getDocs(collection(db, "commandes"));
     commandes = [];
@@ -1637,6 +1720,287 @@ function signaler(texte, type = "") {
   clearTimeout(minuteur);
   minuteur = setTimeout(() => $("etat").classList.remove("vu"), 2600);
 }
+
+/* ==========================================================
+   NOUVELLE COMMANDE (depuis l'admin)
+   Pour un client qui commande par téléphone ou en personne. Réutilise
+   volontairement les mêmes briques que l'écran de modification
+   (recalculer via calculerPrix/prixUnitaire, options de retrait,
+   catalogue) plutôt que dupliquer la logique de prix.
+
+   Statut de départ : "confirmee" directement — c'est vous qui la créez,
+   il n'y a rien à confirmer après coup (décision explicite, pas un oubli).
+
+   Code promo : uniquement proposé si le téléphone correspond à un compte
+   existant, exactement comme sur la vitrine (verifierCode exige un
+   compte — un code est nominatif). Sans compte, tarif plein, comme une
+   commande sans compte classique — c'est le même chemin que d'habitude,
+   pas un chemin spécial pour l'admin.
+   ========================================================== */
+let ncPanier = [];
+let ncCompte = null;   // compte trouvé par téléphone, ou null
+let ncPromo = null;    // fiche du code promo appliqué, ou null
+
+function ncOuvrir() {
+  ncPanier = [];
+  ncCompte = null;
+  ncPromo = null;
+  $("nc-tel").value = "";
+  $("nc-nom").value = "";
+  $("nc-adresse").value = "";
+  $("nc-adresse-champ").hidden = true;
+  $("nc-compte-etat").textContent = "";
+  $("nc-promo").value = "";
+  $("nc-promo-msg").textContent = "";
+  $("nc-promo-champ").hidden = true;
+  $("nc-date").value = "";
+  $("nc-date").min = iso(new Date());
+
+  const choix = Object.entries(catalogue)
+    .filter(([, f]) => f.publie)
+    .sort((a, b) => a[1].nom.localeCompare(b[1].nom))
+    .map(([code, f]) => `<option value="${code}">${echapper(f.nom)}</option>`)
+    .join("");
+  $("nc-produit").innerHTML = choix;
+
+  $("nc-livraison").innerHTML = optionsRetrait.map((o, i) =>
+    `<option value="${i}">${echapper(o.nom)}${o.tarif_variable ? " (tarif à confirmer)" :
+      (Number(o.tarif) > 0 ? " — " + peso(Number(o.tarif)) : "")}</option>`).join("");
+  ncMajAdresseVisible();
+
+  $("panneauNouvelle").hidden = false;
+  ncDessiner();
+  $("panneauNouvelle").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function ncFermer() {
+  $("panneauNouvelle").hidden = true;
+}
+
+function ncOptionCourante() {
+  return optionsRetrait[Number($("nc-livraison").value) || 0] || null;
+}
+
+function ncMajAdresseVisible() {
+  const o = ncOptionCourante();
+  $("nc-adresse-champ").hidden = !(o && o.demander_adresse);
+}
+
+// Recherche par téléphone : ne remplit nom/adresse que si le champ est
+// encore vide, pour ne jamais écraser ce que vous êtes en train de taper.
+function ncChercherTelephone() {
+  const cle = cleTel($("nc-tel").value);
+  ncCompte = null;
+  $("nc-compte-etat").textContent = "";
+  $("nc-promo-champ").hidden = true;
+
+  if (!cle) return;
+
+  const client = clients.find(c => cleTel(c.telephone) === cle);
+  if (client) {
+    if (!$("nc-nom").value.trim()) $("nc-nom").value = client.nom || "";
+    if (!$("nc-adresse").value.trim()) $("nc-adresse").value = client.adresse || "";
+  }
+
+  const compte = comptes.find(c => cleTel(c.telephone) === cle);
+  if (compte) {
+    ncCompte = compte;
+    const remise = Number(compte.remise) || 0;
+    $("nc-compte-etat").innerHTML =
+      `Compte trouvé${compte.groupe ? " — groupe " + echapper(compte.groupe) : ""}` +
+      (remise > 0 ? `, remise ${remise}%` : "");
+    // Un code promo est nominatif : il ne peut s'appliquer que là où existe
+    // un compte à décompter, jamais sur une commande sans compte.
+    $("nc-promo-champ").hidden = false;
+  } else {
+    $("nc-compte-etat").textContent = "Aucun compte à ce numéro — tarif plein, sans code promo (comme une commande sans compte classique).";
+  }
+  ncDessiner();
+}
+
+function ncAjouterLigne() {
+  const code = $("nc-produit").value;
+  const qte = Math.max(1, parseInt($("nc-qte").value) || 1);
+  const f = catalogue[code];
+  if (!f) return;
+
+  const existante = ncPanier.find(l => l.code === code);
+  if (existante) existante.qte += qte;
+  else ncPanier.push({ code, nom: f.nom, qte, prixBase: f.prix_vente, rayon: f.rayon });
+
+  ncDessiner();
+}
+
+function ncRetirerLigne(i) {
+  ncPanier.splice(i, 1);
+  ncDessiner();
+}
+
+async function ncAppliquerPromo() {
+  const saisie = normaliserCode($("nc-promo").value);
+  $("nc-promo-msg").textContent = "";
+  ncPromo = null;
+
+  if (!saisie) { ncDessiner(); return; }
+  if (!ncCompte) {
+    $("nc-promo-msg").textContent = "Un compte est nécessaire pour appliquer un code.";
+    return;
+  }
+
+  try {
+    const fiche = await chargerCode(db, saisie);
+    const usages = await usagesClient(db, ncCompte.id, saisie, { collection, query, where, getDocs, limit });
+    const v = verifierCode(fiche, { connecte: true, usages });
+    if (!v.ok) {
+      $("nc-promo-msg").textContent = v.message;
+      ncDessiner();
+      return;
+    }
+    ncPromo = fiche;
+    $("nc-promo-msg").textContent = "Code appliqué.";
+  } catch (e) {
+    console.error(e);
+    $("nc-promo-msg").textContent = "Vérification impossible.";
+  }
+  ncDessiner();
+}
+
+// Même calcul que recalculer() pour une commande existante, adapté à un
+// panier qui n'a pas encore de commande derrière lui.
+function ncCalculer() {
+  const remise = ncCompte ? (Number(ncCompte.remise) || 0) : 0;
+  const fiche = ncPromo
+    ? { valeur: ncPromo.valeur, type: ncPromo.type, rayons: ncPromo.rayons || [] }
+    : null;
+
+  const pourCalcul = ncPanier.map(l => ({ qte: l.qte, prixBase: l.prixBase, rayon: l.rayon }));
+  const calcul = calculerPrix(pourCalcul, remise, fiche);
+
+  const lignes = ncPanier.map(l => ({
+    code: l.code, nom: l.nom, qte: l.qte,
+    prix: prixUnitaire(l.prixBase, remise, calcul.source)
+  }));
+
+  const o = ncOptionCourante();
+  const fraisAConfirmer = !!(o && o.tarif_variable);
+  const frais = fraisAConfirmer ? 0 : (o ? (Number(o.tarif) || 0) : 0);
+
+  return {
+    lignes, calcul, remise,
+    sous_total: calcul.sousTotal,
+    frais_livraison: frais,
+    frais_a_confirmer: fraisAConfirmer,
+    total: calcul.sousTotal + frais
+  };
+}
+
+function ncDessiner() {
+  const zl = $("nc-lignes");
+  if (!ncPanier.length) {
+    zl.innerHTML = '<div class="edit-vide">Aucun article pour l\'instant.</div>';
+  } else {
+    zl.innerHTML = "";
+    ncPanier.forEach((l, i) => {
+      const ligne = document.createElement("div");
+      ligne.className = "edit-l";
+      ligne.innerHTML = `
+        <span class="n"></span>
+        <input type="number" class="q" min="1" step="1" value="${l.qte}">
+        <span class="p"></span>
+        <button type="button" class="retirer" title="Retirer">✕</button>`;
+      ligne.querySelector(".n").textContent = l.nom;
+      ligne.querySelector(".q").onchange = (e) => {
+        l.qte = Math.max(1, parseInt(e.target.value) || 1);
+        ncDessiner();
+      };
+      ligne.querySelector(".retirer").onclick = () => ncRetirerLigne(i);
+      zl.appendChild(ligne);
+    });
+  }
+  ncMajAdresseVisible();
+
+  const r = ncCalculer();
+  ncPanier.forEach((l, i) => {
+    const p = zl.children[i]?.querySelector(".p");
+    if (p) p.textContent = peso(r.lignes[i].prix * r.lignes[i].qte);
+  });
+
+  $("nc-bilan").innerHTML = `
+    <div class="l"><span>Sous-total</span><span>${peso(r.sous_total)}</span></div>
+    ${r.frais_a_confirmer ? "" : (r.frais_livraison > 0
+      ? `<div class="l"><span>${echapper(ncOptionCourante()?.nom || "Livraison")}</span>
+         <span>${peso(r.frais_livraison)}</span></div>` : "")}
+    <div class="l somme"><span>Total</span><span>${peso(r.total)}</span></div>`;
+
+  const avertit = $("nc-avertit");
+  avertit.textContent = jourFerme($("nc-date").value) ? "Jour habituellement fermé." : "";
+}
+
+async function ncCreer() {
+  const nom = $("nc-nom").value.trim();
+  const tel = $("nc-tel").value.replace(/\D/g, "");
+  const o = ncOptionCourante();
+  const date = $("nc-date").value;
+
+  if (nom.length < 2) return signaler("Le nom est trop court.", "err");
+  if (tel.length < 10) return signaler("Le numéro de téléphone est incomplet.", "err");
+  if (!ncPanier.length) return signaler("Ajoutez au moins un article.", "err");
+  if (!date) return signaler("Choisissez une date de retrait.", "err");
+  if (!o) return signaler("Choisissez un mode de retrait.", "err");
+
+  const adresseDetail = o.demander_adresse ? { rue: $("nc-adresse").value.trim() } : null;
+  const adresse = $("nc-adresse").value.trim();
+
+  const r = ncCalculer();
+  const numero = `${String(new Date().getDate()).padStart(2, "0")}${String(new Date().getMonth() + 1).padStart(2, "0")}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
+  const commande = {
+    numero,
+    statut: "confirmee",
+    client: { nom, telephone: tel, adresse, adresse_detail: adresseDetail },
+    panier: r.lignes,
+    remise: r.remise,
+    remise_source: ncPromo ? "promo" : (r.remise > 0 ? "groupe" : "aucune"),
+    code_promo: ncPromo
+      ? { code: ncPromo.id, type: ncPromo.type, valeur: Number(ncPromo.valeur) || 0,
+          rayons: Array.isArray(ncPromo.rayons) ? ncPromo.rayons : [] }
+      : null,
+    compte_uid: ncCompte ? ncCompte.id : "",
+    credit_utilise: 0,
+    sous_total_brut: ncPanier.reduce((t, l) => t + l.qte * l.prixBase, 0),
+    sous_total: r.sous_total,
+    frais_livraison: r.frais_livraison,
+    frais_a_confirmer: r.frais_a_confirmer,
+    total: r.total,
+    option: { nom: o.nom, type: o.type, lieu: o.lieu || "" },
+    date_retrait: date,
+    paiement: { methode: "manuel", statut: "en attente" },
+    notes: "Créée depuis l'admin.",
+    cree_le: new Date().toISOString()
+  };
+
+  try {
+    $("nc-creer").disabled = true;
+    await setDoc(doc(db, "commandes", numero), commande);
+    ncFermer();
+    await charger();
+    signaler("Commande créée.");
+  } catch (e) {
+    console.error(e);
+    signaler("La création a échoué.", "err");
+  } finally {
+    $("nc-creer").disabled = false;
+  }
+}
+
+$("btnNouvelleCommande").onclick = ncOuvrir;
+$("nc-annuler").onclick = ncFermer;
+$("nc-ajouter").onclick = ncAjouterLigne;
+$("nc-tel").onchange = ncChercherTelephone;
+$("nc-livraison").onchange = ncDessiner;
+$("nc-date").onchange = ncDessiner;
+$("nc-promo-appliquer").onclick = ncAppliquerPromo;
+$("nc-creer").onclick = ncCreer;
 </script>
 </body>
 </html>
