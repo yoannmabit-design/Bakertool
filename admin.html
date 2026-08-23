@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Clients — Yoann's French Bakery</title>
+<title>Administration — Yoann's French Bakery</title>
 <meta name="theme-color" content="#1a1a1a">
 <link rel="icon" href="logo.png" type="image/png">
 <link rel="apple-touch-icon" href="logo.png">
@@ -13,13 +13,14 @@
     --creme:#fdf6ec;--papier:#fffdf9;--encre:#1f1b16;
     --encre-doux:#6b6157;--trait:#e2d7c6;--accent:#2f4858;
     --alerte:#8c2f22;--ok:#3d6b3d;--r:6px;
-    --vide:#5a5285;--recent:#a85a1c;
+    /* Liserés de suivi : violet au repos, orange tant que des commandes
+       arrivées depuis la dernière consultation n'ont pas été ouvertes. */
+    --violet:#6b4c9a;--orange:#d97b1f;
   }
   *{box-sizing:border-box}
   body{
     margin:0;background:var(--creme);color:var(--encre);
     font:18px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
-    padding-bottom:90px;
   }
   header{
     background:var(--encre);color:var(--creme);padding:14px 18px;
@@ -31,118 +32,197 @@
     background:transparent;border:1px solid #4a443c;color:var(--creme);
     padding:8px 13px;border-radius:var(--r);font-size:15px;cursor:pointer;
   }
-  main{max-width:880px;margin:0 auto;padding:20px 16px}
+  main{max-width:860px;margin:0 auto;padding:22px 16px 60px}
 
-  .outils{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
-  .outils input[type=text]{
-    flex:1;min-width:180px;padding:11px 12px;border:1px solid var(--trait);
-    border-radius:var(--r);background:#fff;font:inherit;font-size:17px;color:var(--encre);
+  .chiffres{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:12px;margin-bottom:24px;
   }
-  .outils select{
-    padding:11px 10px;border:1px solid var(--trait);border-radius:var(--r);
-    background:#fff;font:inherit;font-size:16.5px;color:var(--encre);
-  }
-  button.action{
-    background:var(--accent);color:#fff;border:none;padding:11px 18px;
-    border-radius:var(--r);cursor:pointer;font-size:16.5px;font-weight:600;
-  }
-  button.action:disabled{opacity:.5;cursor:default}
-  button.mineur{
-    background:transparent;color:var(--accent);border:1px solid var(--trait);
-    padding:10px 15px;border-radius:var(--r);cursor:pointer;font-size:16.5px;
-  }
-
-  .client{
+  .chiffre{
     background:var(--papier);border:1px solid var(--trait);
-    border-left:4px solid #7a2331;
-    border-radius:var(--r);padding:14px;margin-bottom:10px;
+    border-radius:var(--r);padding:15px;
   }
-  /* Violet : la fiche n'a jamais eu de commande — il n'y a encore rien
-     dessus à part le téléphone. Orange : la dernière commande date de
-     moins d'une semaine. Ni l'un ni l'autre : couleur par défaut
-     ci-dessus, inchangée. */
-  .client.vide{border-left-color:var(--vide)}
-  .client.recent{border-left-color:var(--recent)}
-  /* Bleu quand la fiche est ouverte : on voit d'un coup d'œil où l'on
-     travaille dans une longue liste — l'emporte sur violet/orange,
-     puisque savoir où l'on est en train de travailler prime sur l'état
-     de contenu pendant qu'on la consulte. */
-  .client.ouvert{border-left-color:#2f4858}
-  .client.archive{opacity:.66}
-  .client.archive .tete .nom::after{
-    content:"archivé";font-size:12.5px;font-weight:400;
-    color:var(--encre-doux);margin-left:8px;
-    text-transform:uppercase;letter-spacing:.05em;
-  }
-  .tete{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;cursor:pointer}
-  .tete .nom{font-weight:600;flex:1;min-width:130px}
-  .tete .tel{font-family:ui-monospace,monospace;font-size:14.5px;color:var(--encre-doux)}
-  .tete .chiffre{font-size:14.5px;color:var(--encre-doux)}
-  .puce{
-    font-size:13px;padding:2px 8px;border-radius:10px;
-    background:#e8eef1;color:var(--accent);
-  }
-  .puce.groupe{font-weight:600}
+  .chiffre .v{font-size:29px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.1}
+  .chiffre .e{font-size:14.5px;color:var(--encre-doux);margin-top:4px}
+  .chiffre.attention .v{color:var(--alerte)}
 
-  .detail{margin-top:14px;padding-top:14px;border-top:1px dashed var(--trait)}
-  .detail[hidden]{display:none}
-  .grille{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:13px}
-  label{display:block;font-size:14.5px;color:var(--encre-doux);margin-bottom:5px}
-  input[type=text],textarea{
-    width:100%;padding:10px 11px;border:1px solid var(--trait);
-    border-radius:var(--r);background:#fff;font:inherit;font-size:17px;color:var(--encre);
+  .carte{
+    background:var(--papier);border:1px solid var(--trait);
+    border-radius:var(--r);padding:18px;margin-bottom:16px;
   }
-  textarea{min-height:58px;resize:vertical}
-  .actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px;align-items:center}
+  .carte h2{font-size:17px;margin:0 0 4px}
+  .carte h2 .periode{font-size:12.5px;font-weight:400;color:var(--encre-doux);
+    opacity:.75;margin-left:8px}
+  .carte p.aide{font-size:15px;color:var(--encre-doux);margin:0 0 14px}
+
+  /* Carte principale : liseré de suivi à gauche, comme sur les autres pages. */
+  .carte.suivi{border-left:4px solid var(--violet)}
+  .carte.suivi.nouveau{border-left-color:var(--orange)}
+
+  /* En-tête cliquable de la carte repliable. */
+  .entete{
+    display:flex;align-items:baseline;gap:10px;width:100%;
+    background:none;border:none;padding:0;margin:0;
+    font:inherit;color:inherit;text-align:left;cursor:pointer;
+  }
+  .entete h2{flex:1}
+  .entete .marque{
+    font-size:13.5px;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--orange);font-weight:600;
+  }
+  .entete .chevron{
+    font-size:14px;color:var(--encre-doux);flex-shrink:0;
+    transition:transform .15s ease;
+  }
+  .carte.ouverte .entete .chevron{transform:rotate(180deg)}
+  .entete:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+
+  .jour{
+    font-size:15px;color:var(--encre-doux);font-weight:600;
+    margin:16px 0 7px;
+  }
+  .jour:first-child{margin-top:0}
+  /* Regroupement par mode à l'intérieur d'une journée : c'est la logique
+     de préparation — tous les Lalamove ensemble, tous les retraits ensemble. */
+  .mode{
+    display:flex;align-items:baseline;gap:8px;
+    font-size:14px;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--encre-doux);margin:11px 0 3px;
+  }
+  .mode .compte{
+    font-size:13px;letter-spacing:0;text-transform:none;opacity:.75;
+  }
+  /* Deux lignes au maximum : nom et montant sur la première, statut sur la
+     seconde. Le mode n'est plus répété, il sert de titre au groupe. */
+  .cmd{
+    display:grid;grid-template-columns:10px 1fr auto;gap:3px 11px;
+    align-items:baseline;padding:7px 0;
+    border-bottom:1px solid var(--trait);font-size:17px;
+    color:inherit;text-decoration:none;cursor:pointer;
+  }
+  .cmd:hover .nom{text-decoration:underline}
+  .cmd:last-child{border-bottom:none}
+  .cmd .pastille{grid-row:1}
+  .cmd .nom{
+    grid-column:2;font-weight:600;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .cmd .montant{grid-column:3;font-variant-numeric:tabular-nums}
+  .cmd .quoi{
+    grid-column:2 / -1;font-size:14.5px;color:var(--encre-doux);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  /* La forme distingue autant que la couleur : un rond plein pour ce qui est
+     réglé, un triangle pointe en bas pour ce qui reste à encaisser. Lisible
+     de nuit, et sans dépendre de la distinction rouge / vert. */
+  .cmd .pastille{
+    width:0;height:0;flex-shrink:0;align-self:center;
+    border-left:5px solid transparent;
+    border-right:5px solid transparent;
+    border-top:9px solid #c0392b;
+  }
+  .cmd .pastille.ok{
+    width:9px;height:9px;border:none;border-radius:50%;
+    background:#2f7d32;
+  }
+
+  /* Résumé des produits : une ligne par article, la quantité d'abord car
+     c'est elle qu'on lit en sortant du congélateur. */
+  .art{
+    display:grid;grid-template-columns:3.2em 1fr;gap:11px;
+    align-items:baseline;padding:6px 0;
+    border-bottom:1px solid var(--trait);font-size:17px;
+  }
+  .art:last-child{border-bottom:none}
+  .art .q{
+    font-variant-numeric:tabular-nums;font-weight:600;font-size:20px;
+    text-align:right;
+  }
+  .art .nom{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .art .code{font-size:13.5px;color:var(--encre-doux);margin-left:7px}
+  /* Journée sans article : une simple mention, pas un titre de groupe. */
+  .art-vide{font-size:15px;color:var(--encre-doux);padding:6px 0}
+  /* En-tête de catégorie de production, avec le total de la fournée. */
+  .categorie{
+    display:flex;align-items:baseline;gap:8px;
+    font-size:14px;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--encre-doux);margin:12px 0 3px;
+  }
+  .categorie .compte{
+    font-size:13px;letter-spacing:0;text-transform:none;opacity:.75;
+    font-variant-numeric:tabular-nums;
+  }
+
+  .liens{display:flex;gap:10px;flex-wrap:wrap}
   .lien{
-    display:inline-block;padding:9px 14px;border:1px solid var(--trait);
-    border-radius:var(--r);text-decoration:none;color:var(--accent);font-size:16px;
+    display:block;flex:1;min-width:150px;background:var(--papier);
+    border:1px solid var(--trait);border-radius:var(--r);
+    padding:15px;text-decoration:none;color:var(--encre);
   }
+  .lien:hover{border-color:var(--accent)}
+  .lien b{display:block;font-size:17px}
+  .lien span{font-size:14.5px;color:var(--encre-doux)}
 
-  .vide{padding:40px;text-align:center;color:var(--encre-doux)}
-  .barre{
-    position:fixed;bottom:0;left:0;right:0;background:var(--papier);
-    border-top:1px solid var(--trait);padding:12px 16px;display:flex;gap:12px;align-items:center;
-  }
-  .etat{font-size:15px;color:var(--encre-doux);margin-right:auto}
-  .etat.ok{color:var(--ok)}
-  .etat.err{color:var(--alerte)}
+  .vide{padding:26px;text-align:center;color:var(--encre-doux);font-size:16.5px}
   .connexion{max-width:400px;margin:14vh auto;text-align:center;padding:0 20px}
-  .connexion h1{font-size:23.5px;margin:0 0 20px}
+  .connexion h1{font-size:25px;margin:0 0 20px}
+  .connexion button{
+    background:var(--accent);color:#fff;border:none;padding:12px 22px;
+    border-radius:var(--r);font-size:17px;font-weight:600;cursor:pointer;
+  }
 </style>
 </head>
 <body>
 
 <div id="ecranConnexion" class="connexion">
-  <h1>Clients</h1>
-  <button class="action" id="btnConnexion">Se connecter avec Google</button>
+  <h1>Administration</h1>
+  <button id="btnConnexion">Se connecter avec Google</button>
   <p id="msgConnexion" style="margin-top:18px;font-size:16px"></p>
 </div>
 
 <div id="app" hidden>
   <header>
-    <h1>Fichier clients</h1>
+    <h1>Yoann's French Bakery</h1>
     <span class="qui" id="qui"></span>
     <button id="btnDeconnexion">Quitter</button>
   </header>
 
   <main>
-    <div class="outils">
-      <input type="text" id="recherche" placeholder="Rechercher un nom, un numéro, un tag…">
-      <select id="filtreGroupe"><option value="">Tous les groupes</option></select>
-      <label style="display:flex;align-items:center;gap:7px;margin:0;font-size:15.5px;color:var(--encre)">
-        <input type="checkbox" id="voirMasques" style="width:auto"> Archivés et tests
-      </label>
-      <button class="mineur" id="btnImporter">Importer depuis les commandes</button>
-      <button class="mineur" id="btnReconstituerTel">Reconstituer les téléphones manquants sur les comptes</button>
-    </div>
-    <div id="liste"><div class="vide">Chargement…</div></div>
-  </main>
+    <div class="chiffres" id="chiffres"></div>
 
-  <div class="barre">
-    <span class="etat" id="etat"></span>
-    <button class="action" id="btnEnregistrer">Enregistrer</button>
-  </div>
+    <div class="carte suivi" id="carteAvenir">
+      <button class="entete" id="basculeAvenir" aria-expanded="false" aria-controls="avenir">
+        <h2>Commandes à venir <span class="periode">Sept prochains jours</span></h2>
+        <span class="marque" id="marqueAvenir" hidden>Nouveau</span>
+        <span class="chevron" aria-hidden="true">▼</span>
+      </button>
+      <div id="avenirReplie"><div class="vide">Chargement…</div></div>
+      <div id="avenir" hidden></div>
+    </div>
+
+    <div class="carte suivi" id="carteResume">
+      <h2>Résumé des produits</h2>
+      <p class="aide">Articles à sortir, commandes confirmées uniquement.</p>
+      <div id="resume"><div class="vide">Chargement…</div></div>
+    </div>
+
+    <div class="liens">
+      <a class="lien" href="commandes-admin.html">
+        <b>Commandes</b><span>Statuts, encaissements, étiquettes</span></a>
+      <a class="lien" href="boutique-admin.html">
+        <b>Boutique</b><span>Produits, points de retrait, paiements</span></a>
+      <a class="lien" href="clients-admin.html">
+        <b>Clients</b><span>Fiches, tags et groupes</span></a>
+      <a class="lien" href="credits-admin.html">
+        <b>Crédit</b><span>Comptes clients et rechargements</span></a>
+      <a class="lien" href="abonnements-admin.html">
+        <b>Abonnements</b><span>Bread plans, échéances, absences</span></a>
+      <a class="lien" href="produits-identifiants.html">
+        <b>Produits</b><span>Codes de référence</span></a>
+      <a class="lien" href="affiche.html">
+        <b>Affiche</b><span>QR code à imprimer pour le marché</span></a>
+    </div>
+  </main>
 </div>
 
 <script src="admin-nav.js" defer></script>
@@ -150,7 +230,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, collection, getDocs, doc, getDoc, setDoc, deleteDoc, writeBatch }
+import { getFirestore, collection, getDocs, doc, getDoc }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -168,62 +248,52 @@ const db   = getFirestore(app);
 const $    = (id) => document.getElementById(id);
 const peso = (n) => "₱" + Number(n || 0).toLocaleString("en-PH");
 
-let clients = [];        // { id, nom, telephone, adresse, groupe, tags[], notes, nb_commandes, total_depense, derniere_commande, archive }
+const LIBELLES = {
+  "nouvelle":"Nouvelle", "confirmee":"Confirmée", "en production":"En production",
+  "prete":"Prête", "remise":"Remise", "annulee":"Annulée"
+};
 
-/* 12 couleurs pastel distinctes, dans l'esprit des badges déjà utilisés
-   sur le site (fond doux, texte foncé assorti). Un même segment garde
-   toujours la même couleur d'une ouverture à l'autre — une couleur qui
-   changerait à chaque rechargement rendrait le repérage visuel inutile
-   plutôt que de l'aider. Au-delà de 12 segments distincts, deux segments
-   peuvent partager une couleur (limite demandée) ; le texte du badge
-   reste dans tous les cas le vrai repère fiable. */
-const PALETTE_SEGMENTS = [
-  ["#efe6d8", "#8a5a1c"], ["#dfe8ee", "#2d5771"], ["#e2eede", "#33632f"],
-  ["#f6e2de", "#8c2f22"], ["#e6e3f0", "#4a4270"], ["#eae6df", "#6d665c"],
-  ["#fbead2", "#8a5a1c"], ["#dde9e6", "#2f6a5c"], ["#f0e0ea", "#7a3560"],
-  ["#e4e9f5", "#3a4a7a"], ["#f5e8d8", "#7a5620"], ["#e0eaea", "#3a6666"]
-];
+/* Statuts retenus pour le résumé des produits : la commande est engagée et
+   il faut sortir la marchandise. « Nouvelle » en est exclue — non confirmée,
+   elle ne doit pas faire produire. */
+const STATUTS_FERMES = ["confirmee", "en production", "prete"];
 
-function couleurSegment(nom) {
-  let h = 0;
-  for (const car of String(nom)) h = (h * 31 + car.charCodeAt(0)) >>> 0;
-  return PALETTE_SEGMENTS[h % PALETTE_SEGMENTS.length];
-}
-const modifies = new Set();
+const CLE_REPLI = "yfb-admin-avenir-ouvert";
+const CLE_VU    = "yfb-admin-avenir-vu";
 
-/* Comptes clients de la boutique, indexés par téléphone. Le groupe tarifaire
-   et la remise vivent sur le compte (collection « comptes »), pas sur la fiche
-   client (collection « clients ») : les deux sont rapprochés par le numéro,
-   seul point commun entre elles. */
-let comptesParTel = new Map();
+/* Ordre d'affichage des catégories dans le résumé : l'ordre du geste, pas
+   l'ordre alphabétique. Ce qui n'est pas listé ici passe ensuite, par ordre
+   alphabétique, et « Autres » ferme la marche. */
+const ORDRE_CATEGORIES = ["Viennoiseries", "Pains"];
+const CATEGORIE_DEFAUT = "Autres";
 
-/* Groupes tarifaires — même liste que l'admin Crédit. « Test » n'ouvre aucun
-   tarif : il sert à écarter une fiche des listes et à autoriser sa
-   suppression définitive. */
-const GROUPES_TARIF = ["Reseller", "Bulk order"];
-const SEGMENT_TEST = "Test";
+/* Catalogue produits, chargé une fois : le panier ne porte que le code, la
+   catégorie se lit sur la fiche produit. Elle suit donc si tu la changes. */
+const PRODUITS = new Map();
 
-/* Les numéros ne sont pas saisis de la même façon des deux côtés : on ne
-   compare que les chiffres, et seulement les dix derniers, pour absorber
-   les préfixes (+63, 0…). */
-function cleTel(t) {
-  const chiffres = String(t || "").replace(/\D/g, "");
-  return chiffres.length > 10 ? chiffres.slice(-10) : chiffres;
+async function chargerProduits() {
+  try {
+    const s = await getDocs(collection(db, "boutique_produits"));
+    s.forEach(d => {
+      const p = d.data();
+      PRODUITS.set(p.code || d.id, {
+        nom: p.nom || d.id,
+        categorie: p.categorie || p.rayon || CATEGORIE_DEFAUT
+      });
+    });
+  } catch (e) {
+    // Sans catalogue, tout retombe dans « Autres » : la carte reste utile.
+    console.error(e);
+  }
 }
 
-function compteDe(c) {
-  return comptesParTel.get(cleTel(c.telephone)) || null;
+function rangCategorie(nom) {
+  const i = ORDRE_CATEGORIES.indexOf(nom);
+  if (i !== -1) return i;
+  if (nom === CATEGORIE_DEFAUT) return ORDRE_CATEGORIES.length + 1;
+  return ORDRE_CATEGORIES.length;
 }
 
-// Une fiche de test est écartée des listes courantes, comme une archivée.
-function estTest(c) {
-  return (c.groupe || "").trim().toLowerCase() === SEGMENT_TEST.toLowerCase();
-}
-function estMasque(c) {
-  return !!c.archive || estTest(c);
-}
-
-/* ---------- Connexion ---------- */
 $("btnConnexion").onclick = async () => {
   try { await signInWithPopup(auth, new GoogleAuthProvider()); }
   catch (e) {
@@ -235,9 +305,11 @@ $("btnDeconnexion").onclick = () => signOut(auth);
 
 onAuthStateChanged(auth, async (user) => {
   if (!user) { $("app").hidden = true; $("ecranConnexion").hidden = false; return; }
+
   let autorise = false;
   try { autorise = (await getDoc(doc(db, "admins", user.uid))).exists(); }
   catch (e) { console.error(e); }
+
   if (!autorise) {
     await signOut(auth);
     $("msgConnexion").innerHTML =
@@ -250,521 +322,319 @@ onAuthStateChanged(auth, async (user) => {
   charger();
 });
 
-/* ---------- Chargement ---------- */
-async function charger() {
-  try {
-    // Les comptes d'abord : les fiches en ont besoin pour afficher le tarif.
-    comptesParTel = new Map();
-    try {
-      const sc = await getDocs(collection(db, "comptes"));
-      sc.forEach(d => {
-        const v = d.data();
-        const cle = cleTel(v.telephone);
-        if (cle) comptesParTel.set(cle, {
-          id: d.id,
-          groupe: v.groupe || "",
-          remise: Number(v.remise) || 0,
-          solde: Number(v.solde) || 0
-        });
-      });
-    } catch (e) {
-      // Sans les comptes, la page reste utilisable : le tarif s'affiche vide.
-      console.error(e);
-    }
+/* ---------- Données ---------- */
+function iso(d) {
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+    .toISOString().slice(0, 10);
+}
 
-    const s = await getDocs(collection(db, "clients"));
-    clients = [];
-    s.forEach(d => {
-      const v = d.data();
-      clients.push({
-        id: d.id,
-        nom: v.nom || "",
-        telephone: v.telephone || d.id,
-        adresse: v.adresse || "",
-        groupe: v.groupe || "",
-        tags: Array.isArray(v.tags) ? v.tags : [],
-        notes: v.notes || "",
-        nb_commandes: v.nb_commandes || 0,
-        total_depense: v.total_depense || 0,
-        derniere_commande: v.derniere_commande || "",
-        archive: v.archive === true
-      });
-    });
-    trier();
-    majGroupes();
-    afficher();
-  } catch (e) {
-    console.error(e);
-    $("liste").innerHTML = '<div class="vide">Les clients n\'ont pas pu être chargés.</div>';
+/* Horodatage d'arrivée de la commande. Le champ n'a pas de nom unique selon
+   l'origine du document : on essaie les formes connues, y compris les
+   Timestamp Firestore. Retourne null si aucune n'est présente — dans ce cas
+   le suivi « nouveau » reste muet plutôt que de mentir. */
+function arriveeLe(c) {
+  const brut = c.cree_le ?? c.date_creation ?? c.createdAt ?? c.horodatage ?? null;
+  if (brut == null) return null;
+  if (typeof brut === "number") return brut;
+  if (typeof brut === "string") {
+    const t = Date.parse(brut);
+    return isNaN(t) ? null : t;
   }
+  if (typeof brut.toMillis === "function") return brut.toMillis();
+  if (typeof brut.seconds === "number") return brut.seconds * 1000;
+  return null;
 }
 
-function trier() {
-  clients.sort((a, b) =>
-    (b.derniere_commande || "").localeCompare(a.derniere_commande || "") ||
-    a.nom.localeCompare(b.nom));
+/* Lignes d'articles d'une commande. Le regroupement se fait sur le code fixe
+   du produit (BUT-CRO, PAI-CHO…) et jamais sur le nom : deux libellés
+   différents pour un même code doivent se cumuler. */
+function lignesArticles(c) {
+  const src = c.panier || c.articles || c.lignes || c.produits || c.items || [];
+  if (!Array.isArray(src)) return [];
+  return src.map(l => {
+    const code = l.code || l.id || l.produit_id || l.reference || "";
+    const fiche = PRODUITS.get(code);
+    const nom = fiche?.nom || l.nom || l.libelle || l.titre || l.produit || "—";
+    const qte = Number(l.quantite ?? l.qte ?? l.quantity ?? l.nombre ?? 0);
+    return {
+      code: code || nom,
+      nom,
+      categorie: fiche?.categorie || CATEGORIE_DEFAUT,
+      qte: isNaN(qte) ? 0 : qte
+    };
+  }).filter(l => l.qte > 0);
 }
 
-function majGroupes() {
-  const noms = [...new Set(clients.map(c => c.groupe).filter(Boolean))].sort();
-  const sel = $("filtreGroupe");
-  const actuel = sel.value;
-  sel.innerHTML = '<option value="">Tous les groupes</option>' +
-    noms.map(g => `<option value="${g}">${g}</option>`).join("");
-  sel.value = actuel;
-}
+async function charger() {
+  await chargerProduits();
 
-/* ---------- Import depuis les commandes ---------- */
-$("btnImporter").onclick = async () => {
-  if (!confirm("Parcourir les commandes et mettre à jour le fichier clients ?\n\n" +
-    "Les noms, adresses et statistiques sont repris. Vos tags, groupes et notes ne sont pas touchés."))
-    return;
-
-  $("btnImporter").disabled = true;
-  etat("Import en cours…");
-
+  let commandes = [];
   try {
     const s = await getDocs(collection(db, "commandes"));
-    const parTel = {};
-    s.forEach(d => {
-      const c = d.data();
-      const tel = (c.client?.telephone || "").replace(/\D/g, "");
-      if (!tel || c.statut === "annulee") return;
-      const e = parTel[tel] = parTel[tel] || {
-        telephone: tel, nom: "", adresse: "", nb: 0, total: 0, derniere: ""
-      };
-      e.nb += 1;
-      e.total += Number(c.total) || 0;
-      if (c.client?.nom) e.nom = c.client.nom;
-      if (c.client?.adresse) e.adresse = c.client.adresse;
-      const d1 = c.date_retrait || (c.cree_le || "").slice(0, 10);
-      if (d1 > e.derniere) e.derniere = d1;
-    });
-
-    const existants = {};
-    clients.forEach(c => existants[c.telephone] = c);
-
-    // Un lot Firestore accepte au maximum 500 écritures : au-delà, on en
-    // ouvre un nouveau plutôt que de laisser commit() échouer d'un coup
-    // sur tout l'import dès que l'historique dépasse ce seuil.
-    const LOT_MAX = 450;
-    let paquet = writeBatch(db);
-    let dansLot = 0;
-    let ajoutes = 0, majs = 0;
-
-    for (const e of Object.values(parTel)) {
-      const ancien = existants[e.telephone];
-      // Les statistiques sont recalculées ; tags, groupe et notes restent à vous.
-      const fiche = {
-        nom: e.nom || (ancien ? ancien.nom : ""),
-        telephone: e.telephone,
-        adresse: e.adresse || (ancien ? ancien.adresse : ""),
-        groupe: ancien ? ancien.groupe : "",
-        tags: ancien ? ancien.tags : [],
-        notes: ancien ? ancien.notes : "",
-        // L'archivage est une décision : un import ne doit pas la défaire.
-        archive: ancien ? !!ancien.archive : false,
-        nb_commandes: e.nb,
-        total_depense: e.total,
-        derniere_commande: e.derniere
-      };
-      paquet.set(doc(db, "clients", e.telephone), fiche);
-      ancien ? majs++ : ajoutes++;
-
-      if (++dansLot >= LOT_MAX) {
-        await paquet.commit();
-        paquet = writeBatch(db);
-        dansLot = 0;
-      }
-    }
-    if (dansLot > 0) await paquet.commit();
-
-    await charger();
-    etat(`${ajoutes} client(s) ajouté(s), ${majs} mis à jour.`, "ok");
+    s.forEach(d => commandes.push({ id: d.id, ...d.data() }));
   } catch (e) {
     console.error(e);
-    etat("L'import a échoué.", "err");
-  } finally {
-    $("btnImporter").disabled = false;
-  }
-};
-
-/* Comble le trou d'origine : compte.html n'a jamais eu de champ téléphone,
-   et checkout.html ne l'écrit que sur la commande — jamais sur le compte.
-   Le rapprochement par téléphone (compteDe, ci-dessus) ne trouvait donc
-   presque jamais rien. Ceci reconstitue le téléphone manquant à partir de
-   la commande la plus récente de chaque compte. Aperçu et confirmation
-   avant toute écriture ; un compte qui a déjà un téléphone n'est jamais
-   touché, même si sa valeur semble fausse. */
-$("btnReconstituerTel").onclick = async () => {
-  $("btnReconstituerTel").disabled = true;
-  etat("Analyse des comptes et commandes…");
-
-  try {
-    const sc = await getDocs(collection(db, "comptes"));
-    const comptesSansTel = [];
-    sc.forEach(d => {
-      if (!cleTel(d.data().telephone)) comptesSansTel.push(d.id);
-    });
-
-    if (comptesSansTel.length === 0) {
-      etat("Tous les comptes ont déjà un téléphone.", "ok");
-      return;
-    }
-
-    const sco = await getDocs(collection(db, "commandes"));
-    const dernierTelParCompte = new Map();
-    sco.forEach(d => {
-      const v = d.data();
-      const uid = v.compte_uid;
-      const tel = (v.client?.telephone || "").trim();
-      if (!uid || !cleTel(tel)) return;
-      const existant = dernierTelParCompte.get(uid);
-      if (!existant || (v.cree_le || "") > (existant.cree_le || "")) {
-        dernierTelParCompte.set(uid, { telephone: tel, cree_le: v.cree_le || "" });
-      }
-    });
-
-    const aEcrire = comptesSansTel
-      .map(uid => ({ uid, trouve: dernierTelParCompte.get(uid) }))
-      .filter(x => x.trouve);
-
-    if (aEcrire.length === 0) {
-      etat(`${comptesSansTel.length} compte(s) sans téléphone, mais aucune commande exploitable pour les reconstituer.`, "err");
-      return;
-    }
-
-    const apercu = aEcrire.slice(0, 15).map(x => "  " + x.uid + "  →  " + x.trouve.telephone).join("\n");
-    const suite = aEcrire.length > 15 ? `\n  … et ${aEcrire.length - 15} de plus` : "";
-    const resteSansTel = comptesSansTel.length - aEcrire.length;
-
-    if (!confirm(
-      `${aEcrire.length} compte(s) vont recevoir un téléphone reconstitué depuis leur commande la plus récente :\n\n${apercu}${suite}\n\n` +
-      (resteSansTel > 0 ? `${resteSansTel} compte(s) resteront sans téléphone (aucune commande exploitable pour eux).\n\n` : "") +
-      "Confirmer l'écriture ?"
-    )) {
-      etat("Annulé, rien n'a été écrit.");
-      return;
-    }
-
-    const LOT_MAX = 450;
-    let paquet = writeBatch(db);
-    let dansLot = 0;
-    for (const { uid, trouve } of aEcrire) {
-      paquet.set(doc(db, "comptes", uid), { telephone: trouve.telephone }, { merge: true });
-      if (++dansLot >= LOT_MAX) { await paquet.commit(); paquet = writeBatch(db); dansLot = 0; }
-    }
-    if (dansLot > 0) await paquet.commit();
-
-    etat(`${aEcrire.length} compte(s) mis à jour.`, "ok");
-    await charger();
-  } catch (e) {
-    console.error(e);
-    etat("La reconstitution a échoué.", "err");
-  } finally {
-    $("btnReconstituerTel").disabled = false;
-  }
-};
-
-/* ---------- Affichage ---------- */
-$("recherche").oninput = afficher;
-$("filtreGroupe").onchange = afficher;
-$("voirMasques").onchange = afficher;
-
-function ech(t) {
-  return String(t ?? "").replace(/[&<>"]/g, x =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[x]));
-}
-
-function afficher() {
-  majSuggestionsGroupes();
-  const f = $("recherche").value.trim().toLowerCase();
-  const g = $("filtreGroupe").value;
-  const voirMasques = $("voirMasques").checked;
-  const liste = $("liste");
-
-  const vus = clients.filter(c => {
-    // Archivés et fiches de test sortent des listes courantes : ils ne
-    // doivent ni encombrer ni compter.
-    if (!voirMasques && estMasque(c)) return false;
-    if (g && c.groupe !== g) return false;
-    if (!f) return true;
-    return (c.nom + " " + c.telephone + " " + c.tags.join(" ") + " " + c.groupe)
-      .toLowerCase().includes(f);
-  });
-
-  liste.innerHTML = "";
-  if (!vus.length) {
-    const masques = clients.filter(estMasque).length;
-    liste.innerHTML = '<div class="vide">Aucun client ne correspond.' +
-      (!voirMasques && masques
-        ? '<br><br>' + masques + ' fiche(s) archivée(s) ou de test sont masquées.'
-        : '<br><br>Si le fichier est vide, cliquez sur « Importer depuis les commandes ».') +
-      '</div>';
+    $("avenirReplie").innerHTML = '<div class="vide">Chargement impossible.</div>';
+    $("resume").innerHTML = '<div class="vide">Chargement impossible.</div>';
     return;
   }
 
-  vus.forEach(c => liste.appendChild(carte(c)));
+  const auj = iso(new Date());
+  const dans7 = iso(new Date(Date.now() + 7 * 86400000));
+  const mois = auj.slice(0, 7);
+  const vivantes = commandes.filter(c => c.statut !== "annulee");
+
+  const aTraiter = vivantes.filter(c => c.statut !== "remise");
+  const duJour   = vivantes.filter(c => c.date_retrait === auj);
+  const impayees = vivantes.filter(c => (c.paiement?.statut || "en attente") === "en attente");
+  const duMois   = vivantes.filter(c => (c.date_retrait || "").startsWith(mois));
+
+  chiffre([
+    { v: duJour.length,   e: "pour aujourd'hui" },
+    { v: aTraiter.length, e: "à traiter" },
+    { v: peso(impayees.reduce((t, c) => t + (c.total || 0), 0)),
+      e: "reste à encaisser", attention: impayees.length > 0 },
+    { v: peso(duMois.reduce((t, c) => t + (c.total || 0), 0)), e: "ce mois-ci" }
+  ]);
+
+  const avenir = vivantes
+    .filter(c => c.date_retrait >= auj && c.date_retrait <= dans7 && c.statut !== "remise")
+    .sort((a, b) => (a.date_retrait || "").localeCompare(b.date_retrait || ""));
+
+  afficherAvenir(avenir, auj);
+  afficherResume(avenir.filter(c => STATUTS_FERMES.includes(c.statut)), auj);
+  installerSuivi(avenir);
 }
 
-function carte(c) {
-  const cpt = compteDe(c);
-  const el = document.createElement("div");
-  // Violet si aucune commande jamais passée, orange si la dernière date
-  // de moins d'une semaine — l'ouverture de la fiche (classe "ouvert",
-  // ajoutée plus bas au clic) l'emportera visuellement sur les deux.
-  const ilYA7JOURS = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
-  const classeEtat = !c.nb_commandes ? " vide"
-    : (c.derniere_commande >= ilYA7JOURS ? " recent" : "");
-  el.className = "client" + classeEtat + (estMasque(c) ? " archive" : "");
+function chiffre(liste) {
+  $("chiffres").innerHTML = liste.map(c =>
+    `<div class="chiffre ${c.attention ? "attention" : ""}">
+       <div class="v">${c.v}</div><div class="e">${c.e}</div></div>`).join("");
+}
+
+function dateLongue(isoJour, auj) {
+  const d = new Date(isoJour + "T12:00:00");
+  const texte = d.toLocaleDateString("fr-FR",
+    { weekday: "long", day: "numeric", month: "long" });
+  const ecart = Math.round(
+    (new Date(isoJour + "T12:00:00") - new Date(auj + "T12:00:00")) / 86400000);
+  if (ecart === 0) return "Aujourd'hui — " + texte;
+  if (ecart === 1) return "Demain — " + texte;
+  return texte;
+}
+
+/* ---------- Repli et signal « nouveau » ---------- */
+
+/* La consultation vaut acquittement : déplier la carte horodate la lecture et
+   éteint l'orange. Le signal ne se rallume que si une commande arrive après
+   cet horodatage. */
+function installerSuivi(liste) {
+  const carte   = $("carteAvenir");
+  const bascule = $("basculeAvenir");
+  const marque  = $("marqueAvenir");
+
+  const derniere = liste
+    .map(arriveeLe)
+    .filter(t => t != null)
+    .reduce((max, t) => (t > max ? t : max), 0);
+
+  const vu = Number(localStorage.getItem(CLE_VU) || 0);
+
+  const acquitter = () => {
+    if (derniere > 0) localStorage.setItem(CLE_VU, String(derniere));
+    carte.classList.remove("nouveau");
+    marque.hidden = true;
+  };
+
+  if (derniere > 0 && derniere > vu) {
+    carte.classList.add("nouveau");
+    marque.hidden = false;
+  }
+
+  const ouvrir = (etat) => {
+    carte.classList.toggle("ouverte", etat);
+    $("avenir").hidden = !etat;
+    $("avenirReplie").hidden = etat;
+    bascule.setAttribute("aria-expanded", etat ? "true" : "false");
+    localStorage.setItem(CLE_REPLI, etat ? "1" : "0");
+    if (etat) acquitter();
+  };
+
+  bascule.onclick = () => ouvrir($("avenir").hidden);
+  ouvrir(localStorage.getItem(CLE_REPLI) === "1");
+}
+
+/* ---------- Commandes à venir ---------- */
+function ligneCommande(c) {
+  const paye = (c.paiement?.statut || "en attente") === "paye";
+  const el = document.createElement("a");
+  el.className = "cmd";
+  // Vers la fiche complète, plutôt qu'une simple liste morte : utile
+  // surtout quand la dernière commande arrivée sort dans plusieurs
+  // jours et se retrouve donc loin dans la page Commandes.
+  el.href = "commandes-admin.html?commande=" + encodeURIComponent(c.id);
   el.innerHTML = `
-    <div class="tete">
-      <span class="nom"></span>
-      ${c.groupe ? '<span class="puce groupe"></span>' : ""}
-      ${c.tags.map(() => '<span class="puce"></span>').join("")}
-      <span class="tel"></span>
-      <span class="chiffre">${c.nb_commandes} cmd · ${peso(c.total_depense)}</span>
-    </div>
-    <div class="detail" hidden>
-      <div class="grille">
-        <div><label>Nom</label><input type="text" class="c-nom"></div>
-        <div><label>Téléphone</label><input type="text" class="c-tel" readonly
-             style="background:#f2ece2;color:var(--encre-doux)"></div>
-        <div><label>Segment interne</label><input type="text" class="c-groupe" list="groupesConnus"
-             placeholder="revendeur, café, habitué…"></div>
-        <div>
-          <label>Groupe tarifaire <span class="c-tarif-info" style="opacity:.75"></span></label>
-          <select class="c-tarif" style="width:100%;padding:10px 11px;border:1px solid var(--trait);
-                  border-radius:var(--r);background:#fff;font:inherit;font-size:17px;color:var(--encre)">
-            <option value="">Aucun</option>
-          </select>
-        </div>
-      </div>
-      <div style="margin-top:13px"><label>Adresse</label>
-        <textarea class="c-adresse"></textarea></div>
-      <div style="margin-top:13px"><label>Tags (séparés par des virgules)</label>
-        <input type="text" class="c-tags" placeholder="marché, sans gluten, VIP"></div>
-      <div style="margin-top:13px"><label>Notes</label>
-        <textarea class="c-notes"></textarea></div>
-      <div class="actions">
-        <a class="lien c-wa" target="_blank" rel="noopener">WhatsApp</a>
-        <button class="mineur c-archiver" type="button"></button>
-        <button class="mineur c-supprimer" type="button" hidden
-                style="border-color:var(--alerte);color:var(--alerte)">Supprimer définitivement</button>
-        <span class="chiffre">${c.derniere_commande ? "Dernière commande : " + c.derniere_commande : "Aucune commande enregistrée"}</span>
-      </div>
-    </div>`;
-
-  el.querySelector(".nom").textContent = c.nom || "—";
-  el.querySelector(".tel").textContent = c.telephone;
-  if (c.groupe) {
-    const puceGroupe = el.querySelector(".puce.groupe");
-    puceGroupe.textContent = c.groupe;
-    const [fond, encre] = couleurSegment(c.groupe);
-    puceGroupe.style.background = fond;
-    puceGroupe.style.color = encre;
-  }
-  const puces = [...el.querySelectorAll(".puce:not(.groupe)")];
-  c.tags.forEach((t, i) => { if (puces[i]) puces[i].textContent = t; });
-
-  const d = el.querySelector(".detail");
-  el.querySelector(".tete").onclick = () => {
-    d.hidden = !d.hidden;
-    el.classList.toggle("ouvert", !d.hidden);
-  };
-
-  d.querySelector(".c-nom").value     = c.nom;
-  d.querySelector(".c-tel").value     = c.telephone;
-  d.querySelector(".c-groupe").value  = c.groupe;
-  d.querySelector(".c-adresse").value = c.adresse;
-  d.querySelector(".c-tags").value    = c.tags.join(", ");
-  d.querySelector(".c-notes").value   = c.notes;
-  d.querySelector(".c-wa").href = "https://wa.me/" + c.telephone;
-
-  /* ----- Groupe tarifaire, porté par le compte boutique ----- */
-  const selTarif = d.querySelector(".c-tarif");
-  const infoTarif = d.querySelector(".c-tarif-info");
-  const groupesVus = [...new Set(GROUPES_TARIF.concat(cpt && cpt.groupe ? [cpt.groupe] : []))];
-  groupesVus.forEach(g => {
-    const o = document.createElement("option");
-    o.value = g; o.textContent = g;
-    selTarif.appendChild(o);
-  });
-
-  if (!cpt) {
-    // Sans compte boutique, il n'y a rien à tarifer : on le dit plutôt que
-    // de laisser un menu qui n'écrirait nulle part.
-    selTarif.disabled = true;
-    infoTarif.textContent = "— aucun compte boutique à ce numéro";
-  } else {
-    selTarif.value = cpt.groupe || "";
-    infoTarif.textContent = cpt.remise > 0 ? "— remise en vigueur : " + cpt.remise + " %" : "";
-    selTarif.onchange = () => enregistrerTarif(c, cpt, selTarif, infoTarif);
-  }
-
-  /* ----- Archivage et suppression ----- */
-  const btnArchiver = d.querySelector(".c-archiver");
-  btnArchiver.textContent = c.archive ? "Réactiver la fiche" : "Archiver la fiche";
-  btnArchiver.onclick = () => basculerArchive(c);
-
-  const btnSupprimer = d.querySelector(".c-supprimer");
-  // La suppression n'est offerte qu'aux fiches classées « Test » : il faut
-  // avoir catégorisé la fiche pour pouvoir la détruire.
-  if (estTest(c)) btnSupprimer.hidden = false;
-  btnSupprimer.onclick = () => supprimerFiche(c);
-
-  const noter = () => { modifies.add(c.id); majEtat(); };
-  d.querySelector(".c-nom").oninput     = (e) => { c.nom = e.target.value; noter(); };
-  d.querySelector(".c-groupe").oninput  = (e) => {
-    c.groupe = e.target.value.trim();
-    // Le bouton de suppression suit le segment sans attendre l'enregistrement.
-    btnSupprimer.hidden = !estTest(c);
-    noter();
-  };
-  d.querySelector(".c-adresse").oninput = (e) => { c.adresse = e.target.value; noter(); };
-  d.querySelector(".c-notes").oninput   = (e) => { c.notes = e.target.value; noter(); };
-  d.querySelector(".c-tags").oninput    = (e) => {
-    c.tags = e.target.value.split(",").map(t => t.trim()).filter(Boolean);
-    noter();
-  };
-
+    <span class="pastille ${paye ? "ok" : ""}"></span>
+    <span class="nom"></span>
+    <span class="montant">${peso(c.total)}</span>
+    <span class="quoi"></span>`;
+  el.querySelector(".nom").textContent = c.client?.nom || "—";
+  el.querySelector(".quoi").textContent =
+    [LIBELLES[c.statut] || c.statut,
+     paye ? "payé" : "à encaisser"].filter(Boolean).join(" · ");
   return el;
 }
 
-/* Le groupe tarifaire s'écrit tout de suite sur le compte, en fusion : cette
-   page ne gère ni le solde ni les mouvements, elle ne doit rien en écraser. */
-async function enregistrerTarif(c, cpt, sel, info) {
-  const groupe = sel.value;
-  sel.disabled = true;
-  try {
-    await setDoc(doc(db, "comptes", cpt.id), { groupe }, { merge: true });
-    cpt.groupe = groupe;
-    etat("Groupe tarifaire de " + (c.nom || c.telephone) + " : " + (groupe || "aucun") + ".", "ok");
-    if (info && cpt.remise > 0 && !groupe) {
-      info.textContent = "— remise individuelle conservée : " + cpt.remise + " %";
-    }
-  } catch (e) {
-    console.error(e);
-    sel.value = cpt.groupe || "";
-    etat("Le groupe tarifaire n'a pas pu être enregistré.", "err");
-  } finally {
-    sel.disabled = false;
-  }
-}
+function afficherAvenir(liste, auj) {
+  const zone = $("avenir");
+  const apercu = $("avenirReplie");
 
-/* L'archivage sort la fiche des listes sans toucher à son historique :
-   c'est la bonne réponse pour un client parti, la suppression ne l'est pas. */
-async function basculerArchive(c) {
-  const versArchive = !c.archive;
-  if (versArchive && !confirm(
-    "Archiver la fiche de " + (c.nom || c.telephone) + " ?\n\n" +
-    "Elle disparaîtra des listes courantes. Ses commandes et son historique sont conservés, " +
-    "et la fiche reste consultable en cochant « Archivés et tests »."))
-    return;
-  try {
-    await setDoc(doc(db, "clients", c.id), { archive: versArchive }, { merge: true });
-    c.archive = versArchive;
-    afficher();
-    etat(versArchive ? "Fiche archivée." : "Fiche réactivée.", "ok");
-  } catch (e) {
-    console.error(e);
-    etat("L'archivage a échoué.", "err");
-  }
-}
-
-/* Suppression définitive, réservée aux fiches de test. On ne touche qu'à la
-   fiche : les commandes éventuelles resteraient orphelines, donc on prévient
-   quand il y en a. */
-async function supprimerFiche(c) {
-  if (!estTest(c)) {
-    etat("Seules les fiches classées « Test » peuvent être supprimées.", "err");
+  if (!liste.length) {
+    zone.innerHTML = '<div class="vide">Rien de prévu dans les sept prochains jours.</div>';
+    apercu.innerHTML = '<div class="vide">Rien de prévu dans les sept prochains jours.</div>';
     return;
   }
-  let message = "Supprimer définitivement la fiche de " + (c.nom || c.telephone) + " ?\n\n" +
-    "Cette action est irréversible.";
-  if (c.nb_commandes > 0) {
-    message += "\n\n⚠️ Cette fiche compte " + c.nb_commandes + " commande(s) pour " +
-      peso(c.total_depense) + ". Les commandes ne seront pas supprimées et " +
-      "n'auront plus de fiche client rattachée.";
-  }
-  const cpt = compteDe(c);
-  if (cpt && cpt.solde !== 0) {
-    message += "\n\n⚠️ Un compte boutique au même numéro porte un solde de " +
-      peso(cpt.solde) + ". Il n'est pas supprimé.";
-  }
-  if (!confirm(message)) return;
 
-  try {
-    await deleteDoc(doc(db, "clients", c.id));
-    clients = clients.filter(x => x.id !== c.id);
-    modifies.delete(c.id);
-    majGroupes();
-    afficher();
-    majEtat();
-    etat("Fiche supprimée.", "ok");
-  } catch (e) {
-    console.error(e);
-    etat("La suppression a échoué.", "err");
+  /* Aperçu replié : la commande arrivée en dernier. À défaut d'horodatage,
+     la première du calendrier — la plus proche à sortir. */
+  const triArrivee = [...liste].sort((a, b) => (arriveeLe(b) || 0) - (arriveeLe(a) || 0));
+  const derniere = triArrivee.find(c => arriveeLe(c) != null) || liste[0];
+
+  apercu.innerHTML = "";
+  const t = document.createElement("div");
+  t.className = "jour";
+  t.textContent = dateLongue(derniere.date_retrait || auj, auj)
+    + " · " + (derniere.option?.nom || "Sans mode");
+  apercu.appendChild(t);
+  apercu.appendChild(ligneCommande(derniere));
+
+  const reste = liste.length - 1;
+  if (reste > 0) {
+    const p = document.createElement("div");
+    p.className = "mode";
+    p.textContent = reste === 1
+      ? "1 autre commande" : reste + " autres commandes";
+    apercu.appendChild(p);
   }
-}
 
-function majEtat() {
-  etat(modifies.size
-    ? modifies.size + " fiche(s) modifiée(s) — pensez à enregistrer"
-    : "");
-}
+  zone.innerHTML = "";
 
-/* ---------- Enregistrement ---------- */
-$("btnEnregistrer").onclick = async () => {
-  if (!modifies.size) return etat("Rien à enregistrer.", "ok");
-  $("btnEnregistrer").disabled = true;
-  etat("Enregistrement…");
-  try {
-    const paquet = writeBatch(db);
-    clients.filter(c => modifies.has(c.id)).forEach(c => {
-      paquet.set(doc(db, "clients", c.id), {
-        nom: c.nom, telephone: c.telephone, adresse: c.adresse,
-        groupe: c.groupe, tags: c.tags, notes: c.notes,
-        archive: !!c.archive,
-        nb_commandes: c.nb_commandes, total_depense: c.total_depense,
-        derniere_commande: c.derniere_commande
+  /* Deux niveaux : la journée, puis le mode de retrait ou de livraison.
+     L'ordre chronologique est conservé — la carte sert d'abord à savoir ce
+     qui sort demain. */
+  const parJour = new Map();
+  liste.forEach(c => {
+    const jour = c.date_retrait || "";
+    if (!parJour.has(jour)) parJour.set(jour, new Map());
+    const modes = parJour.get(jour);
+    const mode = c.option?.nom || "Sans mode";
+    if (!modes.has(mode)) modes.set(mode, []);
+    modes.get(mode).push(c);
+  });
+
+  parJour.forEach((modes, jour) => {
+    const t = document.createElement("div");
+    t.className = "jour";
+    t.textContent = dateLongue(jour, auj);
+    zone.appendChild(t);
+
+    // Le mode le plus chargé en premier : c'est par là que commence le travail.
+    [...modes.entries()]
+      .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+      .forEach(([mode, cmds]) => {
+        const m = document.createElement("div");
+        m.className = "mode";
+        m.innerHTML = '<span class="nom-mode"></span>' +
+          `<span class="compte">${cmds.length}</span>`;
+        m.querySelector(".nom-mode").textContent = mode;
+        zone.appendChild(m);
+
+        cmds.forEach(c => zone.appendChild(ligneCommande(c)));
       });
-    });
-    await paquet.commit();
-    modifies.clear();
-    majGroupes();
-    afficher();
-    etat("Enregistré.", "ok");
-  } catch (e) {
-    console.error(e);
-    etat("L'enregistrement a échoué.", "err");
-  } finally {
-    $("btnEnregistrer").disabled = false;
+  });
+}
+
+/* ---------- Résumé des produits ---------- */
+/* Une journée de livraison, une liste plate d'articles cumulés. Ce qui compte
+   ici n'est pas la commande mais la quantité totale à sortir. Les lignes à
+   zéro ne s'affichent pas. */
+function afficherResume(liste, auj) {
+  const zone = $("resume");
+
+  if (!liste.length) {
+    zone.innerHTML = '<div class="vide">Aucune commande confirmée sur les sept prochains jours.</div>';
+    return;
   }
-};
 
-function etat(texte, type = "") {
-  $("etat").textContent = texte;
-  $("etat").className = "etat " + type;
-}
+  const parJour = new Map();
+  liste.forEach(c => {
+    const jour = c.date_retrait || "";
+    if (!parJour.has(jour)) parJour.set(jour, { articles: new Map(), commandes: 0 });
+    const j = parJour.get(jour);
+    j.commandes += 1;
+    lignesArticles(c).forEach(l => {
+      const cumul = j.articles.get(l.code)
+        || { nom: l.nom, code: l.code, categorie: l.categorie, qte: 0 };
+      cumul.qte += l.qte;
+      j.articles.set(l.code, cumul);
+    });
+  });
 
-// Alimentée d'abord par les segments réellement utilisés (appelée depuis
-// afficher(), donc dès le chargement des clients) — complétée en direct
-// par ce que l'admin est en train de taper ailleurs, pour proposer aussi
-// un segment tout juste créé sans avoir à recharger. Doit rester dans ce
-// module : elle lit `clients`, qui n'existe que dans cette portée.
-function majSuggestionsGroupes() {
-  const dl = document.getElementById('groupesConnus');
-  if (!dl) return;
-  const saisis = [...document.querySelectorAll('.c-groupe')]
-    .map(i => i.value.trim()).filter(Boolean);
-  const existants = clients.map(c => c.groupe).filter(Boolean);
-  dl.innerHTML = [...new Set(['Test', ...existants, ...saisis])]
-    .map(g => `<option value="${g}">`).join('');
+  zone.innerHTML = "";
+
+  [...parJour.keys()].sort().forEach(jour => {
+    const j = parJour.get(jour);
+    const articles = [...j.articles.values()].filter(a => a.qte > 0);
+
+    const t = document.createElement("div");
+    t.className = "jour";
+    t.textContent = dateLongue(jour, auj)
+      + " · " + j.commandes + (j.commandes > 1 ? " commandes" : " commande");
+    zone.appendChild(t);
+
+    if (!articles.length) {
+      const v = document.createElement("div");
+      v.className = "art-vide";
+      v.textContent = "Aucun article";
+      zone.appendChild(v);
+      return;
+    }
+
+    /* Catégorie de production, puis quantité décroissante à l'intérieur.
+       Le total par catégorie donne le volume d'une fournée d'un coup d'œil. */
+    const parCategorie = new Map();
+    articles.forEach(a => {
+      if (!parCategorie.has(a.categorie)) parCategorie.set(a.categorie, []);
+      parCategorie.get(a.categorie).push(a);
+    });
+
+    [...parCategorie.keys()]
+      .sort((a, b) => rangCategorie(a) - rangCategorie(b) || a.localeCompare(b))
+      .forEach(categorie => {
+        const lignes = parCategorie.get(categorie)
+          .sort((a, b) => b.qte - a.qte || a.nom.localeCompare(b.nom));
+        const total = lignes.reduce((t, a) => t + a.qte, 0);
+
+        const c = document.createElement("div");
+        c.className = "categorie";
+        c.innerHTML = '<span class="nom-cat"></span><span class="compte"></span>';
+        c.querySelector(".nom-cat").textContent = categorie;
+        c.querySelector(".compte").textContent = total;
+        zone.appendChild(c);
+
+        lignes.forEach(a => {
+          const el = document.createElement("div");
+          el.className = "art";
+          el.innerHTML = '<span class="q"></span>' +
+            '<span class="nom"><span class="libelle"></span><span class="code"></span></span>';
+          el.querySelector(".q").textContent = a.qte;
+          el.querySelector(".libelle").textContent = a.nom;
+          el.querySelector(".code").textContent = a.code === a.nom ? "" : a.code;
+          zone.appendChild(el);
+        });
+      });
+  });
 }
-document.addEventListener('input', majSuggestionsGroupes);
 </script>
-
-<datalist id="groupesConnus"></datalist>
 </body>
 </html>
