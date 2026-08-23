@@ -69,6 +69,8 @@
   .tete .ref{font-family:ui-monospace,monospace;font-size:14.5px;color:var(--encre-doux)}
   .tete .nom{font-weight:600;flex:1;min-width:120px}
   .tete .montant{font-weight:600;font-variant-numeric:tabular-nums}
+  .tete .quand{color:var(--encre-doux);font-size:15px}
+  .tete .fleche{color:var(--encre-doux);font-size:13px}
   .resume{font-size:15px;color:var(--encre-doux);margin-top:4px}
 
   .detail{margin-top:13px;padding-top:13px;border-top:1px dashed var(--trait)}
@@ -123,6 +125,8 @@
      compte, pas l'un ou l'autre séparément. Un balayage du regard suffit :
      ce qui est vert est réglé, tout le reste demande quelque chose. */
   .cmd.rien-a-faire{border-left-color:#00c853;border-left-width:4px}
+  .cmd.compacte{padding:9px 14px;opacity:.82}
+  .cmd.compacte .tete{gap:10px}
 
   /* ---------- Modification d'une commande ---------- */
   /* Ces deux classes n'existaient pas dans cette page : l'écran de
@@ -559,6 +563,15 @@ function afficher() {
   majLot();
 }
 
+// Date courte, pour les cartes réduites : le jour du mois suffit, la
+// date longue avec l'année n'apporte rien sur une commande déjà classée.
+function dateCourte(iso) {
+  if (!iso) return "";
+  const d = new Date(iso + "T12:00:00");
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+}
+
 function dateLongue(iso) {
   if (!iso) return "Sans date";
   const d = new Date(iso + "T12:00:00");
@@ -583,13 +596,39 @@ function carte(c) {
   const rienAFaire = paye && ["confirmee", "en production", "prete", "remise"]
     .includes(c.statut);
 
+  // Remise ou annulée, et le paiement réglé dans un sens ou dans l'autre :
+  // il n'y a plus jamais rien à faire ni à vérifier dessus. La carte se
+  // réduit à l'essentiel, pour que les commandes qui attendent encore une
+  // action ne se noient pas dans celles qui sont closes depuis longtemps.
+  // Le détail reste consultable au clic — passée ou remboursée, une
+  // commande peut toujours être recherchée si un client la questionne.
+  const etatPaiement = c.paiement?.statut || "en attente";
+  const compacte = ["remise", "annulee"].includes(c.statut)
+                 && ["paye", "rembourse"].includes(etatPaiement);
+
   el.className = "cmd " + (paye ? "reglee" : "impaye") +
                  " b-" + (CLASSE_STATUT[c.statut] || "nouvelle") +
-                 (rienAFaire ? " rien-a-faire" : "");
+                 (rienAFaire ? " rien-a-faire" : "") +
+                 (compacte ? " compacte" : "");
 
   const articles = (c.panier || []).reduce((n, l) => n + l.qte, 0);
 
-  el.innerHTML = `
+  el.innerHTML = compacte ? `
+    <div class="tete">
+      <input type="checkbox" class="coche" aria-label="Sélectionner">
+      <span class="ref">${echapper(c.numero || c.id)}</span>
+      <span class="nom"></span>
+      <span class="quand">${echapper(dateCourte(c.date_retrait))}</span>
+      <span class="fleche">▾</span>
+    </div>
+    <div class="detail" hidden>
+      <div class="lignes"></div>
+      <p class="info" style="margin-top:11px"><b>Contact</b> ${
+        echapper(c.client?.telephone || "")}</p>
+      ${c.client?.adresse ? '<p class="info adresse"></p>' : ""}
+      ${c.option?.lieu ? '<p class="info lieu"></p>' : ""}
+      ${c.notes ? '<p class="info notes"></p>' : ""}
+    </div>` : `
     <div class="tete">
       <input type="checkbox" class="coche" aria-label="Sélectionner">
       <span class="ref">${echapper(c.numero || c.id)}</span>
@@ -630,11 +669,13 @@ function carte(c) {
     </div>`;
 
   el.querySelector(".nom").textContent = c.client?.nom || "—";
-  // Le statut est déjà dans l'étiquette colorée de l'en-tête.
-  el.querySelector(".resume").textContent =
-    [c.option?.nom, c.creneau,
-     articles + (articles > 1 ? " articles" : " article")]
-    .filter(Boolean).join(" · ");
+  if (!compacte) {
+    // Le statut est déjà dans l'étiquette colorée de l'en-tête.
+    el.querySelector(".resume").textContent =
+      [c.option?.nom, c.creneau,
+       articles + (articles > 1 ? " articles" : " article")]
+      .filter(Boolean).join(" · ");
+  }
 
   el.querySelector(".lignes").innerHTML = (c.panier || []).map(l =>
     `<div class="l"><span>${l.qte} × ${echapper(l.nom)}</span>
@@ -661,25 +702,30 @@ function carte(c) {
     majLot();
   };
 
-  el.querySelector(".btnModifier").onclick = () => {
-    const zone = el.querySelector(".edition");
-    if (!zone.hidden) { zone.hidden = true; zone.innerHTML = ""; return; }
-    ouvrirModification(c, el);
-  };
+  // Rien à faire sur une commande classée : ni statut à changer, ni
+  // paiement à pointer, ni modification possible. Câbler ces éléments
+  // sur une carte qui ne les contient pas ferait planter le rendu.
+  if (!compacte) {
+    el.querySelector(".btnModifier").onclick = () => {
+      const zone = el.querySelector(".edition");
+      if (!zone.hidden) { zone.hidden = true; zone.innerHTML = ""; return; }
+      ouvrirModification(c, el);
+    };
 
-  const selS = el.querySelector(".selStatut");
-  const selP = el.querySelector(".selPaiement");
-  selS.value = c.statut || "nouvelle";
-  selP.value = c.paiement?.statut || "en attente";
-  // La valeur est recopiée dans un attribut : le CSS ne peut pas cibler
-  // la sélection courante d'un menu autrement.
-  const teinter = (sel) => sel.dataset.v = sel.value;
-  teinter(selS); teinter(selP);
-  selS.onchange = () => { teinter(selS); enregistrer(c, { statut: selS.value }); };
-  selP.onchange = () => { teinter(selP); enregistrer(c, { "paiement.statut": selP.value }); };
+    const selS = el.querySelector(".selStatut");
+    const selP = el.querySelector(".selPaiement");
+    selS.value = c.statut || "nouvelle";
+    selP.value = c.paiement?.statut || "en attente";
+    // La valeur est recopiée dans un attribut : le CSS ne peut pas cibler
+    // la sélection courante d'un menu autrement.
+    const teinter = (sel) => sel.dataset.v = sel.value;
+    teinter(selS); teinter(selP);
+    selS.onchange = () => { teinter(selS); enregistrer(c, { statut: selS.value }); };
+    selP.onchange = () => { teinter(selP); enregistrer(c, { "paiement.statut": selP.value }); };
 
-  el.querySelector(".lienClient").href =
-    "https://wa.me/" + (c.client?.telephone || "").replace(/\D/g, "");
+    el.querySelector(".lienClient").href =
+      "https://wa.me/" + (c.client?.telephone || "").replace(/\D/g, "");
+  }
 
   return el;
 }
