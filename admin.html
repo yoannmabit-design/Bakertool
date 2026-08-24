@@ -255,6 +255,16 @@ const peso = (n) => "₱" + Number(n || 0).toLocaleString("en-PH");
    l'appelle sans préciser la région. Test temporaire de la chaîne serveur,
    à retirer une fois la première vraie fonction en place. */
 const fonctions = getFunctions(app, "asia-southeast1");
+window.testVilles = async () => {
+  try {
+    const r = await httpsCallable(fonctions, "lalamoveVilles")();
+    console.log("villes :", r.data);
+    return r.data;
+  } catch (e) {
+    console.error("villes ÉCHEC :", e.code, e.message, e.details);
+    throw e;
+  }
+};
 window.testPing = async () => {
   try {
     const r = await httpsCallable(fonctions, "ping")();
