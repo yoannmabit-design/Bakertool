@@ -232,6 +232,8 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChang
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, collection, getDocs, doc, getDoc }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFunctions, httpsCallable }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDuq8KS8M_Z8U7BlSp6MvE-6Y9OYYaDujE",
@@ -247,6 +249,22 @@ const auth = getAuth(app);
 const db   = getFirestore(app);
 const $    = (id) => document.getElementById(id);
 const peso = (n) => "₱" + Number(n || 0).toLocaleString("en-PH");
+
+/* Cloud Functions. La région doit correspondre exactement à celle du
+   déploiement : une fonction déployée à Singapour reste introuvable si on
+   l'appelle sans préciser la région. Test temporaire de la chaîne serveur,
+   à retirer une fois la première vraie fonction en place. */
+const fonctions = getFunctions(app, "asia-southeast1");
+window.testPing = async () => {
+  try {
+    const r = await httpsCallable(fonctions, "ping")();
+    console.log("ping OK :", r.data);
+    return r.data;
+  } catch (e) {
+    console.error("ping ÉCHEC :", e.code, e.message);
+    throw e;
+  }
+};
 
 const LIBELLES = {
   "nouvelle":"Nouvelle", "confirmee":"Confirmée", "en production":"En production",
