@@ -1294,6 +1294,10 @@ function ouvrirModification(c, el) {
              annoncés sur cette commande. Le solde du client n'est pas modifié :
              réglez l'écart de ${peso(Math.abs(ecartTotal))} à la main depuis la
              page Crédit.</div>` : ""}
+        ${c.compte_uid
+          ? `<button type="button" class="mineur edit-recalc-tarif" style="margin-top:8px;">
+               🔄 Recalculer avec le tarif actuel du compte (${Number(c.remise) || 0}% appliqué ici)
+             </button>` : ""}
       </div>
 
       <div class="edit-actions">
@@ -1362,6 +1366,33 @@ function ouvrirModification(c, el) {
       zone.innerHTML = "";
     };
 
+    // Le tarif de groupe d'une commande est figé au moment où elle a été
+    // créée — un compte réglé après coup ne la rattrape pas tout seul.
+    // Ce bouton va chercher le tarif actuel du compte et refait le calcul,
+    // sans rien enregistrer avant le clic sur "Enregistrer les modifications".
+    const btnRecalc = zone.querySelector(".edit-recalc-tarif");
+    if (btnRecalc) {
+      btnRecalc.onclick = async () => {
+        btnRecalc.disabled = true;
+        try {
+          const snap = await getDoc(doc(db, "comptes", c.compte_uid));
+          const nouvelleRemise = snap.exists() ? (Number(snap.data().remise) || 0) : 0;
+          if (nouvelleRemise === (Number(c.remise) || 0)) {
+            signaler("Déjà à jour — le compte a la même remise (" + nouvelleRemise + "%).");
+          } else {
+            c.remise = nouvelleRemise;
+            dessiner();
+            signaler("Tarif du compte repris : " + nouvelleRemise + "%. Vérifie et enregistre pour appliquer.");
+          }
+        } catch (e) {
+          console.error(e);
+          signaler("Impossible de lire le compte.", "err");
+        } finally {
+          btnRecalc.disabled = false;
+        }
+      };
+    }
+
     zone.querySelector(".edit-ok").onclick = () =>
       enregistrerModification(c, panier, date, optionCourante);
   }
@@ -1399,6 +1430,7 @@ async function enregistrerModification(c, panier, date, option) {
     paquet.update(doc(db, "commandes", c.id), {
       panier: r.lignes,
       date_retrait: date,
+      remise: Number(c.remise) || 0,
       sous_total: r.calcul.sousTotal,
       sous_total_brut: r.calcul.base,
       remise_montant: r.calcul.economie,
