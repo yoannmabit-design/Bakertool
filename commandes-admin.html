@@ -673,6 +673,12 @@ function dateLongue(iso) {
 
 function carte(c) {
   const paye = (c.paiement?.statut || "en attente") === "paye";
+  // Montant réellement réglé au moment où "Payé" a été coché — capturé à cet
+  // instant précis (voir enregistrer()), pas recalculé après coup. Un ajout
+  // à la commande APRÈS ce moment fait grimper le total sans toucher ce
+  // chiffre : l'écart entre les deux est ce qu'il reste à encaisser.
+  const montantPaye = Number(c.paiement?.montant_paye) || 0;
+  const resteAPayer = paye ? Math.max(0, (c.total || 0) - montantPaye) : 0;
   const el = document.createElement("div");
   el.id = "cmd-" + c.id;
   // Confirmée et payée : la commande n'attend plus rien de vous.
@@ -726,6 +732,7 @@ function carte(c) {
         echapper(MOYENS_PAIEMENT[c.paiement.methode] || c.paiement.methode)}</span>` : ""}
       <span class="etiq ${paye ? "verte" : (estCOD(c) ? "cod" : "rouge")}">${
         paye ? "Payé" : (estCOD(c) ? "COD" : "À encaisser")}</span>
+      ${resteAPayer > 0 ? `<span class="etiq rouge btnResteAPayer" title="Un ajout à la commande a fait grimper le total après le paiement — clique une fois la différence encaissée" style="cursor:pointer;">Reste à payer : ${peso(resteAPayer)}</span>` : ""}
       <span class="montant">${peso(c.total)}</span>
     </div>
     <div class="resume"></div>
@@ -742,6 +749,11 @@ function carte(c) {
         </select>
         <select class="selPaiement">
           ${Object.entries(PAIEMENTS).map(([v, t]) =>
+            `<option value="${v}">${t}</option>`).join("")}
+        </select>
+        <select class="selMethode">
+          <option value="">Moyen non précisé</option>
+          ${Object.entries(MOYENS_PAIEMENT).map(([v, t]) =>
             `<option value="${v}">${t}</option>`).join("")}
         </select>
         <a class="lien lienClient" target="_blank" rel="noopener">WhatsApp client</a>
@@ -797,17 +809,36 @@ function carte(c) {
 
     const selS = el.querySelector(".selStatut");
     const selP = el.querySelector(".selPaiement");
+    const selM = el.querySelector(".selMethode");
     selS.value = c.statut || "nouvelle";
     selP.value = c.paiement?.statut || "en attente";
+    selM.value = c.paiement?.methode || "";
     // La valeur est recopiée dans un attribut : le CSS ne peut pas cibler
     // la sélection courante d'un menu autrement.
     const teinter = (sel) => sel.dataset.v = sel.value;
     teinter(selS); teinter(selP);
     selS.onchange = () => { teinter(selS); enregistrer(c, { statut: selS.value }); };
-    selP.onchange = () => { teinter(selP); enregistrer(c, { "paiement.statut": selP.value }); };
+    selP.onchange = () => {
+      teinter(selP);
+      const champs = { "paiement.statut": selP.value };
+      // Capturé à cet instant : un ajout ultérieur à la commande fera
+      // grimper le total sans toucher ce chiffre, ce qui fait apparaître
+      // le reste à payer (voir carte()).
+      if (selP.value === "paye") champs["paiement.montant_paye"] = c.total || 0;
+      enregistrer(c, champs);
+    };
+    selM.onchange = () => enregistrer(c, { "paiement.methode": selM.value });
 
     el.querySelector(".lienClient").href =
       "https://wa.me/" + (c.client?.telephone || "").replace(/\D/g, "");
+
+    const btnReste = el.querySelector(".btnResteAPayer");
+    if (btnReste) {
+      btnReste.onclick = () => {
+        if (!confirm(`Marquer ${peso(resteAPayer)} comme encaissé pour cette commande ?`)) return;
+        enregistrer(c, { "paiement.montant_paye": c.total || 0 });
+      };
+    }
   }
 
   return el;
@@ -1735,6 +1766,14 @@ async function enregistrer(c, champs) {
     if (champs["paiement.statut"]) {
       c.paiement = c.paiement || {};
       c.paiement.statut = champs["paiement.statut"];
+    }
+    if ("paiement.methode" in champs) {
+      c.paiement = c.paiement || {};
+      c.paiement.methode = champs["paiement.methode"];
+    }
+    if ("paiement.montant_paye" in champs) {
+      c.paiement = c.paiement || {};
+      c.paiement.montant_paye = champs["paiement.montant_paye"];
     }
     afficher();
     publierProduction();
