@@ -215,6 +215,45 @@ function compteDe(c) {
 }
 
 // Une fiche de test est écartée des listes courantes, comme une archivée.
+/* Extraction des coordonnées d'un lien Google Maps. Le lien est conservé tel
+   quel — il sert à ouvrir la navigation quand Yoann livre lui-même — et les
+   coordonnées en sont tirées pour Lalamove, qui n'accepte que du GPS.
+
+   Les liens courts (maps.app.goo.gl) ne contiennent pas les coordonnées : il
+   faudrait les déplier côté serveur. On les refuse explicitement plutôt que
+   d'enregistrer un point faux. */
+function extraireCoordonnees(texte) {
+  const t = (texte || "").trim();
+  if (!t) return { etat: "vide" };
+
+  if (/maps\.app\.goo\.gl|goo\.gl\/maps/i.test(t)) {
+    return { etat: "court" };
+  }
+
+  // Formes rencontrées, de la plus fiable à la plus permissive :
+  // !3d<lat>!4d<lng> (le point exact désigné par Maps), @lat,lng (le centre
+  // de la vue), ?q=lat,lng, puis un simple « lat, lng » collé à la main.
+  const motifs = [
+    /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/,
+    /@(-?\d+\.\d+),(-?\d+\.\d+)/,
+    /[?&]q=(-?\d+\.\d+),\s*(-?\d+\.\d+)/,
+    /^(-?\d+\.\d+),\s*(-?\d+\.\d+)$/
+  ];
+  for (const m of motifs) {
+    const r = t.match(m);
+    if (r) {
+      const lat = parseFloat(r[1]), lng = parseFloat(r[2]);
+      // Garde-fou : Metro Manila et ses environs. Un point hors de cette
+      // zone vient presque toujours d'un lien mal copié.
+      if (lat < 13 || lat > 16 || lng < 120 || lng > 122) {
+        return { etat: "hors_zone", lat, lng };
+      }
+      return { etat: "ok", lat, lng };
+    }
+  }
+  return { etat: "illisible" };
+}
+
 function estTest(c) {
   return (c.groupe || "").trim().toLowerCase() === SEGMENT_TEST.toLowerCase();
 }
@@ -280,6 +319,8 @@ async function charger() {
         nom: v.nom || "",
         telephone: v.telephone || d.id,
         adresse: v.adresse || "",
+        maps_url: v.maps_url || "",
+        coordonnees: v.coordonnees || null,
         groupe: v.groupe || "",
         tags: Array.isArray(v.tags) ? v.tags : [],
         notes: v.notes || "",
@@ -358,6 +399,10 @@ $("btnImporter").onclick = async () => {
         nom: e.nom || (ancien ? ancien.nom : ""),
         telephone: e.telephone,
         adresse: e.adresse || (ancien ? ancien.adresse : ""),
+        // Le lien Maps et les coordonnées sont saisis à la main, une fois par
+        // client : un import qui les écraserait détruirait un vrai travail.
+        maps_url: ancien ? (ancien.maps_url || "") : "",
+        coordonnees: ancien ? (ancien.coordonnees || null) : null,
         groupe: ancien ? ancien.groupe : "",
         tags: ancien ? ancien.tags : [],
         notes: ancien ? ancien.notes : "",
@@ -464,6 +509,13 @@ function carte(c) {
       </div>
       <div style="margin-top:13px"><label>Adresse</label>
         <textarea class="c-adresse"></textarea></div>
+      <div style="margin-top:13px">
+        <label>Lien Google Maps <span class="c-maps-etat" style="opacity:.75"></span></label>
+        <input type="text" class="c-maps" placeholder="Coller un lien Maps, ou « 14.55, 121.03 »">
+        <div style="margin-top:6px">
+          <a class="lien c-maps-ouvrir" target="_blank" rel="noopener" hidden>Ouvrir dans Maps</a>
+        </div>
+      </div>
       <div style="margin-top:13px"><label>Tags (séparés par des virgules)</label>
         <input type="text" class="c-tags" placeholder="marché, sans gluten, VIP"></div>
       <div style="margin-top:13px"><label>Notes</label>
@@ -544,6 +596,53 @@ function carte(c) {
     noter();
   };
   d.querySelector(".c-adresse").oninput = (e) => { c.adresse = e.target.value; noter(); };
+
+  /* ----- Lien Maps et coordonnées ----- */
+  const champMaps = d.querySelector(".c-maps");
+  const etatMaps  = d.querySelector(".c-maps-etat");
+  const ouvrirMaps = d.querySelector(".c-maps-ouvrir");
+  champMaps.value = c.maps_url;
+
+  const rendreEtatMaps = () => {
+    const co = c.coordonnees;
+    if (co && co.lat && co.lng) {
+      etatMaps.textContent = "— " + co.lat.toFixed(5) + ", " + co.lng.toFixed(5);
+      etatMaps.style.color = "var(--ok)";
+      ouvrirMaps.hidden = false;
+      ouvrirMaps.href = "https://www.google.com/maps/search/?api=1&query="
+        + co.lat + "," + co.lng;
+    } else {
+      etatMaps.textContent = "— aucune coordonnée";
+      etatMaps.style.color = "var(--encre-doux)";
+      ouvrirMaps.hidden = true;
+    }
+  };
+  rendreEtatMaps();
+
+  champMaps.oninput = (e) => {
+    const brut = e.target.value;
+    c.maps_url = brut;
+    const r = extraireCoordonnees(brut);
+
+    if (r.etat === "ok") {
+      c.coordonnees = { lat: r.lat, lng: r.lng };
+      rendreEtatMaps();
+    } else {
+      // Coordonnées effacées dès que le lien devient inexploitable : mieux
+      // vaut aucun point qu'un point périmé qui ne correspond plus au lien.
+      c.coordonnees = null;
+      ouvrirMaps.hidden = true;
+      etatMaps.style.color = "var(--alerte)";
+      etatMaps.textContent =
+        r.etat === "vide"      ? "" :
+        r.etat === "court"     ? "— lien court : ouvrez-le dans Maps, puis copiez l'adresse de la barre du navigateur" :
+        r.etat === "hors_zone" ? "— point hors de Metro Manila (" + r.lat + ", " + r.lng + ")" :
+                                 "— coordonnées introuvables dans ce lien";
+      if (r.etat === "vide") { etatMaps.style.color = "var(--encre-doux)";
+                               etatMaps.textContent = "— aucune coordonnée"; }
+    }
+    noter();
+  };
   d.querySelector(".c-notes").oninput   = (e) => { c.notes = e.target.value; noter(); };
   d.querySelector(".c-tags").oninput    = (e) => {
     c.tags = e.target.value.split(",").map(t => t.trim()).filter(Boolean);
@@ -646,6 +745,7 @@ $("btnEnregistrer").onclick = async () => {
     clients.filter(c => modifies.has(c.id)).forEach(c => {
       paquet.set(doc(db, "clients", c.id), {
         nom: c.nom, telephone: c.telephone, adresse: c.adresse,
+        maps_url: c.maps_url || "", coordonnees: c.coordonnees || null,
         groupe: c.groupe, tags: c.tags, notes: c.notes,
         archive: !!c.archive,
         nb_commandes: c.nb_commandes, total_depense: c.total_depense,
