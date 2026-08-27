@@ -8,6 +8,11 @@
 <link rel="icon" href="logo.png" type="image/png">
 <link rel="apple-touch-icon" href="logo.png">
 <link rel="manifest" href="manifest.json">
+<!-- Carte OpenStreetMap : aucune clé, aucun compte, aucune facturation.
+     Sert à poser le point de livraison à la main — les adresses de Manille
+     sont trop mal référencées pour faire confiance à une recherche. -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   :root{
     --creme:#fdf6ec;--papier:#fffdf9;--encre:#1f1b16;
@@ -515,6 +520,11 @@ function carte(c) {
         <div style="margin-top:6px">
           <a class="lien c-maps-ouvrir" target="_blank" rel="noopener" hidden>Ouvrir dans Maps</a>
         </div>
+        <div class="c-carte" style="margin-top:9px;height:260px;border:1px solid var(--trait);
+             border-radius:var(--r);overflow:hidden"></div>
+        <div class="chiffre" style="margin-top:5px">
+          Cliquez sur la carte ou déplacez le repère pour ajuster le point de livraison.
+        </div>
       </div>
       <div style="margin-top:13px"><label>Tags (séparés par des virgules)</label>
         <input type="text" class="c-tags" placeholder="marché, sans gluten, VIP"></div>
@@ -545,6 +555,10 @@ function carte(c) {
   el.querySelector(".tete").onclick = () => {
     d.hidden = !d.hidden;
     el.classList.toggle("ouvert", !d.hidden);
+    // La carte n'est construite qu'à la première ouverture : en créer une par
+    // fiche au chargement mettrait la page à genoux sur plusieurs centaines
+    // de clients.
+    if (!d.hidden) el._monterCarte();
   };
 
   d.querySelector(".c-nom").value     = c.nom;
@@ -597,20 +611,29 @@ function carte(c) {
   };
   d.querySelector(".c-adresse").oninput = (e) => { c.adresse = e.target.value; noter(); };
 
-  /* ----- Lien Maps et coordonnées ----- */
-  const champMaps = d.querySelector(".c-maps");
-  const etatMaps  = d.querySelector(".c-maps-etat");
+  /* ----- Lien Maps, coordonnées et carte ----- */
+  const champMaps  = d.querySelector(".c-maps");
+  const etatMaps   = d.querySelector(".c-maps-etat");
   const ouvrirMaps = d.querySelector(".c-maps-ouvrir");
+  const boiteCarte = d.querySelector(".c-carte");
   champMaps.value = c.maps_url;
+
+  let carte = null, repere = null;
+
+  /* Format « place » avec coordonnées : Maps pose un repère exactement là,
+     sans chercher l'établissement le plus proche — c'est ce que fait le
+     format « search », et il tombe régulièrement sur le bâtiment voisin. */
+  const lienExact = (lat, lng) =>
+    "https://www.google.com/maps/place/" + lat + "," + lng +
+    "/@" + lat + "," + lng + ",19z";
 
   const rendreEtatMaps = () => {
     const co = c.coordonnees;
     if (co && co.lat && co.lng) {
-      etatMaps.textContent = "— " + co.lat.toFixed(5) + ", " + co.lng.toFixed(5);
+      etatMaps.textContent = "— " + co.lat.toFixed(6) + ", " + co.lng.toFixed(6);
       etatMaps.style.color = "var(--ok)";
       ouvrirMaps.hidden = false;
-      ouvrirMaps.href = "https://www.google.com/maps/search/?api=1&query="
-        + co.lat + "," + co.lng;
+      ouvrirMaps.href = lienExact(co.lat, co.lng);
     } else {
       etatMaps.textContent = "— aucune coordonnée";
       etatMaps.style.color = "var(--encre-doux)";
@@ -619,6 +642,48 @@ function carte(c) {
   };
   rendreEtatMaps();
 
+  /* Déplacer le repère fait foi : le champ texte est réécrit pour rester
+     cohérent avec le point réellement enregistré. */
+  const poserPoint = (lat, lng, recentrer) => {
+    c.coordonnees = { lat: lat, lng: lng };
+    c.maps_url = lienExact(lat, lng);
+    champMaps.value = c.maps_url;
+    if (repere) repere.setLatLng([lat, lng]);
+    if (carte && recentrer) carte.setView([lat, lng], Math.max(carte.getZoom(), 17));
+    rendreEtatMaps();
+    noter();
+  };
+
+  // Centre de repli quand le client n'a pas encore de point : Metro Manila.
+  const CENTRE_DEFAUT = [14.5547, 121.0244];
+
+  el._monterCarte = () => {
+    if (carte) { setTimeout(() => carte.invalidateSize(), 0); return; }
+    if (typeof L === "undefined") {
+      boiteCarte.innerHTML = '<div class="vide">Carte indisponible (Leaflet non chargé).</div>';
+      return;
+    }
+    const co = c.coordonnees;
+    const depart = (co && co.lat && co.lng) ? [co.lat, co.lng] : CENTRE_DEFAUT;
+
+    carte = L.map(boiteCarte).setView(depart, co ? 18 : 12);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "© OpenStreetMap"
+    }).addTo(carte);
+
+    repere = L.marker(depart, { draggable: true }).addTo(carte);
+    repere.on("dragend", () => {
+      const p = repere.getLatLng();
+      poserPoint(p.lat, p.lng, false);
+    });
+    carte.on("click", (ev) => poserPoint(ev.latlng.lat, ev.latlng.lng, false));
+
+    // Le conteneur était masqué à la construction : sans ce rappel, Leaflet
+    // calcule une taille nulle et n'affiche qu'un fragment de carte.
+    setTimeout(() => carte.invalidateSize(), 0);
+  };
+
   champMaps.oninput = (e) => {
     const brut = e.target.value;
     c.maps_url = brut;
@@ -626,6 +691,8 @@ function carte(c) {
 
     if (r.etat === "ok") {
       c.coordonnees = { lat: r.lat, lng: r.lng };
+      if (repere) repere.setLatLng([r.lat, r.lng]);
+      if (carte) carte.setView([r.lat, r.lng], 18);
       rendreEtatMaps();
     } else {
       // Coordonnées effacées dès que le lien devient inexploitable : mieux
@@ -634,12 +701,11 @@ function carte(c) {
       ouvrirMaps.hidden = true;
       etatMaps.style.color = "var(--alerte)";
       etatMaps.textContent =
-        r.etat === "vide"      ? "" :
         r.etat === "court"     ? "— lien court : ouvrez-le dans Maps, puis copiez l'adresse de la barre du navigateur" :
         r.etat === "hors_zone" ? "— point hors de Metro Manila (" + r.lat + ", " + r.lng + ")" :
+        r.etat === "vide"      ? "— aucune coordonnée" :
                                  "— coordonnées introuvables dans ce lien";
-      if (r.etat === "vide") { etatMaps.style.color = "var(--encre-doux)";
-                               etatMaps.textContent = "— aucune coordonnée"; }
+      if (r.etat === "vide") etatMaps.style.color = "var(--encre-doux)";
     }
     noter();
   };
