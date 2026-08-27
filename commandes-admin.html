@@ -635,7 +635,8 @@ function afficher() {
       t.className = "jour";
       const duJour = vues.filter(x => x.date_retrait === jourCourant).map(x => x.id);
       const toutes = duJour.every(id => selection.has(id));
-      t.innerHTML = '<span></span><button type="button" class="tout"></button>';
+      t.innerHTML = '<span></span><button type="button" class="tout"></button>' +
+        '<button type="button" class="tout tournee"></button>';
       t.querySelector("span").textContent = dateLongue(jourCourant);
       const bTout = t.querySelector(".tout");
       bTout.textContent = toutes ? "Tout désélectionner" : "Tout sélectionner";
@@ -643,7 +644,27 @@ function afficher() {
         duJour.forEach(id => toutes ? selection.delete(id) : selection.add(id));
         afficher();
       };
+
+      /* Une tournée n'appartient à aucune commande en particulier : elle se
+         lance depuis la journée, pas depuis une carte. Le bouton n'apparaît
+         que s'il reste au moins deux livraisons groupables ce jour-là. */
+      const dateDuJour = jourCourant;
+      const bTournee = t.querySelector(".tournee");
+      const groupables = vues.filter(x => x.date_retrait === dateDuJour)
+                             .filter(estGroupable);
+      if (groupables.length >= 2) {
+        bTournee.textContent = "🛵 Grouper une tournée";
+        bTournee.onclick = () => ouvrirTournee(dateDuJour, groupables, panneau);
+      } else {
+        bTournee.remove();
+      }
       liste.appendChild(t);
+
+      const panneau = document.createElement("div");
+      panneau.className = "cmd";
+      panneau.hidden = true;
+      panneau.style.borderLeft = "3px solid var(--accent)";
+      liste.appendChild(panneau);
     }
     liste.appendChild(carte(c));
   });
@@ -878,6 +899,222 @@ function carte(c) {
   }
 
   return el;
+}
+
+/* Une commande est groupable si elle a un point de livraison, aucune course
+   déjà commandée, et n'est pas annulée. Même règle que le bloc individuel :
+   les clients en retrait n'apparaissent jamais. */
+function estGroupable(c) {
+  if (c.statut === "annulee") return false;
+  if (c.lalamove && c.lalamove.orderId) return false;
+  return !!coordonneesDe(c);
+}
+
+/* ---------- Panneau de tournée ----------
+   Trois arrêts au maximum : une moto porte trois sacs. La limite est aussi
+   refusée côté serveur, celle-ci n'est là que pour éviter de cocher pour rien. */
+const MAX_ARRETS = 3;
+
+function ouvrirTournee(date, groupables, panneau) {
+  if (!panneau.hidden) { panneau.hidden = true; panneau.innerHTML = ""; return; }
+  panneau.hidden = false;
+
+  const choisis = new Set();
+  let cotation = null, cotationLe = 0, armee = 0;
+  const VALIDITE = 4 * 60 * 1000;
+
+  panneau.innerHTML = `
+    <h2 style="margin:0 0 4px;font-size:19px">Tournée du ${echapper(dateCourte(date))}</h2>
+    <p style="margin:0 0 10px;font-size:14.5px;color:var(--encre-doux)">
+      Un seul motard, jusqu'à ${MAX_ARRETS} livraisons. Lalamove choisit l'ordre
+      des arrêts pour raccourcir le trajet.</p>
+    <div class="tourneeListe"></div>
+    <div class="actions">
+      <select class="tourneeDepart"></select>
+      <button type="button" class="mineur tourneeCoter" disabled>Estimer la tournée</button>
+      <span class="info tourneeEtat" style="margin:0"></span>
+    </div>
+    <div class="actions" style="margin-top:8px">
+      <button type="button" class="mineur tourneeCourser" hidden
+              style="border-color:var(--alerte);color:var(--alerte)">Commander la tournée</button>
+      <span class="info tourneeCourseEtat" style="margin:0"></span>
+      <button type="button" class="mineur tourneeFermer">Fermer</button>
+    </div>`;
+
+  const zl        = panneau.querySelector(".tourneeListe");
+  const selDepart = panneau.querySelector(".tourneeDepart");
+  const btnCoter  = panneau.querySelector(".tourneeCoter");
+  const etatCoter = panneau.querySelector(".tourneeEtat");
+  const btnCourse = panneau.querySelector(".tourneeCourser");
+  const etatCourse= panneau.querySelector(".tourneeCourseEtat");
+
+  panneau.querySelector(".tourneeFermer").onclick = () => {
+    panneau.hidden = true; panneau.innerHTML = "";
+  };
+
+  lireLieuxLalamove().then(cfg => {
+    selDepart.innerHTML = (cfg.lieux || [])
+      .map(l => `<option value="${echapper(l.cle)}">${echapper(l.nom)}</option>`).join("");
+    if (cfg.defaut) selDepart.value = cfg.defaut;
+  }).catch(e => {
+    console.error(e);
+    etatCoter.textContent = "Points de départ indisponibles.";
+  });
+
+  // Toute modification de la sélection périme la cotation : le prix affiché
+  // ne correspondrait plus aux arrêts cochés.
+  function oublierCotation() {
+    cotation = null; cotationLe = 0; armee = 0;
+    btnCourse.hidden = true;
+    btnCourse.textContent = "Commander la tournée";
+    btnCourse.style.background = "";
+    etatCoter.textContent = "";
+    etatCourse.textContent = "";
+  }
+
+  function dessiner() {
+    zl.innerHTML = "";
+    groupables.forEach(c => {
+      const ligne = document.createElement("div");
+      ligne.className = "edit-l";
+      ligne.innerHTML = `
+        <input type="checkbox" class="coche">
+        <span class="n"></span>
+        <span class="p" style="min-width:0"></span>`;
+      const coche = ligne.querySelector(".coche");
+      coche.checked = choisis.has(c.id);
+      // Le plafond bloque les cases non cochées, jamais celles déjà cochées :
+      // il doit toujours rester possible de décocher pour changer d'avis.
+      coche.disabled = !coche.checked && choisis.size >= MAX_ARRETS;
+      coche.onchange = () => {
+        coche.checked ? choisis.add(c.id) : choisis.delete(c.id);
+        oublierCotation();
+        dessiner();
+      };
+      ligne.querySelector(".n").textContent =
+        (c.client?.nom || "—") + " · " + (c.client?.adresse || "sans adresse");
+      ligne.querySelector(".p").textContent = c.numero || c.id;
+      zl.appendChild(ligne);
+    });
+
+    btnCoter.disabled = choisis.size < 2;
+    const restant = MAX_ARRETS - choisis.size;
+    etatCoter.textContent = etatCoter.textContent ||
+      (choisis.size < 2 ? "Cochez au moins deux livraisons."
+                        : restant > 0 ? restant + " arrêt(s) encore possible(s)." : "");
+  }
+  dessiner();
+
+  const arrivees = () => groupables.filter(c => choisis.has(c.id)).map(c => {
+    const co = coordonneesDe(c);
+    return {
+      lat: String(co.lat), lng: String(co.lng),
+      adresse: c.client?.adresse || "",
+      nom: c.client?.nom || c.client?.telephone || "",
+      tel: c.client?.telephone || "",
+      commandeId: c.id
+    };
+  });
+
+  btnCoter.onclick = async () => {
+    btnCoter.disabled = true;
+    etatCoter.style.color = "";
+    etatCoter.textContent = "Cotation…";
+    try {
+      const r = await httpsCallable(fns, "lalamoveCotationTournee")({
+        depart: selDepart.value, arrivees: arrivees()
+      });
+      const q = r.data;
+      cotation = q; cotationLe = Date.now();
+      const dist = q.distance ? " · " + q.distance.value + " " + q.distance.unit : "";
+      etatCoter.style.color = "var(--ok)";
+      etatCoter.textContent = (q.devise || "PHP") + " " + q.total
+        + " pour " + q.nbArrets + " arrêts · départ " + q.depart + dist;
+      btnCourse.hidden = false;
+      etatCourse.textContent = "";
+    } catch (e) {
+      console.error(e);
+      etatCoter.style.color = "var(--alerte)";
+      etatCoter.textContent = e && e.message ? e.message : "Cotation impossible.";
+      cotation = null; btnCourse.hidden = true;
+    } finally {
+      btnCoter.disabled = choisis.size < 2;
+    }
+  };
+
+  btnCourse.onclick = async () => {
+    if (!armee || Date.now() > armee) {
+      if (!cotation || (Date.now() - cotationLe) > VALIDITE) {
+        etatCourse.style.color = "";
+        etatCourse.textContent = "Cotation expirée — réestimez d'abord.";
+        oublierCotation();
+        return;
+      }
+      armee = Date.now() + 10000;
+      btnCourse.textContent = "Confirmer : " + (cotation.devise || "PHP") + " "
+        + cotation.total + " · " + choisis.size + " arrêts";
+      btnCourse.style.background = "#f6e2de";
+      etatCourse.style.color = "";
+      etatCourse.textContent = "Second clic dans les 10 secondes pour engager.";
+      setTimeout(() => {
+        if (armee && Date.now() > armee - 200) {
+          armee = 0;
+          btnCourse.textContent = "Commander la tournée";
+          btnCourse.style.background = "";
+          etatCourse.textContent = "Annulé — rien n'a été commandé.";
+        }
+      }, 10000);
+      return;
+    }
+
+    // Second clic : point de non-retour, un motard est assigné.
+    armee = 0;
+    btnCourse.disabled = true;
+    btnCourse.textContent = "Commander la tournée";
+    btnCourse.style.background = "";
+    etatCourse.style.color = "";
+    etatCourse.textContent = "Réservation…";
+
+    const lot = groupables.filter(c => choisis.has(c.id));
+    try {
+      const r = await httpsCallable(fns, "lalamoveCourseTournee")({
+        quotationId: cotation.quotationId,
+        stops: cotation.stops,
+        departCoord: cotation.departCoord,
+        arrivees: arrivees()
+      });
+      const o = r.data;
+      const trace = {
+        orderId: o.orderId, statut: o.statut,
+        prix: (o.devise || "PHP") + " " + o.prix,
+        partageUrl: o.partageUrl || "",
+        tournee: lot.length,
+        quand: new Date().toISOString()
+      };
+
+      /* La même course est écrite sur chaque commande du lot : c'est ce qui
+         les fait toutes sortir des groupables et empêche de les recommander.
+         Une écriture qui échoue n'annule pas la course, déjà partie. */
+      const paquet = writeBatch(db);
+      lot.forEach(c => paquet.update(doc(db, "commandes", c.id), { lalamove: trace }));
+      try {
+        await paquet.commit();
+      } catch (err) {
+        console.error("Trace sur les commandes impossible", err);
+        signaler("Tournée commandée, mais non enregistrée sur les commandes.", "err");
+      }
+      lot.forEach(c => c.lalamove = trace);
+
+      panneau.hidden = true; panneau.innerHTML = "";
+      afficher();
+      signaler("Tournée Lalamove commandée (" + lot.length + " arrêts).", "ok");
+    } catch (e) {
+      console.error(e);
+      etatCourse.style.color = "var(--alerte)";
+      etatCourse.textContent = e && e.message ? e.message : "Réservation impossible.";
+      btnCourse.disabled = false;
+    }
+  };
 }
 
 /* ---------- Bloc Lalamove d'une commande ----------
