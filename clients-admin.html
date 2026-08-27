@@ -557,6 +557,11 @@ function carte(c) {
           <button class="mineur c-lala-coter" type="button">Estimer le prix</button>
           <span class="chiffre c-lala-etat"></span>
         </div>
+        <div style="margin-top:7px;display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+          <button class="mineur c-lala-courser" type="button" hidden
+                  style="border-color:var(--alerte);color:var(--alerte)">Commander la course</button>
+          <span class="chiffre c-lala-course-etat"></span>
+        </div>
       </div>
       <div style="margin-top:13px"><label>Tags (séparés par des virgules)</label>
         <input type="text" class="c-tags" placeholder="marché, sans gluten, VIP"></div>
@@ -652,6 +657,8 @@ function carte(c) {
   const selDepart  = d.querySelector(".c-lala-depart");
   const btnCoter   = d.querySelector(".c-lala-coter");
   const etatCoter  = d.querySelector(".c-lala-etat");
+  const btnCourse  = d.querySelector(".c-lala-courser");
+  const etatCourse = d.querySelector(".c-lala-course-etat");
   champMaps.value = c.maps_url;
 
   /* Les départs ne sont demandés qu'à la première fiche géolocalisée ouverte :
@@ -682,6 +689,32 @@ function carte(c) {
     "https://www.google.com/maps/place/" + lat + "," + lng +
     "/@" + lat + "," + lng + ",19z";
 
+  /* La course consomme une cotation : quotationId + les deux stopId. Elle
+     expire au bout de 5 minutes, d'où la mémorisation de l'heure. Une
+     minute de marge est retirée : mieux vaut recoter pour rien que voir
+     Lalamove refuser une réservation entre deux clics. */
+  const VALIDITE_COTATION = 4 * 60 * 1000;
+  let cotation = null, cotationLe = 0, armee = 0;
+
+  function oublierCotation() {
+    cotation = null; cotationLe = 0;
+    desarmer();
+    btnCourse.hidden = true;
+    etatCourse.textContent = "";
+  }
+
+  function cotationFraiche() {
+    return cotation && (Date.now() - cotationLe) < VALIDITE_COTATION;
+  }
+
+  function desarmer() {
+    armee = 0;
+    btnCourse.textContent = "Commander la course";
+    btnCourse.style.borderColor = "var(--alerte)";
+    btnCourse.style.color = "var(--alerte)";
+    btnCourse.style.background = "";
+  }
+
   const rendreEtatMaps = () => {
     const co = c.coordonnees;
     if (co && co.lat && co.lng) {
@@ -699,6 +732,8 @@ function carte(c) {
        point sont les clients en retrait, c'est un cas normal, pas un manque. */
     const cotable = !!(co && co.lat && co.lng);
     boiteLala.hidden = !cotable;
+    // Le point a bougé : la cotation ne correspond plus, la course disparaît.
+    if (!cotable && typeof oublierCotation === "function") oublierCotation();
     if (cotable) remplirDeparts();
   };
   rendreEtatMaps();
@@ -719,6 +754,10 @@ function carte(c) {
         depart: selDepart.value
       });
       const q = r.data;
+      cotation = q; cotationLe = Date.now();
+      btnCourse.hidden = false;
+      desarmer();
+      etatCourse.textContent = "";
       // L'heure est affichée parce qu'une cotation expire au bout de 5 minutes :
       // sans elle, un prix périmé serait indiscernable d'un prix frais.
       const heure = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
@@ -730,6 +769,7 @@ function carte(c) {
       console.error(e);
       etatCoter.style.color = "var(--alerte)";
       etatCoter.textContent = e && e.message ? e.message : "Cotation impossible.";
+      oublierCotation();
     } finally {
       btnCoter.disabled = false;
     }
@@ -839,6 +879,76 @@ function carte(c) {
     } finally {
       // Nominatim n'accepte qu'une requête par seconde : le bouton attend.
       setTimeout(() => { btnChercher.disabled = false; }, 1100);
+    }
+  };
+
+  /* Confirmation en deux temps plutôt qu'une fenêtre système : à 6h du matin
+     on valide un confirm() sans le lire. Un bouton qui change de texte et
+     affiche le prix oblige à regarder ce qu'on est en train d'engager. */
+  btnCourse.onclick = async () => {
+    if (!c.telephone) {
+      etatCourse.style.color = "var(--alerte)";
+      etatCourse.textContent = "Fiche sans téléphone : impossible de commander.";
+      return;
+    }
+
+    // Premier clic : on arme, on affiche le prix, et on laisse 10 secondes.
+    if (!armee || Date.now() > armee) {
+      if (!cotationFraiche()) {
+        etatCourse.style.color = "var(--encre-doux)";
+        etatCourse.textContent = "Cotation expirée — réestimez le prix d'abord.";
+        oublierCotation();
+        return;
+      }
+      armee = Date.now() + 10000;
+      btnCourse.textContent = "Confirmer : " + (cotation.devise || "PHP") + " "
+        + cotation.total + " → " + (c.nom || c.telephone);
+      btnCourse.style.background = "#f6e2de";
+      etatCourse.style.color = "var(--encre-doux)";
+      etatCourse.textContent = "Second clic dans les 10 secondes pour engager la course.";
+      setTimeout(() => {
+        if (armee && Date.now() > armee - 200) {
+          desarmer();
+          etatCourse.textContent = "Annulé — rien n'a été commandé.";
+        }
+      }, 10000);
+      return;
+    }
+
+    // Second clic : point de non-retour.
+    desarmer();
+    btnCourse.disabled = true;
+    etatCourse.style.color = "var(--encre-doux)";
+    etatCourse.textContent = "Réservation…";
+    try {
+      const stops = cotation.stops || [];
+      const r = await httpsCallable(fns, "lalamoveCourse")({
+        quotationId: cotation.quotationId,
+        stopIdDepart: stops[0] && stops[0].stopId,
+        stopIdArrivee: stops[1] && stops[1].stopId,
+        nomClient: c.nom || c.telephone,
+        telClient: c.telephone,
+        consignes: (c.adresse || "").slice(0, 200)
+      });
+      const o = r.data;
+      etatCourse.style.color = "var(--ok)";
+      etatCourse.textContent = "Course " + o.orderId + " · " + o.statut
+        + (o.traceEcrite ? "" : " · trace non enregistrée");
+      if (o.partageUrl) {
+        const a = document.createElement("a");
+        a.className = "lien"; a.target = "_blank"; a.rel = "noopener";
+        a.href = o.partageUrl; a.textContent = "Suivre";
+        a.style.marginLeft = "9px";
+        etatCourse.after(a);
+      }
+      // La cotation est consommée : la réutiliser créerait un doublon payant.
+      cotation = null; cotationLe = 0;
+      btnCourse.hidden = true;
+    } catch (e) {
+      console.error(e);
+      etatCourse.style.color = "var(--alerte)";
+      etatCourse.textContent = e && e.message ? e.message : "Réservation impossible.";
+      btnCourse.disabled = false;
     }
   };
 
