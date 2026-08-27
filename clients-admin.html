@@ -328,6 +328,7 @@ async function charger() {
         id: d.id,
         nom: v.nom || "",
         telephone: v.telephone || d.id,
+        telephone_local: v.telephone_local || "",
         adresse: v.adresse || "",
         maps_url: v.maps_url || "",
         coordonnees: v.coordonnees || null,
@@ -413,6 +414,8 @@ $("btnImporter").onclick = async () => {
         // client : un import qui les écraserait détruirait un vrai travail.
         maps_url: ancien ? (ancien.maps_url || "") : "",
         coordonnees: ancien ? (ancien.coordonnees || null) : null,
+        // Saisi à la main comme les coordonnées : un import ne l'écrase pas.
+        telephone_local: ancien ? (ancien.telephone_local || "") : "",
         groupe: ancien ? ancien.groupe : "",
         tags: ancien ? ancien.tags : [],
         notes: ancien ? ancien.notes : "",
@@ -521,6 +524,9 @@ function carte(c) {
         <div><label>Nom</label><input type="text" class="c-nom"></div>
         <div><label>Téléphone</label><input type="text" class="c-tel" readonly
              style="background:#f2ece2;color:var(--encre-doux)"></div>
+        <div><label>Numéro local <span style="opacity:.75">— livraison</span></label>
+             <input type="text" class="c-tel-local"
+                    placeholder="Si le numéro ci-dessus est étranger"></div>
         <div><label>Segment interne</label><input type="text" class="c-groupe" list="groupesConnus"
              placeholder="revendeur, café, habitué…"></div>
         <div>
@@ -600,6 +606,7 @@ function carte(c) {
 
   d.querySelector(".c-nom").value     = c.nom;
   d.querySelector(".c-tel").value     = c.telephone;
+  d.querySelector(".c-tel-local").value = c.telephone_local || "";
   d.querySelector(".c-groupe").value  = c.groupe;
   d.querySelector(".c-adresse").value = c.adresse;
   d.querySelector(".c-tags").value    = c.tags.join(", ");
@@ -647,6 +654,12 @@ function carte(c) {
     noter();
   };
   d.querySelector(".c-adresse").oninput = (e) => { c.adresse = e.target.value; noter(); };
+  /* Le motard appelle, il n'écrit pas sur WhatsApp. Quand le numéro de la
+     fiche est étranger, c'est celui-ci que reçoit Lalamove. */
+  d.querySelector(".c-tel-local").oninput = (e) => {
+    c.telephone_local = e.target.value.trim();
+    noter();
+  };
 
   /* ----- Lien Maps, coordonnées et carte ----- */
   const champMaps  = d.querySelector(".c-maps");
@@ -1053,7 +1066,8 @@ $("btnEnregistrer").onclick = async () => {
     const paquet = writeBatch(db);
     clients.filter(c => modifies.has(c.id)).forEach(c => {
       paquet.set(doc(db, "clients", c.id), {
-        nom: c.nom, telephone: c.telephone, adresse: c.adresse,
+        nom: c.nom, telephone: c.telephone,
+        telephone_local: c.telephone_local || "", adresse: c.adresse,
         maps_url: c.maps_url || "", coordonnees: c.coordonnees || null,
         groupe: c.groupe, tags: c.tags, notes: c.notes,
         archive: !!c.archive,
