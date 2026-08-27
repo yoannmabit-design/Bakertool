@@ -156,6 +156,8 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChang
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, collection, getDocs, doc, getDoc, setDoc, deleteDoc, writeBatch }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFunctions, httpsCallable }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDuq8KS8M_Z8U7BlSp6MvE-6Y9OYYaDujE",
@@ -169,6 +171,9 @@ const firebaseConfig = {
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db   = getFirestore(app);
+// Les clés Lalamove vivent côté serveur : cette page ne fait qu'appeler les
+// fonctions. La région doit correspondre au déploiement, sinon appel dans le vide.
+const fns  = getFunctions(app, "asia-southeast1");
 const $    = (id) => document.getElementById(id);
 const peso = (n) => "₱" + Number(n || 0).toLocaleString("en-PH");
 
@@ -479,6 +484,20 @@ function afficher() {
   vus.forEach(c => liste.appendChild(carte(c)));
 }
 
+/* ----- Lalamove : points de départ -----
+   La liste vit dans Firestore (parametres/lalamove_lieux) et transite par la
+   fonction serveur : ajouter un lieu ne demande pas de toucher à cette page.
+   Chargée une seule fois par ouverture de page, partagée par toutes les fiches. */
+let promesseLieux = null;
+function lireLieuxLalamove() {
+  if (!promesseLieux) {
+    promesseLieux = httpsCallable(fns, "lalamoveLieux")()
+      .then(r => r.data)
+      .catch(e => { promesseLieux = null; throw e; });
+  }
+  return promesseLieux;
+}
+
 function carte(c) {
   const cpt = compteDe(c);
   const el = document.createElement("div");
@@ -528,6 +547,15 @@ function carte(c) {
              border-radius:var(--r);overflow:hidden"></div>
         <div class="chiffre" style="margin-top:5px">
           Cliquez sur la carte ou déplacez le repère pour ajuster le point de livraison.
+        </div>
+      </div>
+      <div class="c-lala" style="margin-top:13px" hidden>
+        <label>Livraison Lalamove</label>
+        <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+          <select class="c-lala-depart" style="padding:10px 11px;border:1px solid var(--trait);
+                  border-radius:var(--r);background:#fff;font:inherit;font-size:17px;color:var(--encre)"></select>
+          <button class="mineur c-lala-coter" type="button">Estimer le prix</button>
+          <span class="chiffre c-lala-etat"></span>
         </div>
       </div>
       <div style="margin-top:13px"><label>Tags (séparés par des virgules)</label>
@@ -620,7 +648,30 @@ function carte(c) {
   const etatMaps   = d.querySelector(".c-maps-etat");
   const ouvrirMaps = d.querySelector(".c-maps-ouvrir");
   const boiteCarte = d.querySelector(".c-carte");
+  const boiteLala  = d.querySelector(".c-lala");
+  const selDepart  = d.querySelector(".c-lala-depart");
+  const btnCoter   = d.querySelector(".c-lala-coter");
+  const etatCoter  = d.querySelector(".c-lala-etat");
   champMaps.value = c.maps_url;
+
+  /* Les départs ne sont demandés qu'à la première fiche géolocalisée ouverte :
+     inutile d'appeler le serveur pour un client qui vient chercher son pain. */
+  let departsCharges = false;
+  function remplirDeparts() {
+    if (departsCharges) return;
+    departsCharges = true;
+    lireLieuxLalamove().then(cfg => {
+      const lieux = cfg.lieux || [];
+      selDepart.innerHTML = lieux
+        .map(l => '<option value="' + ech(l.cle) + '">' + ech(l.nom) + '</option>').join("");
+      if (cfg.defaut) selDepart.value = cfg.defaut;
+    }).catch(e => {
+      console.error(e);
+      etatCoter.style.color = "var(--alerte)";
+      etatCoter.textContent = "Points de départ indisponibles.";
+      departsCharges = false;
+    });
+  }
 
   let carte = null, repere = null;
 
@@ -643,8 +694,46 @@ function carte(c) {
       etatMaps.style.color = "var(--encre-doux)";
       ouvrirMaps.hidden = true;
     }
+    /* Pas de coordonnées, pas de cotation : un bouton qui refuserait de
+       fonctionner serait moins clair qu'un bouton absent. Les fiches sans
+       point sont les clients en retrait, c'est un cas normal, pas un manque. */
+    const cotable = !!(co && co.lat && co.lng);
+    boiteLala.hidden = !cotable;
+    if (cotable) remplirDeparts();
   };
   rendreEtatMaps();
+
+  /* Une cotation ne réserve rien et ne coûte rien : elle demande un prix.
+     C'est la création de course, ailleurs, qui engagera de l'argent. */
+  btnCoter.onclick = async () => {
+    const co = c.coordonnees;
+    if (!co || !co.lat || !co.lng) return;
+    btnCoter.disabled = true;
+    etatCoter.style.color = "var(--encre-doux)";
+    etatCoter.textContent = "Cotation…";
+    try {
+      const r = await httpsCallable(fns, "lalamoveCotation")({
+        lat: String(co.lat),
+        lng: String(co.lng),
+        adresse: c.adresse || "",
+        depart: selDepart.value
+      });
+      const q = r.data;
+      // L'heure est affichée parce qu'une cotation expire au bout de 5 minutes :
+      // sans elle, un prix périmé serait indiscernable d'un prix frais.
+      const heure = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+      const dist = q.distance ? (" · " + q.distance.value + " " + q.distance.unit) : "";
+      etatCoter.style.color = "var(--ok)";
+      etatCoter.textContent = (q.devise || "PHP") + " " + q.total
+        + " · départ " + q.depart + dist + " · à " + heure;
+    } catch (e) {
+      console.error(e);
+      etatCoter.style.color = "var(--alerte)";
+      etatCoter.textContent = e && e.message ? e.message : "Cotation impossible.";
+    } finally {
+      btnCoter.disabled = false;
+    }
+  };
 
   /* Déplacer le repère fait foi : le champ texte est réécrit pour rester
      cohérent avec le point réellement enregistré. */
