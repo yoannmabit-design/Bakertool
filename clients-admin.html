@@ -513,7 +513,11 @@ function carte(c) {
         </div>
       </div>
       <div style="margin-top:13px"><label>Adresse</label>
-        <textarea class="c-adresse"></textarea></div>
+        <textarea class="c-adresse"></textarea>
+        <div style="margin-top:6px;display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+          <button class="mineur c-chercher" type="button">Chercher sur la carte</button>
+          <span class="chiffre c-chercher-etat"></span>
+        </div></div>
       <div style="margin-top:13px">
         <label>Lien Google Maps <span class="c-maps-etat" style="opacity:.75"></span></label>
         <input type="text" class="c-maps" placeholder="Coller un lien Maps, ou « 14.55, 121.03 »">
@@ -709,6 +713,46 @@ function carte(c) {
     }
     noter();
   };
+  /* ----- Recherche d'adresse (Nominatim, sans clé ni compte) -----
+     La machine propose, Yoann tranche : le résultat n'est jamais enregistré
+     tel quel sans qu'il l'ait vu sur la carte. Les adresses de Manille sont
+     trop mal référencées pour faire autrement. */
+  const btnChercher  = d.querySelector(".c-chercher");
+  const etatChercher = d.querySelector(".c-chercher-etat");
+
+  btnChercher.onclick = async () => {
+    const requete = (c.adresse || "").trim();
+    if (!requete) { etatChercher.textContent = "Renseignez d'abord l'adresse."; return; }
+
+    // La carte doit exister avant qu'on puisse y poser quoi que ce soit.
+    el._monterCarte();
+
+    btnChercher.disabled = true;
+    etatChercher.textContent = "Recherche…";
+    try {
+      // « Metro Manila » ajouté d'office : sans lui, Nominatim part volontiers
+      // sur une rue homonyme à l'autre bout du monde.
+      const url = "https://nominatim.openstreetmap.org/search?format=json&limit=1&q="
+        + encodeURIComponent(requete + ", Metro Manila, Philippines");
+      const r = await fetch(url, { headers: { "Accept": "application/json" } });
+      const j = await r.json();
+
+      if (!Array.isArray(j) || !j.length) {
+        etatChercher.textContent = "Adresse introuvable — posez le point à la main.";
+      } else {
+        const lat = parseFloat(j[0].lat), lng = parseFloat(j[0].lon);
+        poserPoint(lat, lng, true);
+        etatChercher.textContent = "Point posé — vérifiez et ajustez si besoin.";
+      }
+    } catch (e) {
+      console.error(e);
+      etatChercher.textContent = "Recherche impossible.";
+    } finally {
+      // Nominatim n'accepte qu'une requête par seconde : le bouton attend.
+      setTimeout(() => { btnChercher.disabled = false; }, 1100);
+    }
+  };
+
   d.querySelector(".c-notes").oninput   = (e) => { c.notes = e.target.value; noter(); };
   d.querySelector(".c-tags").oninput    = (e) => {
     c.tags = e.target.value.split(",").map(t => t.trim()).filter(Boolean);
