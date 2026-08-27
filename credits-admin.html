@@ -116,6 +116,9 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChang
 import { getFirestore, collection, collectionGroup, getDocs, doc, getDoc,
          setDoc, writeBatch, increment, query, orderBy, limit }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+// Même liste de rayons que la boutique et les codes promo — un rayon
+// ajouté là-bas est aussitôt disponible ici, une seule source.
+import { RAYONS } from "./promo.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDuq8KS8M_Z8U7BlSp6MvE-6Y9OYYaDujE",
@@ -247,6 +250,12 @@ function carte(c) {
     <div class="detail" hidden>
       <div class="ajout" style="border-bottom:1px dashed var(--trait);padding-bottom:14px">
         <div>
+          <label>Nom <span style="opacity:.7">(vide si le profil Google n'en avait pas)</span></label>
+          <input type="text" class="g-nom-champ" placeholder="Nom du client"
+                 style="width:100%;padding:10px 11px;border:1px solid var(--trait);
+                 border-radius:var(--r);background:#fff;font-size:17px;min-height:44px">
+        </div>
+        <div>
           <label>Groupe tarifaire</label>
           <select class="g-groupe-sel" style="width:100%;padding:10px 11px;border:1px solid var(--trait);
                border-radius:var(--r);background:#fff;font-size:17px;min-height:44px">
@@ -256,6 +265,18 @@ function carte(c) {
         <div>
           <label>Remise (%)</label>
           <input type="number" class="g-remise montant" min="0" max="90" step="1">
+        </div>
+        <div style="grid-column:1/-1;">
+          <label>Portée de la remise <span style="opacity:.7">(vide = tout le panier, comme avant)</span></label>
+          <div class="g-rayons" style="display:flex; flex-wrap:wrap; gap:10px; padding:8px 0;"></div>
+          <input type="text" class="g-produits-champ" placeholder="Codes produits concernés, séparés par des virgules (ex: PAI-BAG, BUT-CRO) — laisser vide si la portée est par rayon"
+                 style="width:100%;padding:10px 11px;border:1px solid var(--trait);
+                 border-radius:var(--r);background:#fff;font-size:15px;min-height:44px;margin-top:6px">
+          <label style="display:block;margin-top:8px;">Quantité minimale <span style="opacity:.7">(vide = pas de minimum)</span></label>
+          <input type="number" class="g-qte-min-champ" min="0" step="1" placeholder="Ex: 20"
+                 style="width:120px;padding:10px 11px;border:1px solid var(--trait);
+                 border-radius:var(--r);background:#fff;font-size:17px;min-height:44px">
+          <p style="font-size:0.78rem;opacity:.7;margin-top:4px;">Un produit précis l'emporte sur un rayon si les deux sont remplis. Le minimum porte sur la quantité totale de ce qui correspond au rayon/produit choisi — en dessous, aucune remise sur ces articles-là.</p>
         </div>
         <button class="action g-valider">Appliquer</button>
         <button class="action g-groupe">Appliquer à tout le groupe</button>
@@ -300,8 +321,21 @@ function carte(c) {
     o.value = g; o.textContent = g;
     selGroupe.appendChild(o);
   });
+  el.querySelector(".g-nom-champ").value = c.nom || "";
   selGroupe.value = c.groupe || "";
   el.querySelector(".g-remise").value = c.remise || "";
+
+  const zoneRayons = el.querySelector(".g-rayons");
+  const rayonsActuels = Array.isArray(c.remise_rayons) ? c.remise_rayons : [];
+  RAYONS.forEach(r => {
+    const label = document.createElement("label");
+    label.style.cssText = "display:flex;align-items:center;gap:5px;font-size:15px;";
+    label.innerHTML = `<input type="checkbox" class="g-rayon-case" value="${r}" ${rayonsActuels.includes(r) ? "checked" : ""}> ${r}`;
+    zoneRayons.appendChild(label);
+  });
+  el.querySelector(".g-produits-champ").value = (Array.isArray(c.remise_produits) ? c.remise_produits : []).join(", ");
+  el.querySelector(".g-qte-min-champ").value = c.remise_qte_min || "";
+
   el.querySelector(".g-valider").onclick = () => enregistrerGroupe(c, el);
   el.querySelector(".g-groupe").onclick  = () => appliquerAuGroupe(c, el);
 
@@ -368,19 +402,35 @@ async function appliquerAuGroupe(c, el) {
    attribut du client : elle se règle depuis la page Clients, et cette page
    ne fait plus que la lire — un champ, un seul endroit où l'écrire. */
 async function enregistrerGroupe(c, el) {
+  const nom = el.querySelector(".g-nom-champ").value.trim();
   const groupe = el.querySelector(".g-groupe-sel").value;
   const remise = Math.min(90, Math.max(0, Number(el.querySelector(".g-remise").value) || 0));
+  const rayons = [...el.querySelectorAll(".g-rayon-case:checked")].map(x => x.value);
+  const produits = el.querySelector(".g-produits-champ").value
+    .split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+  const qteMin = Math.max(0, parseInt(el.querySelector(".g-qte-min-champ").value, 10) || 0);
+  const nomChange = nom !== (c.nom || "");
 
-  if (!confirm(remise > 0
-    ? `Appliquer une remise de ${remise} % à ${c.nom || c.email} ?` +
-      (groupe ? `\n\nGroupe : ${groupe}` : "\n\nAucun groupe.")
-    : `Retirer la remise de ${c.nom || c.email} ?` +
-      (groupe ? `\n\nGroupe : ${groupe}` : "\n\nAucun groupe."))) return;
+  const portee = produits.length ? `Produits : ${produits.join(", ")}`
+    : (rayons.length ? `Rayons : ${rayons.join(", ")}` : "Tout le panier");
+
+  if (!confirm(
+    (nomChange ? `Nom : "${c.nom || "(vide)"}" → "${nom || "(vide)"}"\n\n` : "") +
+    (remise > 0
+      ? `Appliquer une remise de ${remise} % à ${nom || c.nom || c.email} ?\n\n${portee}` +
+        (qteMin > 0 ? `\nÀ partir de ${qteMin} unité(s)` : "") +
+        (groupe ? `\n\nGroupe : ${groupe}` : "\n\nAucun groupe.")
+      : `Retirer la remise de ${nom || c.nom || c.email} ?` +
+        (groupe ? `\n\nGroupe : ${groupe}` : "\n\nAucun groupe.")))) return;
 
   try {
-    await setDoc(doc(db, "comptes", c.id), { groupe, remise }, { merge: true });
-    c.groupe = groupe;
-    c.remise = remise;
+    await setDoc(doc(db, "comptes", c.id), {
+      nom, groupe, remise,
+      remise_rayons: rayons,
+      remise_produits: produits,
+      remise_qte_min: qteMin
+    }, { merge: true });
+    Object.assign(c, { nom, groupe, remise, remise_rayons: rayons, remise_produits: produits, remise_qte_min: qteMin });
     afficher();
     signaler(remise > 0 ? `Remise de ${remise} % appliquée.` : "Remise retirée.");
   } catch (e) {
