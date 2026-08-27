@@ -1647,16 +1647,27 @@ function recalculer(c, panier, option) {
   const pourCalcul = panier.map(l => ({
     qte: Number(l.qte) || 0,
     prixBase: prixBaseLigne(l),
-    rayon: rayonLigne(l)
+    rayon: rayonLigne(l),
+    code: codeLigne(l) || l.code || null
   }));
 
-  const calcul = calculerPrix(pourCalcul, Number(c.remise) || 0, fiche);
+  // La portée du tarif de groupe (rayons/produits/quantité minimale) est
+  // figée sur la commande au même moment que la remise elle-même — un
+  // changement plus tard sur le compte ne doit pas rejouer une commande
+  // déjà passée sans un geste explicite (le bouton "Recalculer").
+  const scope = {
+    rayons: c.remise_rayons || [],
+    produits: c.remise_produits || [],
+    qte_min: Number(c.remise_qte_min) || 0
+  };
 
-  const lignes = panier.map(l => ({
+  const calcul = calculerPrix(pourCalcul, Number(c.remise) || 0, fiche, scope);
+
+  const lignes = panier.map((l, i) => ({
     code: codeLigne(l) || l.code || null,
     nom: l.nom,
     qte: Number(l.qte) || 0,
-    prix: prixUnitaire(prixBaseLigne(l), Number(c.remise) || 0, calcul.source)
+    prix: prixUnitaire(prixBaseLigne(l), Number(c.remise) || 0, calcul.source, calcul.lignesGroupeEligibles[i])
   }));
 
   // Le mode de livraison peut être changé dans l'écran de modification :
@@ -1852,11 +1863,24 @@ function ouvrirModification(c, el) {
         btnRecalc.disabled = true;
         try {
           const snap = await getDoc(doc(db, "comptes", c.compte_uid));
-          const nouvelleRemise = snap.exists() ? (Number(snap.data().remise) || 0) : 0;
-          if (nouvelleRemise === (Number(c.remise) || 0)) {
-            signaler("Déjà à jour — le compte a la même remise (" + nouvelleRemise + "%).");
+          const d = snap.exists() ? snap.data() : {};
+          const nouvelleRemise = Number(d.remise) || 0;
+          const nouveauxRayons = Array.isArray(d.remise_rayons) ? d.remise_rayons : [];
+          const nouveauxProduits = Array.isArray(d.remise_produits) ? d.remise_produits : [];
+          const nouveauQteMin = Number(d.remise_qte_min) || 0;
+
+          const inchange = nouvelleRemise === (Number(c.remise) || 0)
+            && JSON.stringify(nouveauxRayons) === JSON.stringify(c.remise_rayons || [])
+            && JSON.stringify(nouveauxProduits) === JSON.stringify(c.remise_produits || [])
+            && nouveauQteMin === (Number(c.remise_qte_min) || 0);
+
+          if (inchange) {
+            signaler("Déjà à jour — le compte a le même tarif (" + nouvelleRemise + "%).");
           } else {
             c.remise = nouvelleRemise;
+            c.remise_rayons = nouveauxRayons;
+            c.remise_produits = nouveauxProduits;
+            c.remise_qte_min = nouveauQteMin;
             dessiner();
             signaler("Tarif du compte repris : " + nouvelleRemise + "%. Vérifie et enregistre pour appliquer.");
           }
@@ -1907,6 +1931,9 @@ async function enregistrerModification(c, panier, date, option) {
       panier: r.lignes,
       date_retrait: date,
       remise: Number(c.remise) || 0,
+      remise_rayons: c.remise_rayons || [],
+      remise_produits: c.remise_produits || [],
+      remise_qte_min: Number(c.remise_qte_min) || 0,
       sous_total: r.calcul.sousTotal,
       sous_total_brut: r.calcul.base,
       remise_montant: r.calcul.economie,
@@ -2385,16 +2412,21 @@ async function ncAppliquerPromo() {
 // panier qui n'a pas encore de commande derrière lui.
 function ncCalculer() {
   const remise = ncCompte ? (Number(ncCompte.remise) || 0) : 0;
+  const scope = ncCompte ? {
+    rayons: ncCompte.remise_rayons || [],
+    produits: ncCompte.remise_produits || [],
+    qte_min: Number(ncCompte.remise_qte_min) || 0
+  } : {};
   const fiche = ncPromo
     ? { valeur: ncPromo.valeur, type: ncPromo.type, rayons: ncPromo.rayons || [] }
     : null;
 
-  const pourCalcul = ncPanier.map(l => ({ qte: l.qte, prixBase: l.prixBase, rayon: l.rayon }));
-  const calcul = calculerPrix(pourCalcul, remise, fiche);
+  const pourCalcul = ncPanier.map(l => ({ qte: l.qte, prixBase: l.prixBase, rayon: l.rayon, code: l.code }));
+  const calcul = calculerPrix(pourCalcul, remise, fiche, scope);
 
-  const lignes = ncPanier.map(l => ({
+  const lignes = ncPanier.map((l, i) => ({
     code: l.code, nom: l.nom, qte: l.qte,
-    prix: prixUnitaire(l.prixBase, remise, calcul.source)
+    prix: prixUnitaire(l.prixBase, remise, calcul.source, calcul.lignesGroupeEligibles[i])
   }));
 
   const o = ncOptionCourante();
@@ -2476,6 +2508,9 @@ async function ncCreer() {
     client: { nom, telephone: tel, adresse, adresse_detail: adresseDetail },
     panier: r.lignes,
     remise: r.remise,
+    remise_rayons: ncCompte ? (ncCompte.remise_rayons || []) : [],
+    remise_produits: ncCompte ? (ncCompte.remise_produits || []) : [],
+    remise_qte_min: ncCompte ? (Number(ncCompte.remise_qte_min) || 0) : 0,
     remise_source: ncPromo ? "promo" : (r.remise > 0 ? "groupe" : "aucune"),
     code_promo: ncPromo
       ? { code: ncPromo.id, type: ncPromo.type, valeur: Number(ncPromo.valeur) || 0,
