@@ -370,6 +370,8 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChang
 import { getFirestore, collection, getDocs, doc, getDoc, setDoc, updateDoc, writeBatch, increment,
          query, where, limit }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFunctions, httpsCallable }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
 // Même règle de prix que la vitrine et le checkout : un article ajouté ici
 // suit le tarif de groupe et le code promo exactement comme à la commande.
 import { calculerPrix, prixUnitaire, rayonDe, chargerCode, verifierCode, usagesClient, normaliserCode }
@@ -387,6 +389,9 @@ const firebaseConfig = {
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db   = getFirestore(app);
+// Les clés Lalamove vivent côté serveur : cette page ne fait qu'appeler les
+// fonctions. La région doit correspondre au déploiement, sinon appel dans le vide.
+const fns  = getFunctions(app, "asia-southeast1");
 const $    = (id) => document.getElementById(id);
 const peso = (n) => "₱" + Number(n || 0).toLocaleString("en-PH");
 
@@ -671,6 +676,32 @@ function dateLongue(iso) {
   return texte;
 }
 
+/* ---------- Lalamove ----------
+   Les coordonnées de livraison vivent sur la fiche client, pas sur la
+   commande : la collection « clients » est déjà chargée en mémoire pour la
+   création de commande, on la réutilise plutôt que de relire Firestore.
+   Rapprochement par téléphone, comme partout ailleurs dans cette page. */
+function coordonneesDe(c) {
+  const k = cleTel(c.client?.telephone);
+  if (!k) return null;
+  const fiche = clients.find(x => cleTel(x.telephone || x.id) === k);
+  const co = fiche && fiche.coordonnees;
+  return (co && co.lat && co.lng) ? co : null;
+}
+
+/* Points de départ : lus une seule fois par ouverture de page et partagés
+   par toutes les commandes. Ajouter un lieu se fait dans Firestore, sans
+   toucher à cette page. */
+let promesseLieux = null;
+function lireLieuxLalamove() {
+  if (!promesseLieux) {
+    promesseLieux = httpsCallable(fns, "lalamoveLieux")()
+      .then(r => r.data)
+      .catch(e => { promesseLieux = null; throw e; });
+  }
+  return promesseLieux;
+}
+
 function carte(c) {
   const paye = (c.paiement?.statut || "en attente") === "paye";
   // Montant réellement réglé au moment où "Payé" a été coché — capturé à cet
@@ -760,6 +791,9 @@ function carte(c) {
         <button type="button" class="mineur btnModifier">Modifier la commande</button>
       </div>
 
+      <div class="lala" hidden style="margin-top:12px;padding-top:12px;
+           border-top:1px dashed var(--trait)"></div>
+
       <div class="edition" hidden></div>
     </div>`;
 
@@ -839,9 +873,183 @@ function carte(c) {
         enregistrer(c, { "paiement.montant_paye": c.total || 0 });
       };
     }
+
+    monterLalamove(c, el);
   }
 
   return el;
+}
+
+/* ---------- Bloc Lalamove d'une commande ----------
+   Trois états : rien à faire (pas de coordonnées, commande annulée), à coter,
+   ou course déjà partie. L'orderId est écrit sur la commande dès qu'elle
+   existe : c'est ce qui empêche de payer deux fois la même livraison si la
+   page est rechargée ou la carte rouverte. */
+function monterLalamove(c, el) {
+  const zone = el.querySelector(".lala");
+  if (!zone) return;
+
+  // Une commande annulée n'a pas à être livrée.
+  if (c.statut === "annulee") return;
+
+  // Course déjà commandée : plus de bouton, seulement le suivi.
+  if (c.lalamove && c.lalamove.orderId) {
+    zone.hidden = false;
+    zone.innerHTML = `
+      <div class="info"><b>Lalamove</b> course ${echapper(c.lalamove.orderId)}
+        — ${echapper(c.lalamove.statut || "")}
+        ${c.lalamove.prix ? "· " + echapper(String(c.lalamove.prix)) : ""}</div>`;
+    if (c.lalamove.partageUrl) {
+      const a = document.createElement("a");
+      a.className = "lien"; a.target = "_blank"; a.rel = "noopener";
+      a.href = c.lalamove.partageUrl; a.textContent = "Suivre le motard";
+      a.style.marginTop = "7px";
+      zone.appendChild(a);
+    }
+    return;
+  }
+
+  const co = coordonneesDe(c);
+  if (!co) return;   // client en retrait, ou fiche sans point de livraison
+
+  zone.hidden = false;
+  zone.innerHTML = `
+    <div class="actions" style="margin-top:0">
+      <select class="lalaDepart"></select>
+      <button type="button" class="mineur lalaCoter">Estimer la livraison</button>
+      <span class="info lalaEtat" style="margin:0"></span>
+    </div>
+    <div class="actions" style="margin-top:8px">
+      <button type="button" class="mineur lalaCourser" hidden
+              style="border-color:var(--alerte);color:var(--alerte)">Commander la course</button>
+      <span class="info lalaCourseEtat" style="margin:0"></span>
+    </div>`;
+
+  const selDepart  = zone.querySelector(".lalaDepart");
+  const btnCoter   = zone.querySelector(".lalaCoter");
+  const etatCoter  = zone.querySelector(".lalaEtat");
+  const btnCourse  = zone.querySelector(".lalaCourser");
+  const etatCourse = zone.querySelector(".lalaCourseEtat");
+
+  lireLieuxLalamove().then(cfg => {
+    selDepart.innerHTML = (cfg.lieux || [])
+      .map(l => `<option value="${echapper(l.cle)}">${echapper(l.nom)}</option>`).join("");
+    if (cfg.defaut) selDepart.value = cfg.defaut;
+  }).catch(e => {
+    console.error(e);
+    etatCoter.textContent = "Points de départ indisponibles.";
+  });
+
+  /* Une cotation expire au bout de 5 minutes chez Lalamove. On retient une
+     minute de marge : mieux vaut recoter pour rien que voir la réservation
+     refusée entre deux clics. */
+  const VALIDITE = 4 * 60 * 1000;
+  let cotation = null, cotationLe = 0, armee = 0;
+
+  function desarmer() {
+    armee = 0;
+    btnCourse.textContent = "Commander la course";
+    btnCourse.style.background = "";
+  }
+
+  btnCoter.onclick = async () => {
+    btnCoter.disabled = true;
+    etatCoter.style.color = "";
+    etatCoter.textContent = "Cotation…";
+    try {
+      const r = await httpsCallable(fns, "lalamoveCotation")({
+        lat: String(co.lat), lng: String(co.lng),
+        adresse: c.client?.adresse || "",
+        depart: selDepart.value
+      });
+      const q = r.data;
+      cotation = q; cotationLe = Date.now();
+      const dist = q.distance ? " · " + q.distance.value + " " + q.distance.unit : "";
+      etatCoter.style.color = "var(--ok)";
+      etatCoter.textContent = (q.devise || "PHP") + " " + q.total
+        + " · départ " + q.depart + dist;
+      btnCourse.hidden = false;
+      desarmer();
+      etatCourse.textContent = "";
+    } catch (e) {
+      console.error(e);
+      etatCoter.style.color = "var(--alerte)";
+      etatCoter.textContent = e && e.message ? e.message : "Cotation impossible.";
+      cotation = null; btnCourse.hidden = true;
+    } finally {
+      btnCoter.disabled = false;
+    }
+  };
+
+  /* Confirmation en deux temps plutôt qu'une fenêtre système : à 6h du matin
+     on valide un confirm() sans le lire. Un bouton qui change de texte et
+     affiche le prix oblige à regarder ce qu'on engage. */
+  btnCourse.onclick = async () => {
+    if (!armee || Date.now() > armee) {
+      if (!cotation || (Date.now() - cotationLe) > VALIDITE) {
+        etatCourse.style.color = "";
+        etatCourse.textContent = "Cotation expirée — réestimez d'abord.";
+        cotation = null; btnCourse.hidden = true;
+        return;
+      }
+      armee = Date.now() + 10000;
+      btnCourse.textContent = "Confirmer : " + (cotation.devise || "PHP") + " "
+        + cotation.total + " → " + (c.client?.nom || "");
+      btnCourse.style.background = "#f6e2de";
+      etatCourse.style.color = "";
+      etatCourse.textContent = "Second clic dans les 10 secondes pour engager.";
+      setTimeout(() => {
+        if (armee && Date.now() > armee - 200) {
+          desarmer();
+          etatCourse.textContent = "Annulé — rien n'a été commandé.";
+        }
+      }, 10000);
+      return;
+    }
+
+    // Second clic : point de non-retour, un motard est assigné.
+    desarmer();
+    btnCourse.disabled = true;
+    etatCourse.style.color = "";
+    etatCourse.textContent = "Réservation…";
+    try {
+      const stops = cotation.stops || [];
+      const r = await httpsCallable(fns, "lalamoveCourse")({
+        quotationId: cotation.quotationId,
+        stopIdDepart: stops[0] && stops[0].stopId,
+        stopIdArrivee: stops[1] && stops[1].stopId,
+        nomClient: c.client?.nom || c.client?.telephone || "",
+        telClient: c.client?.telephone || "",
+        consignes: (c.client?.adresse || "").slice(0, 200)
+      });
+      const o = r.data;
+
+      /* Écrit sur la commande, pas seulement dans « courses » : c'est ce
+         qui fait disparaître le bouton au rechargement et rend un second
+         paiement impossible. */
+      const trace = {
+        orderId: o.orderId, statut: o.statut,
+        prix: (o.devise || "PHP") + " " + o.prix,
+        partageUrl: o.partageUrl || "",
+        quand: new Date().toISOString()
+      };
+      try {
+        await updateDoc(doc(db, "commandes", c.id), { lalamove: trace });
+      } catch (err) {
+        // La course existe chez Lalamove : on n'annule rien, on signale.
+        console.error("Trace sur la commande impossible", err);
+        signaler("Course commandée, mais non enregistrée sur la commande.", "err");
+      }
+      c.lalamove = trace;
+      monterLalamove(c, el);
+      signaler("Course Lalamove commandée.", "ok");
+    } catch (e) {
+      console.error(e);
+      etatCourse.style.color = "var(--alerte)";
+      etatCourse.textContent = e && e.message ? e.message : "Réservation impossible.";
+      btnCourse.disabled = false;
+    }
+  };
 }
 
 function echapper(t) {
