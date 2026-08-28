@@ -339,6 +339,8 @@
       <button data-f="actives" aria-pressed="true">À traiter</button>
       <button data-f="impayees" aria-pressed="false">Impayées</button>
       <button data-f="toutes" aria-pressed="false">Toutes</button>
+      <button type="button" id="btnReclasser" title="Remonter en tête ce qui attend encore une action"
+              style="margin-left:auto">↕ Reclasser</button>
     </div>
     <input type="search" id="recherche"
            placeholder="Chercher un client ou un article…">
@@ -577,9 +579,13 @@ function allerVersCommandeCiblee() {
 }
 
 /* ---------- Filtres ---------- */
+/* Reclasser à la demande : la liste ne bouge jamais toute seule, mais on
+   doit pouvoir la ranger quand on a fini de traiter une série. */
+$("btnReclasser").onclick = () => { afficher(true); };
+
 $("filtres").onclick = (e) => {
   const b = e.target.closest("button");
-  if (!b) return;
+  if (!b || !b.dataset.f) return;
   filtre = b.dataset.f;
   $("filtres").querySelectorAll("button").forEach(x =>
     x.setAttribute("aria-pressed", x === b));
@@ -618,9 +624,30 @@ function correspond(c) {
 }
 
 /* ---------- Affichage ---------- */
-function afficher() {
+/* Ordre affiché à l'écran, figé. Une commande sur laquelle on vient d'agir
+   ne doit pas se déplacer sous les doigts : confirmer une commande la ferait
+   sortir du groupe « à traiter » et il faudrait la rechercher pour pointer
+   son paiement. Le classement se recalcule au chargement, au changement de
+   filtre et à la recherche — jamais après un enregistrement. */
+let ordreFige = null;
+
+function afficher(reclasser = true) {
   const liste = $("liste");
-  const vues = commandes.filter(retenue).filter(correspond);
+  let vues = commandes.filter(retenue).filter(correspond);
+  // Seule la vue « Toutes » mélange des commandes closes et actives : elle
+  // seule a besoin de les séparer.
+  if (filtre === "toutes") vues = trierPourToutes(vues);
+
+  if (reclasser) {
+    ordreFige = vues.map(c => c.id);
+  } else if (ordreFige) {
+    // Une commande absente du classement figé (rare : arrivée entre-temps)
+    // est renvoyée en fin de liste plutôt que placée au hasard.
+    const rang = new Map(ordreFige.map((id, i) => [id, i]));
+    vues.sort((a, b) => (rang.has(a.id) ? rang.get(a.id) : Infinity)
+                      - (rang.has(b.id) ? rang.get(b.id) : Infinity));
+  }
+
   liste.innerHTML = "";
 
   if (!vues.length) {
@@ -649,7 +676,7 @@ function afficher() {
       bTout.textContent = toutes ? "Tout désélectionner" : "Tout sélectionner";
       bTout.onclick = () => {
         duJour.forEach(id => toutes ? selection.delete(id) : selection.add(id));
-        afficher();
+        afficher(false);
       };
 
       /* Une tournée n'appartient à aucune commande en particulier : elle se
@@ -1514,11 +1541,51 @@ function iso(d) {
 // Ordre d'affichage : date de retrait, puis mode de retrait/livraison
 // (pour regrouper les commandes à préparer pour un même point de dépose
 // ou une même tournée), puis les plus récemment reçues en premier.
+/* Ce qui attend un geste de votre part passe devant. Une commande qui vient
+   d'arriver n'est pas prioritaire parce qu'elle est récente, mais parce
+   qu'elle n'est pas encore confirmée : trier par heure de réception ferait
+   au contraire descendre une commande d'hier toujours en attente.
+
+     0 — nouvelle, à confirmer
+     1 — confirmée mais impayée, hors COD : un règlement en ligne est attendu
+     2 — le reste
+
+   Le classement suit donc ce que vous faites : confirmer une commande la
+   fait descendre d'elle-même, sans rien à manipuler. */
+function urgence(c) {
+  if (c.statut === "nouvelle") return 0;
+  const enAttente = (c.paiement?.statut || "en attente") === "en attente";
+  if (enAttente && !estCOD(c) && c.statut !== "annulee") return 1;
+  return 2;
+}
+
+// Une commande est close quand elle a été remise ou annulée : plus rien à
+// en attendre, elle n'a donc plus sa place en haut de l'historique.
+function close(c) {
+  return ["remise", "annulee"].includes(c.statut);
+}
+
 function trierCommandes() {
   commandes.sort((a, b) =>
     (a.date_retrait || "").localeCompare(b.date_retrait || "")
+    || urgence(a) - urgence(b)
     || (a.option?.nom || "").localeCompare(b.option?.nom || "")
     || (b.cree_le || "").localeCompare(a.cree_le || ""));
+}
+
+/* Vue « Toutes » : ce qui reste à traiter d'abord, de la livraison la plus
+   proche à la plus lointaine, puis les commandes closes — les plus récentes
+   en tête, puisqu'on ne les consulte qu'en remontant le temps. */
+function trierPourToutes(liste) {
+  return liste.slice().sort((a, b) => {
+    const ca = close(a), cb = close(b);
+    if (ca !== cb) return ca ? 1 : -1;
+    if (ca) return (b.date_retrait || "").localeCompare(a.date_retrait || "");
+    return (a.date_retrait || "").localeCompare(b.date_retrait || "")
+        || urgence(a) - urgence(b)
+        || (a.option?.nom || "").localeCompare(b.option?.nom || "")
+        || (b.cree_le || "").localeCompare(a.cree_le || "");
+  });
 }
 
 // Le jour que l'ERP doit préparer : le plus proche qui a encore des
@@ -2040,7 +2107,7 @@ async function enregistrerModification(c, panier, date, option) {
 
     trierCommandes();
 
-    afficher();
+    afficher(false);
     publierProduction();
     publierCharges();
 
@@ -2077,7 +2144,7 @@ $("lotAnnuler").onclick = () => {
   selection.clear();
   $("lotStatut").value = "";
   $("lotPaiement").value = "";
-  afficher();
+  afficher(false);
 };
 
 $("lotImprimer").onclick = () => {
@@ -2126,7 +2193,7 @@ $("lotSupprimer").onclick = async () => {
 
     commandes = commandes.filter(c => !selection.has(c.id));
     selection.clear();
-    afficher();
+    afficher(false);
     publierProduction();
     signaler(ids.length + " commande(s) supprimée(s).", "ok");
   } catch (e) {
@@ -2193,7 +2260,7 @@ $("lotAppliquer").onclick = async () => {
     selection.clear();
     $("lotStatut").value = "";
     $("lotPaiement").value = "";
-    afficher();
+    afficher(false);
     publierProduction();
     publierCharges();
     signaler(ids.length + " commande(s) mise(s) à jour.", "ok");
@@ -2313,7 +2380,7 @@ async function enregistrer(c, champs) {
       c.paiement = c.paiement || {};
       c.paiement.montant_paye = champs["paiement.montant_paye"];
     }
-    afficher();
+    afficher(false);
     publierProduction();
     signaler("Enregistré");
   } catch (e) {
