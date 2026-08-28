@@ -528,6 +528,13 @@ async function charger() {
     }
 
     afficher();
+    // Les destinations d'expédition conditionnent l'affichage du bouton de
+    // tournée : une fois connues, on redessine.
+    if (!configLieux) {
+      lireLieuxLalamove()
+        .then(cfg => { configLieux = cfg; afficher(); })
+        .catch(e => console.warn("Lieux Lalamove non lus :", e.message));
+    }
     publierProduction();
     publierCharges();
     allerVersCommandeCiblee();
@@ -652,7 +659,9 @@ function afficher() {
       const bTournee = t.querySelector(".tournee");
       const groupables = vues.filter(x => x.date_retrait === dateDuJour)
                              .filter(estGroupable);
-      if (groupables.length >= 2) {
+      // Une destination fixe compte comme un arrêt possible : expédier vers
+      // une delivery area est une course à part entière.
+      if (groupables.length + destinationsLalamove().length >= 2) {
         bTournee.textContent = "🛵 Grouper une tournée";
         bTournee.onclick = () => ouvrirTournee(dateDuJour, groupables, panneau);
       } else {
@@ -702,6 +711,23 @@ function dateLongue(iso) {
    commande : la collection « clients » est déjà chargée en mémoire pour la
    création de commande, on la réutilise plutôt que de relire Firestore.
    Rapprochement par téléphone, comme partout ailleurs dans cette page. */
+/* Le numéro que le motard appellera. Beaucoup de clients sont des étrangers
+   résidant ici : leur WhatsApp d'origine ne sonne pas depuis un téléphone
+   philippin. Trois sources, de la plus récente à la plus ancienne — celle
+   saisie au checkout prime sur celle tapée à la main, qui prime sur le
+   numéro de contact habituel. */
+function telLivraison(c) {
+  const surCommande = (c.client?.telephone_local || "").trim();
+  if (surCommande) return surCommande;
+
+  const k = cleTel(c.client?.telephone);
+  const fiche = k ? clients.find(x => cleTel(x.telephone || x.id) === k) : null;
+  const surFiche = fiche ? String(fiche.telephone_local || "").trim() : "";
+  if (surFiche) return surFiche;
+
+  return c.client?.telephone || "";
+}
+
 function coordonneesDe(c) {
   const k = cleTel(c.client?.telephone);
   if (!k) return null;
@@ -713,6 +739,18 @@ function coordonneesDe(c) {
 /* Points de départ : lus une seule fois par ouverture de page et partagés
    par toutes les commandes. Ajouter un lieu se fait dans Firestore, sans
    toucher à cette page. */
+/* Lieux Lalamove gardés en mémoire dès le premier chargement : le bouton de
+   tournée doit pouvoir décider s'il s'affiche sans attendre le serveur. */
+let configLieux = null;
+
+/* Un lieu porteur d'un contact est aussi une destination : on peut y expédier
+   du pain, pas seulement en partir. C'est le cas de la delivery area d'un
+   immeuble, où le pain de plusieurs résidents est déposé en une fois. */
+function destinationsLalamove() {
+  return ((configLieux && configLieux.lieux) || [])
+    .filter(l => l.contact_nom && l.contact_tel && l.lat && l.lng);
+}
+
 let promesseLieux = null;
 function lireLieuxLalamove() {
   if (!promesseLieux) {
@@ -919,15 +957,57 @@ function ouvrirTournee(date, groupables, panneau) {
   if (!panneau.hidden) { panneau.hidden = true; panneau.innerHTML = ""; return; }
   panneau.hidden = false;
 
+  /* Commandes et destinations fixes deviennent des « cibles » de même nature :
+     le panneau ne fait plus la différence, seul l'enregistrement final la
+     refait — une destination n'a pas de commande à marquer. */
+  const cibles = [
+    ...groupables.map(c => {
+      const co = coordonneesDe(c);
+      return {
+        cle: c.id,
+        titre: (c.client?.nom || "—") + " · " + (c.client?.adresse || "sans adresse"),
+        marque: c.numero || c.id,
+        commande: c,
+        arrivee: () => ({
+          lat: String(co.lat), lng: String(co.lng),
+          adresse: c.client?.adresse || "",
+          nom: c.client?.nom || c.client?.telephone || "",
+          tel: telLivraison(c),
+          commandeId: c.id
+        })
+      };
+    }),
+    ...destinationsLalamove().map(l => ({
+      cle: "lieu:" + l.cle,
+      titre: l.contact_nom,
+      marque: "Dépôt",
+      commande: null,
+      // Fonction et non valeur figée : la consigne se tape après la
+      // construction de la liste, elle doit être lue au moment de l'envoi.
+      arrivee: () => ({
+        lat: String(l.lat), lng: String(l.lng),
+        adresse: [l.adresse || l.contact_nom, consignes["lieu:" + l.cle] || ""]
+                   .filter(Boolean).join(" — "),
+        nom: l.contact_nom,
+        tel: l.contact_tel,
+        commandeId: null
+      })
+    }))
+  ];
+
   const choisis = new Set();
+  /* Consignes saisies pour une destination fixe : les résidents changent
+     d'une expédition à l'autre, elles ne peuvent donc pas vivre dans la
+     configuration du lieu. Elles ne valent que pour cette course. */
+  const consignes = {};
   let cotation = null, cotationLe = 0, armee = 0;
   const VALIDITE = 4 * 60 * 1000;
 
   panneau.innerHTML = `
     <h2 style="margin:0 0 4px;font-size:19px">Tournée du ${echapper(dateCourte(date))}</h2>
     <p style="margin:0 0 10px;font-size:14.5px;color:var(--encre-doux)">
-      Un seul motard, jusqu'à ${MAX_ARRETS} livraisons. Lalamove choisit l'ordre
-      des arrêts pour raccourcir le trajet.</p>
+      Un seul motard, jusqu'à ${MAX_ARRETS} arrêts. Lalamove choisit l'ordre
+      du trajet. Un dépôt compte comme un arrêt.</p>
     <div class="tourneeListe"></div>
     <div class="actions">
       <select class="tourneeDepart"></select>
@@ -974,7 +1054,7 @@ function ouvrirTournee(date, groupables, panneau) {
 
   function dessiner() {
     zl.innerHTML = "";
-    groupables.forEach(c => {
+    cibles.forEach(t => {
       const ligne = document.createElement("div");
       ligne.className = "edit-l";
       ligne.innerHTML = `
@@ -982,39 +1062,48 @@ function ouvrirTournee(date, groupables, panneau) {
         <span class="n"></span>
         <span class="p" style="min-width:0"></span>`;
       const coche = ligne.querySelector(".coche");
-      coche.checked = choisis.has(c.id);
+      coche.checked = choisis.has(t.cle);
       // Le plafond bloque les cases non cochées, jamais celles déjà cochées :
       // il doit toujours rester possible de décocher pour changer d'avis.
       coche.disabled = !coche.checked && choisis.size >= MAX_ARRETS;
       coche.onchange = () => {
-        coche.checked ? choisis.add(c.id) : choisis.delete(c.id);
+        coche.checked ? choisis.add(t.cle) : choisis.delete(t.cle);
         oublierCotation();
         dessiner();
       };
-      ligne.querySelector(".n").textContent =
-        (c.client?.nom || "—") + " · " + (c.client?.adresse || "sans adresse");
-      ligne.querySelector(".p").textContent = c.numero || c.id;
+      ligne.querySelector(".n").textContent = t.titre;
+      ligne.querySelector(".p").textContent = t.marque;
       zl.appendChild(ligne);
+
+      /* Le commentaire part dans les remarques de l'arrêt : c'est ce que le
+         motard lit dans son application. Affiché seulement quand la
+         destination est cochée, pour ne pas encombrer la liste. */
+      if (!t.commande && coche.checked) {
+        const champ = document.createElement("input");
+        champ.type = "text";
+        champ.placeholder = "Noms et unités — ex. Cruz 12B / Reyes 4A";
+        champ.value = consignes[t.cle] || "";
+        champ.style.cssText = "width:100%;margin:4px 0 8px;padding:8px 10px;"
+          + "border:1px solid var(--trait);border-radius:var(--r);"
+          + "font:inherit;font-size:16px;background:#fff";
+        // Pas de redessin à la frappe : le champ perdrait le curseur.
+        champ.oninput = (e) => { consignes[t.cle] = e.target.value; };
+        zl.appendChild(champ);
+      }
     });
 
-    btnCoter.disabled = choisis.size < 2;
+    // Un seul arrêt suffit : expédier uniquement vers un dépôt est une
+    // course légitime, et le serveur l'accepte.
+    btnCoter.disabled = choisis.size < 1;
     const restant = MAX_ARRETS - choisis.size;
     etatCoter.textContent = etatCoter.textContent ||
-      (choisis.size < 2 ? "Cochez au moins deux livraisons."
+      (choisis.size < 1 ? "Cochez au moins une destination."
                         : restant > 0 ? restant + " arrêt(s) encore possible(s)." : "");
   }
   dessiner();
 
-  const arrivees = () => groupables.filter(c => choisis.has(c.id)).map(c => {
-    const co = coordonneesDe(c);
-    return {
-      lat: String(co.lat), lng: String(co.lng),
-      adresse: c.client?.adresse || "",
-      nom: c.client?.nom || c.client?.telephone || "",
-      tel: c.client?.telephone || "",
-      commandeId: c.id
-    };
-  });
+  const selectionnees = () => cibles.filter(t => choisis.has(t.cle));
+  const arrivees = () => selectionnees().map(t => t.arrivee());
 
   btnCoter.onclick = async () => {
     btnCoter.disabled = true;
@@ -1038,7 +1127,7 @@ function ouvrirTournee(date, groupables, panneau) {
       etatCoter.textContent = e && e.message ? e.message : "Cotation impossible.";
       cotation = null; btnCourse.hidden = true;
     } finally {
-      btnCoter.disabled = choisis.size < 2;
+      btnCoter.disabled = choisis.size < 1;
     }
   };
 
@@ -1075,7 +1164,9 @@ function ouvrirTournee(date, groupables, panneau) {
     etatCourse.style.color = "";
     etatCourse.textContent = "Réservation…";
 
-    const lot = groupables.filter(c => choisis.has(c.id));
+    // Une destination fixe n'a pas de commande à marquer : elle peut être
+    // réexpédiée autant de fois que nécessaire.
+    const lot = selectionnees().filter(t => t.commande).map(t => t.commande);
     try {
       const r = await httpsCallable(fns, "lalamoveCourseTournee")({
         quotationId: cotation.quotationId,
@@ -1088,17 +1179,19 @@ function ouvrirTournee(date, groupables, panneau) {
         orderId: o.orderId, statut: o.statut,
         prix: (o.devise || "PHP") + " " + o.prix,
         partageUrl: o.partageUrl || "",
-        tournee: lot.length,
+        tournee: choisis.size,
         quand: new Date().toISOString()
       };
 
       /* La même course est écrite sur chaque commande du lot : c'est ce qui
          les fait toutes sortir des groupables et empêche de les recommander.
          Une écriture qui échoue n'annule pas la course, déjà partie. */
-      const paquet = writeBatch(db);
-      lot.forEach(c => paquet.update(doc(db, "commandes", c.id), { lalamove: trace }));
       try {
-        await paquet.commit();
+        if (lot.length) {
+          const paquet = writeBatch(db);
+          lot.forEach(c => paquet.update(doc(db, "commandes", c.id), { lalamove: trace }));
+          await paquet.commit();
+        }
       } catch (err) {
         console.error("Trace sur les commandes impossible", err);
         signaler("Tournée commandée, mais non enregistrée sur les commandes.", "err");
@@ -1107,7 +1200,7 @@ function ouvrirTournee(date, groupables, panneau) {
 
       panneau.hidden = true; panneau.innerHTML = "";
       afficher();
-      signaler("Tournée Lalamove commandée (" + lot.length + " arrêts).", "ok");
+      signaler("Tournée Lalamove commandée (" + choisis.size + " arrêt(s)).", "ok");
     } catch (e) {
       console.error(e);
       etatCourse.style.color = "var(--alerte)";
@@ -1256,7 +1349,7 @@ function monterLalamove(c, el) {
         stopIdDepart: stops[0] && stops[0].stopId,
         stopIdArrivee: stops[1] && stops[1].stopId,
         nomClient: c.client?.nom || c.client?.telephone || "",
-        telClient: c.client?.telephone || "",
+        telClient: telLivraison(c),
         consignes: (c.client?.adresse || "").slice(0, 200)
       });
       const o = r.data;
@@ -1647,27 +1740,16 @@ function recalculer(c, panier, option) {
   const pourCalcul = panier.map(l => ({
     qte: Number(l.qte) || 0,
     prixBase: prixBaseLigne(l),
-    rayon: rayonLigne(l),
-    code: codeLigne(l) || l.code || null
+    rayon: rayonLigne(l)
   }));
 
-  // La portée du tarif de groupe (rayons/produits/quantité minimale) est
-  // figée sur la commande au même moment que la remise elle-même — un
-  // changement plus tard sur le compte ne doit pas rejouer une commande
-  // déjà passée sans un geste explicite (le bouton "Recalculer").
-  const scope = {
-    rayons: c.remise_rayons || [],
-    produits: c.remise_produits || [],
-    qte_min: Number(c.remise_qte_min) || 0
-  };
+  const calcul = calculerPrix(pourCalcul, Number(c.remise) || 0, fiche);
 
-  const calcul = calculerPrix(pourCalcul, Number(c.remise) || 0, fiche, scope);
-
-  const lignes = panier.map((l, i) => ({
+  const lignes = panier.map(l => ({
     code: codeLigne(l) || l.code || null,
     nom: l.nom,
     qte: Number(l.qte) || 0,
-    prix: prixUnitaire(prixBaseLigne(l), Number(c.remise) || 0, calcul.source, calcul.lignesGroupeEligibles[i])
+    prix: prixUnitaire(prixBaseLigne(l), Number(c.remise) || 0, calcul.source)
   }));
 
   // Le mode de livraison peut être changé dans l'écran de modification :
@@ -1863,24 +1945,11 @@ function ouvrirModification(c, el) {
         btnRecalc.disabled = true;
         try {
           const snap = await getDoc(doc(db, "comptes", c.compte_uid));
-          const d = snap.exists() ? snap.data() : {};
-          const nouvelleRemise = Number(d.remise) || 0;
-          const nouveauxRayons = Array.isArray(d.remise_rayons) ? d.remise_rayons : [];
-          const nouveauxProduits = Array.isArray(d.remise_produits) ? d.remise_produits : [];
-          const nouveauQteMin = Number(d.remise_qte_min) || 0;
-
-          const inchange = nouvelleRemise === (Number(c.remise) || 0)
-            && JSON.stringify(nouveauxRayons) === JSON.stringify(c.remise_rayons || [])
-            && JSON.stringify(nouveauxProduits) === JSON.stringify(c.remise_produits || [])
-            && nouveauQteMin === (Number(c.remise_qte_min) || 0);
-
-          if (inchange) {
-            signaler("Déjà à jour — le compte a le même tarif (" + nouvelleRemise + "%).");
+          const nouvelleRemise = snap.exists() ? (Number(snap.data().remise) || 0) : 0;
+          if (nouvelleRemise === (Number(c.remise) || 0)) {
+            signaler("Déjà à jour — le compte a la même remise (" + nouvelleRemise + "%).");
           } else {
             c.remise = nouvelleRemise;
-            c.remise_rayons = nouveauxRayons;
-            c.remise_produits = nouveauxProduits;
-            c.remise_qte_min = nouveauQteMin;
             dessiner();
             signaler("Tarif du compte repris : " + nouvelleRemise + "%. Vérifie et enregistre pour appliquer.");
           }
@@ -1931,9 +2000,6 @@ async function enregistrerModification(c, panier, date, option) {
       panier: r.lignes,
       date_retrait: date,
       remise: Number(c.remise) || 0,
-      remise_rayons: c.remise_rayons || [],
-      remise_produits: c.remise_produits || [],
-      remise_qte_min: Number(c.remise_qte_min) || 0,
       sous_total: r.calcul.sousTotal,
       sous_total_brut: r.calcul.base,
       remise_montant: r.calcul.economie,
@@ -2412,21 +2478,16 @@ async function ncAppliquerPromo() {
 // panier qui n'a pas encore de commande derrière lui.
 function ncCalculer() {
   const remise = ncCompte ? (Number(ncCompte.remise) || 0) : 0;
-  const scope = ncCompte ? {
-    rayons: ncCompte.remise_rayons || [],
-    produits: ncCompte.remise_produits || [],
-    qte_min: Number(ncCompte.remise_qte_min) || 0
-  } : {};
   const fiche = ncPromo
     ? { valeur: ncPromo.valeur, type: ncPromo.type, rayons: ncPromo.rayons || [] }
     : null;
 
-  const pourCalcul = ncPanier.map(l => ({ qte: l.qte, prixBase: l.prixBase, rayon: l.rayon, code: l.code }));
-  const calcul = calculerPrix(pourCalcul, remise, fiche, scope);
+  const pourCalcul = ncPanier.map(l => ({ qte: l.qte, prixBase: l.prixBase, rayon: l.rayon }));
+  const calcul = calculerPrix(pourCalcul, remise, fiche);
 
-  const lignes = ncPanier.map((l, i) => ({
+  const lignes = ncPanier.map(l => ({
     code: l.code, nom: l.nom, qte: l.qte,
-    prix: prixUnitaire(l.prixBase, remise, calcul.source, calcul.lignesGroupeEligibles[i])
+    prix: prixUnitaire(l.prixBase, remise, calcul.source)
   }));
 
   const o = ncOptionCourante();
@@ -2508,9 +2569,6 @@ async function ncCreer() {
     client: { nom, telephone: tel, adresse, adresse_detail: adresseDetail },
     panier: r.lignes,
     remise: r.remise,
-    remise_rayons: ncCompte ? (ncCompte.remise_rayons || []) : [],
-    remise_produits: ncCompte ? (ncCompte.remise_produits || []) : [],
-    remise_qte_min: ncCompte ? (Number(ncCompte.remise_qte_min) || 0) : 0,
     remise_source: ncPromo ? "promo" : (r.remise > 0 ? "groupe" : "aucune"),
     code_promo: ncPromo
       ? { code: ncPromo.id, type: ncPromo.type, valeur: Number(ncPromo.valeur) || 0,
