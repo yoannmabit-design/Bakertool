@@ -419,20 +419,72 @@ function lignesArticles(c) {
   }).filter(l => l.qte > 0);
 }
 
-async function charger() {
-  await chargerProduits();
+/* ---------- Cache de session ----------
+   Les onglets de l'administration sont des pages distinctes : chaque bascule
+   relance tout, y compris la lecture Firestore. On garde donc les données de
+   la dernière visite pour peindre l'écran tout de suite, puis on relit en
+   arrière-plan et l'affichage se corrige seul. Aucune actualisation manuelle.
 
+   sessionStorage et non localStorage : le cache meurt avec l'onglet du
+   navigateur, on ne risque pas de rouvrir la boutique demain sur les chiffres
+   d'hier. */
+const CLE_CACHE = "yfb-admin-accueil-v1";
+
+function lireCache() {
+  try {
+    const brut = sessionStorage.getItem(CLE_CACHE);
+    if (!brut) return null;
+    const d = JSON.parse(brut);
+    // Une minute : au-delà, autant attendre les vraies données que d'afficher
+    // un état qui a eu le temps de bouger.
+    if (Date.now() - d.le > 60000) return null;
+    return d;
+  } catch { return null; }
+}
+
+function ecrireCache(commandes, produits) {
+  try {
+    sessionStorage.setItem(CLE_CACHE, JSON.stringify({
+      le: Date.now(), commandes, produits
+    }));
+  } catch {
+    // Quota dépassé : le cache est un confort, pas une dépendance.
+  }
+}
+
+async function charger() {
+  // 1. Peinture immédiate depuis le cache, s'il est frais.
+  const cache = lireCache();
+  if (cache) {
+    cache.produits.forEach(([code, fiche]) => PRODUITS.set(code, fiche));
+    rendre(cache.commandes);
+  }
+
+  // 2. Lecture réelle. Les deux collections partent ensemble : elles ne
+  //    dépendent pas l'une de l'autre, les enchaîner doublait l'attente.
   let commandes = [];
   try {
-    const s = await getDocs(collection(db, "commandes"));
-    s.forEach(d => commandes.push({ id: d.id, ...d.data() }));
+    const [sCommandes] = await Promise.all([
+      getDocs(collection(db, "commandes")),
+      chargerProduits()
+    ]);
+    sCommandes.forEach(d => commandes.push({ id: d.id, ...d.data() }));
   } catch (e) {
     console.error(e);
-    $("avenirReplie").innerHTML = '<div class="vide">Chargement impossible.</div>';
-    $("resume").innerHTML = '<div class="vide">Chargement impossible.</div>';
+    if (!cache) {   // avec un cache affiché, mieux vaut le garder qu'un message d'erreur
+      $("avenirReplie").innerHTML = '<div class="vide">Chargement impossible.</div>';
+      $("resume").innerHTML = '<div class="vide">Chargement impossible.</div>';
+    }
     return;
   }
 
+  ecrireCache(commandes, [...PRODUITS.entries()]);
+  rendre(commandes);
+}
+
+/* Le calcul et l'affichage, séparés de la lecture : le cache et le réseau
+   passent tous les deux par ici. */
+function rendre(commandes) {
   const auj = iso(new Date());
   const dans7 = iso(new Date(Date.now() + 7 * 86400000));
   const mois = auj.slice(0, 7);
