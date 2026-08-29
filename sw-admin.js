@@ -1,6 +1,6 @@
 /* Service worker de l'administration — réseau d'abord.
    La version en ligne l'emporte toujours ; le cache ne sert qu'en cas de coupure. */
-const VERSION = 'yfb-admin-v13';
+const VERSION = 'yfb-admin-v14';
 const ESSENTIELS = [
   './', './index.html',
   './admin.html', './commandes-admin.html', './boutique-admin.html',
