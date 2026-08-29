@@ -412,6 +412,11 @@
             <label for="cpValeur"><span id="cpValeurLabel">Valeur (%)</span></label>
             <input type="number" id="cpValeur" min="0" step="1" value="10">
           </div>
+          <div>
+            <label for="cpLimite">Usages par client <span style="opacity:.7">(vide = sans limite)</span></label>
+            <input type="number" id="cpLimite" min="1" step="1" value="1"
+                   placeholder="sans limite">
+          </div>
         </div>
 
         <div style="margin-top:12px">
@@ -455,6 +460,15 @@
           La remise ne portera que sur les produits des rayons cochés. Un montant
           fixe plus élevé que la part concernée est ramené à cette part : la
           réduction ne déborde jamais sur le reste du panier.
+        </p>
+
+        <p class="aide" style="margin:10px 0 0">
+          Usages par client : laissé vide, le code peut être réutilisé autant
+          de fois que le client le souhaite. « 1 » est le réglage habituel —
+          un geste d'accueil ne se donne qu'une fois. Le décompte porte sur
+          les commandes réellement passées : une commande annulée ne consomme
+          rien, et un abonnement ne compte que pour un usage même s'il produit
+          huit livraisons.
         </p>
 
         <p class="aide" style="margin:10px 0 0">
@@ -1313,6 +1327,8 @@ function viderFormuleCode() {
   $("cpCode").readOnly = false;
   $("cpType").value = "pourcentage";
   $("cpValeur").value = 10;
+  // 1 par défaut : le cas courant. Vider le champ ouvre le code sans limite.
+  $("cpLimite").value = 1;
   $("cpLibelle").value = "";
   ecrireRayons([]);
   $("cpDebut").value = "";
@@ -1333,6 +1349,8 @@ function modifierCode(c) {
   $("cpCode").readOnly = true;
   $("cpType").value = c.type || "pourcentage";
   $("cpValeur").value = Number(c.valeur) || 0;
+  // null en base = sans limite : le champ reste vide.
+  $("cpLimite").value = c.limite_par_client == null ? "" : c.limite_par_client;
   $("cpLibelle").value = c.libelle || "";
   ecrireRayons(c.rayons);
   $("cpDebut").value = c.date_debut || "";
@@ -1392,6 +1410,16 @@ function afficherCodes() {
     bloc.querySelector(".cp-code").textContent    = c.id;
     bloc.querySelector(".cp-valeur").textContent  = libelleValeur(c);
     bloc.querySelector(".cp-portee").textContent  = libellePortee(c);
+    // Sans limite : à dire, c'est le réglage qui coûte le plus cher si
+    // on l'a laissé par mégarde.
+    {
+      const l = c.limite_par_client;
+      const m = document.createElement("span");
+      m.className = "cp-portee";
+      m.textContent = l == null ? "usages illimités"
+                    : (l === 1 ? "1 usage par client" : l + " usages par client");
+      bloc.querySelector(".cp-portee").after(m);
+    }
     // La restriction se voit dans la liste : sans cela, il faudrait ouvrir
     // chaque code pour savoir lequel court sur tout un plan.
     if (c.premiere_livraison_seulement === true) {
@@ -1472,6 +1500,8 @@ $("btnCodeEnregistrer").onclick = async () => {
   const id = normaliserCode($("cpCode").value);
   const type = $("cpType").value;
   const valeur = Number($("cpValeur").value);
+  const brutLimite = $("cpLimite").value.trim();
+  const limite = brutLimite === "" ? null : Number(brutLimite);
   const debut = $("cpDebut").value || null;
   const fin   = $("cpFin").value   || null;
 
@@ -1485,6 +1515,10 @@ $("btnCodeEnregistrer").onclick = async () => {
   }
   if (type === "pourcentage" && valeur > 100) {
     etatCode("Un pourcentage ne peut pas dépasser 100.", "err");
+    return;
+  }
+  if (limite !== null && (!Number.isInteger(limite) || limite < 1)) {
+    etatCode("Le nombre d'usages par client doit être un entier d'au moins 1, ou vide pour aucune limite.", "err");
     return;
   }
   if (debut && fin && fin < debut) {
@@ -1506,6 +1540,8 @@ $("btnCodeEnregistrer").onclick = async () => {
       rayons: lireRayons(),
       type,
       valeur: Math.round(valeur),
+      // Champ vide = sans limite : on écrit null, que verifierCode lit ainsi.
+      limite_par_client: limite,
       date_debut: debut,
       date_fin: fin,
       actif: $("cpActif").checked,
