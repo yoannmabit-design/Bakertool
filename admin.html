@@ -51,8 +51,11 @@
     border-radius:var(--r);padding:18px;margin-bottom:16px;
   }
   .carte h2{font-size:17px;margin:0 0 4px}
+  /* Pas d'opacité ici : elle délavait le texte jusqu'à un contraste de 3,4
+     sur fond blanc, en dessous du seuil lisible. La petite taille et la
+     graisse normale suffisent à le mettre en retrait. */
   .carte h2 .periode{font-size:12.5px;font-weight:400;color:var(--encre-doux);
-    opacity:.75;margin-left:8px}
+    margin-left:8px}
   .carte p.aide{font-size:15px;color:var(--encre-doux);margin:0 0 14px}
 
   /* Carte principale : liseré de suivi à gauche, comme sur les autres pages. */
@@ -90,7 +93,7 @@
     color:var(--encre-doux);margin:11px 0 3px;
   }
   .mode .compte{
-    font-size:13px;letter-spacing:0;text-transform:none;opacity:.75;
+    font-size:13px;letter-spacing:0;text-transform:none;
   }
   /* Deux lignes au maximum : nom et montant sur la première, statut sur la
      seconde. Le mode n'est plus répété, il sert de titre au groupe. */
@@ -149,7 +152,7 @@
     color:var(--encre-doux);margin:12px 0 3px;
   }
   .categorie .compte{
-    font-size:13px;letter-spacing:0;text-transform:none;opacity:.75;
+    font-size:13px;letter-spacing:0;text-transform:none;
     font-variant-numeric:tabular-nums;
   }
 
