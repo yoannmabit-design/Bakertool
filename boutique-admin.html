@@ -536,6 +536,12 @@ const JOURS = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"
 // Catégories de la vitrine — indépendantes de celles de l'ERP.
 const RAYONS = ["Breads", "Pastries", "Cakes", "Frozen", "Other"];
 
+/* Rubans proposés sur la fiche produit. La vitrine affiche le libellé
+   tel quel et en déduit la couleur ; ajouter une valeur ici suffit à la
+   rendre disponible, mais une valeur inconnue de la vitrine s'affichera
+   en terracotta par défaut. */
+const RUBANS = ["Best seller", "NEW", "Pre-order", "Promo", "Product of the month"];
+
 // Premier remplissage à partir de la catégorie technique.
 function rayonParDefaut(categorieERP) {
   const c = (categorieERP || "").toLowerCase();
@@ -914,6 +920,8 @@ async function chargerProduits() {
         // de ce réglage restent proposés à l'abonnement.
         abonnement: p.abonnement !== false,
         rayon: p.rayon || rayonParDefaut(it.categorie || it.category),
+        // Vide = pas de ruban. Aucun produit existant n'est affecté.
+        ruban: p.ruban || "",
         mode_stock: p.mode_stock || "illimite",
         stock: p.stock ?? 0,
         capacite_jour: p.capacite_jour ?? 0
@@ -1026,6 +1034,13 @@ function afficherProduits() {
               ${RAYONS.map(r => `<option value="${r}">${r}</option>`).join("")}
             </select>
           </div>
+          <div>
+            <label>Ruban sur la photo</label>
+            <select class="ruban">
+              <option value="">Aucun</option>
+              ${RUBANS.map(r => `<option value="${r}">${r}</option>`).join("")}
+            </select>
+          </div>
         </div>
         <div style="margin-top:12px">
           <label>Description pour le client</label>
@@ -1085,6 +1100,9 @@ function afficherProduits() {
     const selRayon = bloc.querySelector(".rayon");
     selRayon.value = p.rayon;
     selRayon.onchange = (e) => p.rayon = e.target.value;
+    const selRuban = bloc.querySelector(".ruban");
+    selRuban.value = p.ruban;
+    selRuban.onchange = (e) => p.ruban = e.target.value;
     const selMode = bloc.querySelector(".mode-stock");
     const champStock = bloc.querySelector(".stock");
     const boiteStock = bloc.querySelector(".champ-stock");
@@ -1216,6 +1234,8 @@ $("btnEnregistrer").onclick = async () => {
           nom: p.nom,
           categorie: p.categorie,
           rayon: p.rayon,
+          // Libellé affiché sur la photo en vitrine. Vide = aucun ruban.
+          ruban: p.ruban || "",
           prix_vente: Number(p.prix) || 0,
           description_client: p.description.trim(),
           photo_url: p.photo.trim(),
