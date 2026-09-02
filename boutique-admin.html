@@ -449,6 +449,11 @@
           Sur un abonnement, réservé à la première livraison
         </label>
 
+        <label style="display:flex;align-items:center;gap:8px;margin-top:9px">
+          <input type="checkbox" id="cpAbonnementSeul">
+          Réservé aux abonnements (refusé sur une commande simple)
+        </label>
+
         <p class="aide" style="margin:14px 0 0">
           Sans cette case, un code utilisé sur un abonnement s'applique à
           toutes les livraisons du plan. Un code à 15 % sur huit livraisons
@@ -1355,6 +1360,7 @@ function viderFormuleCode() {
   $("cpFin").value = "";
   $("cpActif").checked = true;
   $("cpPremiereSeule").checked = false;
+  $("cpAbonnementSeul").checked = false;
   $("btnCodeAnnuler").hidden = true;
   majTypeCode();
   etatCode("");
@@ -1377,6 +1383,7 @@ function modifierCode(c) {
   $("cpFin").value = c.date_fin || "";
   $("cpActif").checked = c.actif !== false;
   $("cpPremiereSeule").checked = c.premiere_livraison_seulement === true;
+  $("cpAbonnementSeul").checked = c.abonnement_seulement === true;
   $("btnCodeAnnuler").hidden = false;
   majTypeCode();
   etatCode("Modification en cours.");
@@ -1448,6 +1455,12 @@ function afficherCodes() {
       m.textContent = "1ʳᵉ livraison seule";
       bloc.querySelector(".cp-portee").after(m);
     }
+    if (c.abonnement_seulement === true) {
+      const m = document.createElement("span");
+      m.className = "cp-portee";
+      m.textContent = "Abonnements seuls";
+      bloc.querySelector(".cp-portee").after(m);
+    }
     bloc.querySelector(".cp-libelle").textContent = c.libelle || "";
 
     const zonePeriode = bloc.querySelector(".cp-periode");
@@ -1509,6 +1522,7 @@ async function ecrireCode(id, champs) {
     date_debut:        existant.date_debut        ?? null,
     date_fin:          existant.date_fin          ?? null,
     limite_par_client: existant.limite_par_client ?? null,
+    abonnement_seulement: existant.abonnement_seulement === true,
     usages:            existant.usages            ?? {},
     ...champs,
     cree_le: existant.cree_le || new Date().toISOString(),
@@ -1566,7 +1580,8 @@ $("btnCodeEnregistrer").onclick = async () => {
       date_fin: fin,
       actif: $("cpActif").checked,
       // Portée sur un abonnement : tout le plan par défaut.
-      premiere_livraison_seulement: $("cpPremiereSeule").checked
+      premiere_livraison_seulement: $("cpPremiereSeule").checked,
+      abonnement_seulement: $("cpAbonnementSeul").checked
     });
     viderFormuleCode();
     await chargerCodes();
