@@ -144,10 +144,24 @@ const MOTIFS = {
 
 let comptes = [];
 
-/* Groupes tarifaires. Ajouter un groupe = ajouter une ligne ici.
-   Un groupe saisi autrefois en texte libre reste conservé sur la fiche du
-   client même s'il ne figure pas dans cette liste. */
-const GROUPES = ["Reseller", "Bulk order"];
+/* Groupes tarifaires — lus dans Firestore, même source que l'admin Clients,
+   où ils se créent et se retirent. Un groupe saisi autrefois en texte libre
+   reste conservé sur la fiche du client même s'il ne figure plus dans cette
+   liste. */
+const GROUPES_DOC = "parametres/groupes_tarifaires";
+let GROUPES = ["Reseller", "Bulk order"];
+
+async function chargerGroupes() {
+  try {
+    const s = await getDoc(doc(db, GROUPES_DOC));
+    if (s.exists() && Array.isArray(s.data().groupes)) {
+      GROUPES = s.data().groupes.filter(Boolean);
+    }
+  } catch (e) {
+    // La page reste utilisable avec les groupes historiques.
+    console.error(e);
+  }
+}
 
 /* ---------- Connexion ---------- */
 $("btnConnexion").onclick = async () => {
@@ -180,6 +194,7 @@ onAuthStateChanged(auth, async (user) => {
 /* ---------- Chargement ---------- */
 async function charger() {
   try {
+    await chargerGroupes();
     const s = await getDocs(collection(db, "comptes"));
     comptes = [];
     s.forEach(d => {
