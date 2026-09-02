@@ -392,6 +392,11 @@ async function appliquerAuGroupe(c, el) {
       `(${[...new Set(ecarts.map(x => (Number(x.remise) || 0) + " %"))].join(", ")}) : ` +
       "ces remises individuelles seront écrasées.";
   }
+  /* Seul le taux est propagé, jamais la portée : elle reste propre à chaque
+     client. Le dire ici évite de chercher pourquoi les rayons n'ont pas
+     suivi après avoir cliqué. */
+  message += "\n\nSeul le taux est appliqué. La portée (rayons, produits, " +
+    "quantité minimale) de chaque compte reste inchangée.";
   if (!confirm(message)) return;
 
   const bouton = el.querySelector(".g-groupe");
