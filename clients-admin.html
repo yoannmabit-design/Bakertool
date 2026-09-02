@@ -271,7 +271,11 @@ function cleTel(t) {
 }
 
 function compteDe(c) {
-  return comptesParTel.get(cleTel(c.telephone)) || null;
+  // L'e-mail vient des commandes passées en étant connecté. Une fiche sans
+  // e-mail (client invité, ou commandes antérieures à sa collecte) n'a pas
+  // de compte rattachable : la case tarif reste vide, à juste titre.
+  const cle = (c.email || "").trim().toLowerCase();
+  return cle ? (comptesParTel.get(cle) || null) : null;
 }
 
 // Une fiche de test est écartée des listes courantes, comme une archivée.
@@ -427,12 +431,16 @@ async function charger() {
     rendreGroupes();
 
     // Les comptes d'abord : les fiches en ont besoin pour afficher le tarif.
+    /* Index des comptes par e-mail, et non par téléphone : les documents
+       « comptes » sont créés par connexion Google et ne portent pas de
+       numéro. L'ancien index par téléphone restait donc toujours vide, et
+       aucune fiche ne trouvait son compte. */
     comptesParTel = new Map();
     try {
       const sc = await getDocs(collection(db, "comptes"));
       sc.forEach(d => {
         const v = d.data();
-        const cle = cleTel(v.telephone);
+        const cle = (v.email || "").trim().toLowerCase();
         if (cle) comptesParTel.set(cle, {
           id: d.id,
           groupe: v.groupe || "",
@@ -454,6 +462,9 @@ async function charger() {
         nom: v.nom || "",
         telephone: v.telephone || d.id,
         telephone_local: v.telephone_local || "",
+        // Sans cette recopie, compteDe() ne trouverait jamais rien —
+        // même piège que les champs de portée dans credits-admin.html.
+        email: v.email || "",
         adresse: v.adresse || "",
         maps_url: v.maps_url || "",
         coordonnees: v.coordonnees || null,
@@ -515,8 +526,11 @@ $("btnImporter").onclick = async () => {
       const tel = (c.client?.telephone || "").replace(/\D/g, "");
       if (!tel || c.statut === "annulee") return;
       const e = parTel[tel] = parTel[tel] || {
-        telephone: tel, nom: "", adresse: "", nb: 0, total: 0, derniere: ""
+        telephone: tel, nom: "", adresse: "", email: "", nb: 0, total: 0, derniere: ""
       };
+      // Seul lien avec la collection « comptes ». La commande la plus
+      // récente fait foi si le client a changé d'adresse.
+      if (c.client?.email) e.email = c.client.email;
       e.nb += 1;
       e.total += Number(c.total) || 0;
       if (c.client?.nom) e.nom = c.client.nom;
@@ -543,6 +557,9 @@ $("btnImporter").onclick = async () => {
         nom: e.nom || (ancien ? ancien.nom : ""),
         telephone: e.telephone,
         adresse: e.adresse || (ancien ? ancien.adresse : ""),
+        // Jamais effacé : une commande en invité ne doit pas faire perdre
+        // le rattachement gagné par une commande connectée précédente.
+        email: e.email || (ancien ? (ancien.email || "") : ""),
         // Le lien Maps et les coordonnées sont saisis à la main, une fois par
         // client : un import qui les écraserait détruirait un vrai travail.
         maps_url: ancien ? (ancien.maps_url || "") : "",
@@ -756,15 +773,17 @@ function carte(c) {
     selTarif.appendChild(o);
   });
 
+  /* Champ purement indicatif : le groupe tarifaire se règle dans la page
+     Crédit, seul endroit où la portée de la remise se règle aussi. Le
+     modifier ici, sans sa portée, produirait des tarifs incohérents. */
+  selTarif.disabled = true;
   if (!cpt) {
-    // Sans compte boutique, il n'y a rien à tarifer : on le dit plutôt que
-    // de laisser un menu qui n'écrirait nulle part.
-    selTarif.disabled = true;
-    infoTarif.textContent = "— aucun compte boutique à ce numéro";
+    selTarif.value = "";
+    infoTarif.textContent = "— aucun compte boutique rattaché";
   } else {
     selTarif.value = cpt.groupe || "";
-    infoTarif.textContent = cpt.remise > 0 ? "— remise en vigueur : " + cpt.remise + " %" : "";
-    selTarif.onchange = () => enregistrerTarif(c, cpt, selTarif, infoTarif);
+    infoTarif.textContent = "— lecture seule, se règle dans Crédit"
+      + (cpt.remise > 0 ? " · remise en vigueur : " + cpt.remise + " %" : "");
   }
 
   /* ----- Archivage et suppression ----- */
