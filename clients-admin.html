@@ -139,7 +139,29 @@
         <input type="checkbox" id="voirMasques" style="width:auto"> Archivés et tests
       </label>
       <button class="mineur" id="btnImporter">Importer depuis les commandes</button>
+      <button class="mineur" id="btnGroupes">Groupes tarifaires</button>
     </div>
+
+    <!-- Gestion des groupes : replié par défaut, c'est un réglage occasionnel
+         et non un outil de tous les jours. -->
+    <div class="fiche" id="carteGroupes" hidden style="margin-bottom:14px">
+      <div style="padding:15px 16px">
+        <label>Groupes tarifaires</label>
+        <p class="chiffre" style="margin:2px 0 10px">
+          Un groupe n'est qu'une étiquette : la remise et sa portée se règlent
+          sur la fiche d'un client, puis se propagent avec « Appliquer à tout
+          le groupe ».
+        </p>
+        <div id="listeGroupes"></div>
+        <div style="display:flex;gap:9px;margin-top:11px;flex-wrap:wrap">
+          <input type="text" id="nouveauGroupe" placeholder="Nom du nouveau groupe"
+                 style="flex:1;min-width:180px">
+          <button class="mineur" id="btnAjouterGroupe" type="button">Ajouter</button>
+        </div>
+        <span class="chiffre" id="etatGroupes"></span>
+      </div>
+    </div>
+
     <div id="liste"><div class="vide">Chargement…</div></div>
   </main>
 
@@ -206,10 +228,38 @@ const modifies = new Set();
    seul point commun entre elles. */
 let comptesParTel = new Map();
 
-/* Groupes tarifaires — même liste que l'admin Crédit. « Test » n'ouvre aucun
-   tarif : il sert à écarter une fiche des listes et à autoriser sa
-   suppression définitive. */
-const GROUPES_TARIF = ["Reseller", "Bulk order"];
+/* Groupes tarifaires — lus dans Firestore, partagés avec l'admin Crédit.
+   Le document se crée tout seul au premier chargement avec les groupes
+   historiques : aucune fiche existante n'est affectée, elles portent déjà
+   le nom du groupe en texte et il reste valable.
+
+   « Test » n'ouvre aucun tarif : il sert à écarter une fiche des listes et
+   à autoriser sa suppression définitive. */
+const GROUPES_DOC = "parametres/groupes_tarifaires";
+const GROUPES_HISTORIQUES = ["Reseller", "Bulk order"];
+let GROUPES_TARIF = [];
+
+async function chargerGroupes() {
+  try {
+    const s = await getDoc(doc(db, GROUPES_DOC));
+    if (s.exists() && Array.isArray(s.data().groupes)) {
+      GROUPES_TARIF = s.data().groupes.filter(Boolean);
+    } else {
+      GROUPES_TARIF = [...GROUPES_HISTORIQUES];
+      await setDoc(doc(db, GROUPES_DOC), { groupes: GROUPES_TARIF }, { merge: true });
+    }
+  } catch (e) {
+    // Sans la liste, on retombe sur les groupes historiques : la page reste
+    // utilisable, seule la création de nouveaux groupes est indisponible.
+    console.error(e);
+    GROUPES_TARIF = [...GROUPES_HISTORIQUES];
+  }
+}
+
+async function ecrireGroupes(liste) {
+  await setDoc(doc(db, GROUPES_DOC), { groupes: liste }, { merge: true });
+  GROUPES_TARIF = liste;
+}
 const SEGMENT_TEST = "Test";
 
 /* Les numéros ne sont pas saisis de la même façon des deux côtés : on ne
@@ -299,8 +349,83 @@ onAuthStateChanged(auth, async (user) => {
 });
 
 /* ---------- Chargement ---------- */
+/* ---------- Gestion des groupes tarifaires ---------- */
+function etatGroupes(texte, type) {
+  const e = $("etatGroupes");
+  if (!e) return;
+  e.textContent = texte || "";
+  e.style.color = type === "err" ? "var(--alerte)"
+                : type === "ok"  ? "var(--ok)" : "var(--encre-doux)";
+}
+
+function rendreGroupes() {
+  const zone = $("listeGroupes");
+  if (!zone) return;
+  zone.innerHTML = "";
+  if (!GROUPES_TARIF.length) {
+    zone.innerHTML = '<div class="chiffre">Aucun groupe pour l\'instant.</div>';
+    return;
+  }
+  GROUPES_TARIF.forEach(nom => {
+    const ligne = document.createElement("div");
+    ligne.style.cssText = "display:flex;align-items:center;gap:9px;padding:6px 0;"
+                        + "border-bottom:1px solid var(--trait)";
+    const t = document.createElement("span");
+    t.style.flex = "1";
+    t.textContent = nom;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "mineur";
+    b.textContent = "Retirer";
+    b.onclick = () => retirerGroupe(nom);
+    ligne.append(t, b);
+    zone.appendChild(ligne);
+  });
+}
+
+async function ajouterGroupe() {
+  const champ = $("nouveauGroupe");
+  const nom = (champ.value || "").trim();
+  if (!nom) { etatGroupes("Saisissez un nom."); return; }
+  if (GROUPES_TARIF.some(g => g.toLowerCase() === nom.toLowerCase())) {
+    etatGroupes("Ce groupe existe déjà."); return;
+  }
+  try {
+    await ecrireGroupes([...GROUPES_TARIF, nom]);
+    champ.value = "";
+    rendreGroupes();
+    etatGroupes("Groupe « " + nom + " » ajouté. Rechargez pour le voir dans les fiches.", "ok");
+  } catch (e) {
+    console.error(e);
+    etatGroupes("Enregistrement impossible.", "err");
+  }
+}
+
+/* Retirer un groupe ne touche aucune fiche : les comptes qui le portent le
+   gardent, et il reste proposé dans leur menu tant qu'il y est inscrit. On
+   ne fait que le sortir des choix offerts aux autres. */
+async function retirerGroupe(nom) {
+  const portes = [...comptesParTel.values()].filter(c => c.groupe === nom).length;
+  const avertissement = portes
+    ? "\n\n" + portes + " compte(s) portent encore ce groupe. Leur tarif est conservé."
+    : "";
+  if (!confirm("Retirer le groupe « " + nom + " » de la liste ?" + avertissement)) return;
+  try {
+    await ecrireGroupes(GROUPES_TARIF.filter(g => g !== nom));
+    rendreGroupes();
+    etatGroupes("Groupe « " + nom + " » retiré.", "ok");
+  } catch (e) {
+    console.error(e);
+    etatGroupes("Suppression impossible.", "err");
+  }
+}
+
 async function charger() {
   try {
+    // La liste des groupes avant tout : les fiches en peuplent leur menu.
+    await chargerGroupes();
+    rendreGroupes();
+
     // Les comptes d'abord : les fiches en ont besoin pour afficher le tarif.
     comptesParTel = new Map();
     try {
@@ -366,6 +491,14 @@ function majGroupes() {
 }
 
 /* ---------- Import depuis les commandes ---------- */
+$("btnGroupes").onclick = () => {
+  const c = $("carteGroupes");
+  c.hidden = !c.hidden;
+  if (!c.hidden) { rendreGroupes(); $("nouveauGroupe").focus(); }
+};
+$("btnAjouterGroupe").onclick = ajouterGroupe;
+$("nouveauGroupe").onkeydown = (e) => { if (e.key === "Enter") ajouterGroupe(); };
+
 $("btnImporter").onclick = async () => {
   if (!confirm("Parcourir les commandes et mettre à jour le fichier clients ?\n\n" +
     "Les noms, adresses et statistiques sont repris. Vos tags, groupes et notes ne sont pas touchés."))
