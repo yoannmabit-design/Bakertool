@@ -677,12 +677,18 @@ function carte(c) {
         <div><label>Numéro local <span style="opacity:.75">— livraison</span></label>
              <input type="text" class="c-tel-local"
                     placeholder="Si le numéro ci-dessus est étranger"></div>
+        <!-- Lecture seule, même fond que le téléphone : jamais saisi à la
+             main, il est collecté depuis les commandes passées en étant
+             connecté. C'est le seul lien avec le compte boutique. -->
+        <div><label>E-mail <span class="c-email-info" style="opacity:.75"></span></label>
+             <input type="text" class="c-email" readonly
+                    style="background:#f2ece2;color:var(--encre-doux)"></div>
         <div><label>Segment interne</label><input type="text" class="c-groupe" list="groupesConnus"
              placeholder="revendeur, café, habitué…"></div>
         <div>
           <label>Groupe tarifaire <span class="c-tarif-info" style="opacity:.75"></span></label>
           <select class="c-tarif" style="width:100%;padding:10px 11px;border:1px solid var(--trait);
-                  border-radius:var(--r);background:#fff;font:inherit;font-size:17px;color:var(--encre)">
+                  border-radius:var(--r);background:#f2ece2;font:inherit;font-size:17px;color:var(--encre-doux)">
             <option value="">Aucun</option>
           </select>
         </div>
@@ -762,6 +768,14 @@ function carte(c) {
   d.querySelector(".c-tags").value    = c.tags.join(", ");
   d.querySelector(".c-notes").value   = c.notes;
   d.querySelector(".c-wa").href = "https://wa.me/" + c.telephone;
+
+  /* ----- E-mail : indicatif, explique pourquoi le tarif s'affiche ou non ----- */
+  const champEmail = d.querySelector(".c-email");
+  const infoEmail  = d.querySelector(".c-email-info");
+  champEmail.value = c.email || "";
+  infoEmail.textContent = c.email
+    ? "— rattaché au compte boutique"
+    : "— collecté à la prochaine commande connectée";
 
   /* ----- Groupe tarifaire, porté par le compte boutique ----- */
   const selTarif = d.querySelector(".c-tarif");
