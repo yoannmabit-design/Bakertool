@@ -207,6 +207,14 @@ async function charger() {
         solde: Number(v.solde) || 0,
         groupe: v.groupe || "",
         remise: Number(v.remise) || 0,
+        /* Portée de la remise. Ces trois champs manquaient ici : le formulaire
+           les lit depuis l'objet en mémoire, ils naissaient donc vides à
+           l'écran alors qu'ils étaient bien enregistrés en base — et le
+           premier enregistrement écrasait la vraie valeur par du vide.
+           Tout champ ajouté au formulaire doit aussi être recopié ici. */
+        remise_rayons:   Array.isArray(v.remise_rayons)   ? v.remise_rayons   : [],
+        remise_produits: Array.isArray(v.remise_produits) ? v.remise_produits : [],
+        remise_qte_min:  Number(v.remise_qte_min) || 0,
         cree_le: v.cree_le || "",
         mouvements: null      // chargés à l'ouverture de la fiche
       });
