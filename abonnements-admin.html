@@ -177,13 +177,36 @@ onAuthStateChanged(auth, async (user) => {
   charger();
 });
 
+/* Tri alphabétique par nom, commun aux trois écrans d'administration.
+   localeCompare avec sensitivity:"base" ignore la casse et les accents :
+   « Élise » se range avec « Elise », et non après tous les Z.
+   Les fiches sans nom passent en fin de liste : les reléguer vaut mieux
+   que de les empiler en tête, où elles masqueraient le début de l'ordre. */
+function parNom(a, b) {
+  const na = (a || "").trim(), nb = (b || "").trim();
+  if (!na && !nb) return 0;
+  if (!na) return 1;
+  if (!nb) return -1;
+  return na.localeCompare(nb, "fr", { sensitivity: "base" });
+}
+
 /* ---------- Chargement ---------- */
 async function charger() {
   try {
     const s = await getDocs(collection(db, "abonnements"));
     abos = [];
     s.forEach(d => abos.push({ id: d.id, ...d.data() }));
-    abos.sort((a, b) => (b.cree_le || "").localeCompare(a.cree_le || ""));
+    /* Deux régimes. Les abonnements « nouveau » restent en tête, du plus
+       récent au plus ancien : ce sont ceux qui attendent une décision, et
+       l'ordre d'arrivée est ce qui compte pour eux.
+       Une fois validés ou arrêtés, ils rejoignent une liste consultée par
+       nom — on y cherche quelqu'un, on n'y suit plus une file d'attente. */
+    abos.sort((a, b) => {
+      const na = a.statut === "nouveau", nb = b.statut === "nouveau";
+      if (na !== nb) return na ? -1 : 1;
+      if (na) return (b.cree_le || "").localeCompare(a.cree_le || "");
+      return parNom(a.client?.nom, b.client?.nom);
+    });
     afficher();
   } catch (e) {
     console.error(e);
