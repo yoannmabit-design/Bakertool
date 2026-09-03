@@ -241,6 +241,18 @@ function afficher() {
   vus.forEach(a => liste.appendChild(carte(a)));
 }
 
+/* Deux axes indépendants, comme sur les commandes.
+   Confirmation : lance la fabrication. Paiement : constate l'encaissement.
+   L'un n'implique pas l'autre — certains clients sont servis avant d'avoir
+   payé, et l'ancienne pastille « payé d'avance », déduite du seul mode de
+   paiement, affirmait le contraire. */
+const ETATS = { nouveau: "En attente", actif: "Confirmé", arrete: "Arrêté" };
+const PAIEMENTS = { "en attente": "En attente de paiement", paye: "Payé" };
+
+function etatPaiement(a) {
+  return (a.paiement?.statut || "en attente") === "paye" ? "paye" : "en attente";
+}
+
 function restantes(a) {
   return (a.echeances || []).filter(e => e.statut === "planifiee").length;
 }
@@ -254,8 +266,9 @@ function carte(a) {
   el.innerHTML = `
     <div class="tete">
       <span class="nom"></span>
-      <span class="puce ${a.statut === "nouveau" ? "rouge" : ""}">${ech(a.statut)}</span>
-      <span class="puce">${a.paiement?.mode === "credit" ? "crédit" : "payé d'avance"}</span>
+      <span class="puce ${a.statut === "nouveau" ? "rouge" : ""}">${ech(ETATS[a.statut] || a.statut)}</span>
+      <span class="puce ${etatPaiement(a) === "paye" ? "" : "rouge"}">${
+        ech(PAIEMENTS[etatPaiement(a)])}</span>
       <span class="montant">${peso(a.total_par_livraison)} × ${reste}</span>
     </div>
     <div class="resume"></div>
@@ -266,7 +279,9 @@ function carte(a) {
       ${a.client?.adresse ? '<p class="info adresse"></p>' : ""}
       <div class="echeances"></div>
       <div class="actions">
-        ${a.statut === "nouveau" ? '<button class="action valider">Valider cet abonnement</button>' : ""}
+        ${a.statut === "nouveau" ? '<button class="action valider">Confirmer cet abonnement</button>' : ""}
+        ${a.statut !== "arrete" && etatPaiement(a) !== "paye"
+          ? '<button class="action encaisser">Marquer payé</button>' : ""}
         ${a.statut === "actif" ? '<button class="danger arreter">Arrêter</button>' : ""}
         ${!(a.echeances || []).some(e => e.statut === "livree")
           ? '<button class="danger supprimer">Supprimer</button>' : ""}
@@ -310,6 +325,9 @@ function carte(a) {
     ze.appendChild(ligne);
   });
 
+  const be = el.querySelector(".encaisser");
+  if (be) be.onclick = () => encaisser(a);
+
   const bv = el.querySelector(".valider");
   if (bv) bv.onclick = () => valider(a);
   const ba = el.querySelector(".arreter");
@@ -321,17 +339,69 @@ function carte(a) {
 }
 
 /* ---------- Actions ---------- */
+/* Constat d'encaissement. Le montant reçu est saisi parce qu'il dépasse
+   souvent le dû : les clients arrondissent au millier supérieur pour garder
+   de quoi prendre une viennoiserie au marché sans refaire un GCash.
+   Cet excédent va au crédit du compte — il n'en sort pas. */
+async function encaisser(a) {
+  const du = Number(a.total) || 0;
+  const saisi = prompt(
+    `Montant reçu de ${a.client?.nom || "ce client"} ?\n\n` +
+    `Montant de l'abonnement : ${peso(du)}\n` +
+    `Tout excédent sera ajouté à son crédit.`,
+    String(du));
+  if (saisi === null) return;
+
+  const recu = Number(String(saisi).replace(",", ".").trim());
+  if (!isFinite(recu) || recu < 0) { signaler("Montant invalide."); return; }
+  if (recu < du && !confirm(
+        `Reçu ${peso(recu)} pour un abonnement à ${peso(du)}.\n\n` +
+        `Il manque ${peso(du - recu)}. Marquer quand même comme payé ?`)) return;
+
+  const surplus = Math.round((recu - du) * 100) / 100;
+  try {
+    const paquet = writeBatch(db);
+    paquet.update(doc(db, "abonnements", a.id), {
+      "paiement.statut": "paye",
+      "paiement.montant_recu": recu,
+      "paiement.encaisse_le": new Date().toISOString(),
+      "paiement.encaisse_par": auth.currentUser?.email || ""
+    });
+
+    // L'excédent n'est crédité que s'il y en a un, et seulement pour un
+    // client identifié : un abonnement sans compte n'a pas de solde.
+    if (surplus > 0 && a.client?.uid) {
+      paquet.set(doc(collection(db, "comptes", a.client.uid, "mouvements")), {
+        type: "recharge", montant: surplus,
+        note: "Arrondi sur l'abonnement du " + (a.cree_le || "").slice(0, 10),
+        quand: new Date().toISOString(), par: auth.currentUser?.email || ""
+      });
+      paquet.update(doc(db, "comptes", a.client.uid), { solde: increment(surplus) });
+    }
+
+    await paquet.commit();
+    a.paiement = Object.assign({}, a.paiement, {
+      statut: "paye", montant_recu: recu
+    });
+    afficher();
+    signaler(surplus > 0
+      ? `Encaissé. ${peso(surplus)} ajoutés au crédit.`
+      : "Encaissé.");
+  } catch (e) { console.error(e); signaler("Échec de l'encaissement."); }
+}
+
 async function valider(a) {
-  if (!confirm(`Valider l'abonnement de ${a.client?.nom} ?\n\n` +
+  if (!confirm(`Confirmer l'abonnement de ${a.client?.nom} ?\n\n` +
     (a.paiement?.mode === "credit"
       ? "Chaque livraison sera prélevée sur son crédit."
-      : `Vérifiez d'avoir encaissé ${peso(a.total)} avant de valider.`))) return;
+      : "La fabrication est lancée. Le paiement se constate séparément, " +
+        "avec le bouton « Marquer payé »."))) return;
   try {
     await updateDoc(doc(db, "abonnements", a.id), { statut: "actif" });
     a.statut = "actif";
     afficher();
-    signaler("Abonnement validé.");
-  } catch (e) { console.error(e); signaler("Échec de la validation."); }
+    signaler("Abonnement confirmé.");
+  } catch (e) { console.error(e); signaler("Échec de la confirmation."); }
 }
 
 async function arreter(a) {
