@@ -587,7 +587,10 @@ $("btnImporter").onclick = async () => {
         total_depense: e.total,
         derniere_commande: e.derniere
       };
-      paquet.set(doc(db, "clients", e.telephone), fiche);
+      /* merge:true également. La fiche reprend déjà tout ce qu'elle connaît
+         depuis « ancien », mais si un champ était ajouté ailleurs sans être
+         repris ici, un import le détruirait. La fusion l'en empêche. */
+      paquet.set(doc(db, "clients", e.telephone), fiche, { merge: true });
       ancien ? majs++ : ajoutes++;
 
       if (++dansLot >= LOT_MAX) {
@@ -1243,15 +1246,25 @@ $("btnEnregistrer").onclick = async () => {
   try {
     const paquet = writeBatch(db);
     clients.filter(c => modifies.has(c.id)).forEach(c => {
+      /* merge:true, et ce n'est pas un détail de style.
+         Sans lui, ce set remplaçait le document ENTIER par la liste
+         ci-dessous : tout champ oublié ici était effacé en base, sans
+         message ni trace. C'est ainsi que les tags ont disparu.
+         Avec merge, un champ absent de la liste est simplement laissé
+         tel quel. Ajouter un champ à la fiche sans penser à cette liste
+         ne peut plus rien détruire. */
       paquet.set(doc(db, "clients", c.id), {
         nom: c.nom, telephone: c.telephone,
         telephone_local: c.telephone_local || "", adresse: c.adresse,
+        // Collecté depuis les commandes, jamais saisi : on le réécrit tel
+        // quel plutôt que de le laisser au hasard d'une lecture partielle.
+        email: c.email || "",
         maps_url: c.maps_url || "", coordonnees: c.coordonnees || null,
         groupe: c.groupe, tags: c.tags, notes: c.notes,
         archive: !!c.archive,
         nb_commandes: c.nb_commandes, total_depense: c.total_depense,
         derniere_commande: c.derniere_commande
-      });
+      }, { merge: true });
     });
     await paquet.commit();
     modifies.clear();
