@@ -795,7 +795,14 @@ function carte(c) {
   // à la commande APRÈS ce moment fait grimper le total sans toucher ce
   // chiffre : l'écart entre les deux est ce qu'il reste à encaisser.
   const montantPaye = Number(c.paiement?.montant_paye) || 0;
-  const resteAPayer = paye ? Math.max(0, (c.total || 0) - montantPaye) : 0;
+  /* Absent (et non zéro) quand la commande n'a jamais été réglée en son nom
+     propre : c'est le cas des livraisons d'abonnement, payées en un lot au
+     niveau de l'abonnement. Sans cette distinction, le champ manquant était
+     lu comme « zéro encaissé » et le badge réclamait la totalité du montant
+     sur des commandes pourtant soldées. */
+  const aMontantConnu = c.paiement?.montant_paye != null;
+  const resteAPayer = (paye && aMontantConnu)
+    ? Math.max(0, (c.total || 0) - montantPaye) : 0;
   const el = document.createElement("div");
   el.id = "cmd-" + c.id;
   // Confirmée et payée : la commande n'attend plus rien de vous.
