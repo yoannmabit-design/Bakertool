@@ -370,7 +370,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/fireba
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, collection, getDocs, doc, getDoc, setDoc, updateDoc, writeBatch, increment,
-         query, where, limit, onSnapshot }
+         query, where, limit }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getFunctions, httpsCallable }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
@@ -423,102 +423,6 @@ const CLASSE_STATUT = {
 const FENETRE_JOURS = 10;
 
 let commandes = [], filtre = "actives";
-
-/* ==========================================================
-   ALERTE SONORE À L'ARRIVÉE D'UNE COMMANDE
-   ==========================================================
-   Le son est synthétisé à la volée : pas de fichier à héberger, à mettre
-   en cache ni à bumper dans sw-admin.js. Un tiroir-caisse, c'est deux
-   temps — la clochette métallique, puis le tiroir qui coulisse.
-
-   À savoir : le navigateur refuse de jouer un son tant que la page n'a
-   reçu aucun clic. Le premier clic quelque part débloque la suite, d'où
-   l'amorce plus bas. Sur téléphone, l'écran éteint ou l'onglet en fond
-   met la page en veille : le son ne partira pas. C'est une alerte pour
-   travailler devant l'écran, pas une notification. */
-let audioCtx = null;
-
-function amorcerSon() {
-  if (audioCtx) return;
-  try {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === "suspended") audioCtx.resume();
-  } catch (e) { console.warn("Audio indisponible :", e.message); }
-}
-// Un seul clic suffit, n'importe où, et une seule fois.
-document.addEventListener("click", amorcerSon, { once: true });
-
-function sonTiroirCaisse() {
-  if (!audioCtx) return;
-  try {
-    if (audioCtx.state === "suspended") audioCtx.resume();
-    const t0 = audioCtx.currentTime;
-
-    // La clochette : deux harmoniques désaccordées, extinction rapide.
-    [1180, 1567].forEach((freq, i) => {
-      const osc = audioCtx.createOscillator();
-      const vol = audioCtx.createGain();
-      osc.type = "triangle";
-      osc.frequency.value = freq;
-      vol.gain.setValueAtTime(0, t0);
-      vol.gain.linearRampToValueAtTime(i ? 0.10 : 0.16, t0 + 0.005);
-      vol.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9);
-      osc.connect(vol); vol.connect(audioCtx.destination);
-      osc.start(t0); osc.stop(t0 + 0.95);
-    });
-
-    // Le tiroir : un souffle filtré, décalé, qui glisse puis bute.
-    const t1 = t0 + 0.16;
-    const n = audioCtx.sampleRate * 0.28;
-    const buf = audioCtx.createBuffer(1, n, audioCtx.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
-    const src = audioCtx.createBufferSource();
-    src.buffer = buf;
-    const filtre = audioCtx.createBiquadFilter();
-    filtre.type = "bandpass";
-    filtre.frequency.setValueAtTime(900, t1);
-    filtre.frequency.exponentialRampToValueAtTime(320, t1 + 0.26);
-    filtre.Q.value = 1.2;
-    const volT = audioCtx.createGain();
-    volT.gain.setValueAtTime(0.12, t1);
-    volT.gain.exponentialRampToValueAtTime(0.0001, t1 + 0.28);
-    src.connect(filtre); filtre.connect(volT); volT.connect(audioCtx.destination);
-    src.start(t1); src.stop(t1 + 0.3);
-  } catch (e) { console.warn("Son impossible :", e.message); }
-}
-
-/* Écoute en direct des commandes.
-   Elle ne fait que deux choses : rafraîchir la liste et signaler les
-   arrivées. Elle n'appelle JAMAIS materialiserAbonnements() — deux
-   exécutions concurrentes liraient le même tableau « commandes » avant
-   que l'une ait écrit, et le garde-fou anti-doublon sauterait. La
-   génération reste au chargement de la page, une fois, et c'est tout. */
-let arretEcoute = null;
-
-function ecouterCommandes() {
-  if (arretEcoute) return;
-  let premier = true;
-  arretEcoute = onSnapshot(collection(db, "commandes"), (snap) => {
-    const arrivees = [];
-    snap.docChanges().forEach(ch => { if (ch.type === "added") arrivees.push(ch.doc.id); });
-
-    commandes = [];
-    snap.forEach(d => commandes.push({ id: d.id, ...d.data() }));
-    trierCommandes();
-
-    // Le premier instantané rejoue tout l'existant : on se tait.
-    if (premier) { premier = false; return; }
-
-    afficher();
-    if (arrivees.length) {
-      sonTiroirCaisse();
-      signaler(arrivees.length === 1
-        ? "Nouvelle commande reçue."
-        : arrivees.length + " nouvelles commandes reçues.");
-    }
-  }, (e) => console.error("Écoute des commandes interrompue :", e));
-}
 let joursFermes = [];   // 0 = lundi
 let optionsRetrait = []; // options de retrait/livraison — pour la modification
 let catalogue = {};     // { code : { nom, prix_vente, rayon } } — pour la modification
@@ -636,9 +540,6 @@ async function charger() {
     publierProduction();
     publierCharges();
     allerVersCommandeCiblee();
-    // Après la génération d'abonnements, jamais avant : l'écoute ne doit
-    // observer que des commandes déjà toutes créées.
-    ecouterCommandes();
   } catch (e) {
     console.error(e);
     $("liste").innerHTML = '<div class="vide">Les commandes n\'ont pas pu être chargées.</div>';
@@ -893,15 +794,8 @@ function carte(c) {
   // instant précis (voir enregistrer()), pas recalculé après coup. Un ajout
   // à la commande APRÈS ce moment fait grimper le total sans toucher ce
   // chiffre : l'écart entre les deux est ce qu'il reste à encaisser.
-  /* Absent (et non zéro) quand la commande n'a jamais été réglée en son nom
-     propre : c'est le cas des livraisons d'abonnement, payées en un lot au
-     niveau de l'abonnement. Sans cette distinction, le champ manquant était
-     lu comme « zéro encaissé » et le badge réclamait la totalité du montant
-     sur des commandes pourtant soldées. */
-  const aMontantConnu = c.paiement?.montant_paye != null;
   const montantPaye = Number(c.paiement?.montant_paye) || 0;
-  const resteAPayer = (paye && aMontantConnu)
-    ? Math.max(0, (c.total || 0) - montantPaye) : 0;
+  const resteAPayer = paye ? Math.max(0, (c.total || 0) - montantPaye) : 0;
   const el = document.createElement("div");
   el.id = "cmd-" + c.id;
   // Confirmée et payée : la commande n'attend plus rien de vous.
