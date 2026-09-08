@@ -535,10 +535,15 @@ $("btnImporter").onclick = async () => {
     const parTel = {};
     s.forEach(d => {
       const c = d.data();
-      const tel = (c.client?.telephone || "").replace(/\D/g, "");
+      /* Clé normalisée aux dix derniers chiffres, comme partout ailleurs.
+         Un même client qui écrit tantôt 0917…, tantôt +63917… produisait
+         auparavant deux clés distinctes, donc deux fiches : la seconde
+         naissait sans coordonnées et masquait celle qui les portait. */
+      const tel = cleTel(c.client?.telephone);
       if (!tel || c.statut === "annulee") return;
       const e = parTel[tel] = parTel[tel] || {
-        telephone: tel, nom: "", adresse: "", email: "", nb: 0, total: 0, derniere: ""
+        telephone: tel, brut: (c.client?.telephone || "").replace(/\D/g, ""),
+        nom: "", adresse: "", email: "", nb: 0, total: 0, derniere: ""
       };
       // Seul lien avec la collection « comptes ». La commande la plus
       // récente fait foi si le client a changé d'adresse.
@@ -551,8 +556,10 @@ $("btnImporter").onclick = async () => {
       if (d1 > e.derniere) e.derniere = d1;
     });
 
+    /* Indexé sur la même clé que ci-dessus, sinon une fiche enregistrée sous
+       un autre format de numéro passe pour inconnue et se fait dupliquer. */
     const existants = {};
-    clients.forEach(c => existants[c.telephone] = c);
+    clients.forEach(c => existants[cleTel(c.telephone)] = c);
 
     // Un lot Firestore accepte au maximum 500 écritures : au-delà, on en
     // ouvre un nouveau plutôt que de laisser commit() échouer d'un coup
@@ -590,7 +597,12 @@ $("btnImporter").onclick = async () => {
       /* merge:true également. La fiche reprend déjà tout ce qu'elle connaît
          depuis « ancien », mais si un champ était ajouté ailleurs sans être
          repris ici, un import le détruirait. La fusion l'en empêche. */
-      paquet.set(doc(db, "clients", e.telephone), fiche, { merge: true });
+      /* Identifiant de la fiche existante quand il y en a une : changer
+         d'identifiant reviendrait à créer un doublon et à abandonner le
+         travail de géolocalisation porté par l'ancienne. */
+      const identifiant = ancien ? ancien.telephone : (e.brut || e.telephone);
+      fiche.telephone = identifiant;
+      paquet.set(doc(db, "clients", identifiant), fiche, { merge: true });
       ancien ? majs++ : ajoutes++;
 
       if (++dansLot >= LOT_MAX) {
