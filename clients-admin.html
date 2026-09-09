@@ -575,14 +575,24 @@ $("btnImporter").onclick = async () => {
       const fiche = {
         nom: e.nom || (ancien ? ancien.nom : ""),
         telephone: e.telephone,
-        adresse: e.adresse || (ancien ? ancien.adresse : ""),
+        /* L'adresse d'une fiche existante n'est jamais remplacée. Les clients
+           écrivent la ville deux ou trois fois, ajoutent des repères, oublient
+           l'unité : l'adresse de la fiche est nettoyée à la main pour que la
+           géolocalisation tombe juste, et un import qui la réécrirait
+           détruirait ce travail à chaque nouvelle commande.
+           Conséquence à connaître : un déménagement ne remonte pas tout seul
+           sur la fiche — c'est le prix de la stabilité du point de livraison. */
+        adresse: (ancien && ancien.adresse) ? ancien.adresse : (e.adresse || ""),
         // Jamais effacé : une commande en invité ne doit pas faire perdre
         // le rattachement gagné par une commande connectée précédente.
         email: e.email || (ancien ? (ancien.email || "") : ""),
-        // Le lien Maps et les coordonnées sont saisis à la main, une fois par
-        // client : un import qui les écraserait détruirait un vrai travail.
-        maps_url: ancien ? (ancien.maps_url || "") : "",
-        coordonnees: ancien ? (ancien.coordonnees || null) : null,
+        /* coordonnees et maps_url n'apparaissent volontairement PAS ici.
+           Les préserver en les recopiant depuis « ancien » a déjà échoué une
+           fois : il a suffi qu'une version antérieure oublie la recopie pour
+           que tous les points de livraison soient effacés d'un coup.
+           Un champ qu'on n'écrit jamais ne peut pas être effacé — merge:true
+           laisse intact ce qui n'est pas mentionné. Le seul chemin qui écrit
+           les coordonnées est désormais le clic sur la carte. */
         // Saisi à la main comme les coordonnées : un import ne l'écrase pas.
         telephone_local: ancien ? (ancien.telephone_local || "") : "",
         groupe: ancien ? ancien.groupe : "",
@@ -727,8 +737,7 @@ function carte(c) {
           <span class="chiffre c-chercher-etat"></span>
         </div></div>
       <div style="margin-top:13px">
-        <label>Lien Google Maps <span class="c-maps-etat" style="opacity:.75"></span></label>
-        <input type="text" class="c-maps" placeholder="Coller un lien Maps, ou « 14.55, 121.03 »">
+        <label>Point de livraison <span class="c-maps-etat" style="opacity:.75"></span></label>
         <div style="margin-top:6px">
           <a class="lien c-maps-ouvrir" target="_blank" rel="noopener" hidden>Ouvrir dans Maps</a>
         </div>
@@ -855,7 +864,6 @@ function carte(c) {
   };
 
   /* ----- Lien Maps, coordonnées et carte ----- */
-  const champMaps  = d.querySelector(".c-maps");
   const etatMaps   = d.querySelector(".c-maps-etat");
   const ouvrirMaps = d.querySelector(".c-maps-ouvrir");
   const boiteCarte = d.querySelector(".c-carte");
@@ -865,7 +873,6 @@ function carte(c) {
   const etatCoter  = d.querySelector(".c-lala-etat");
   const btnCourse  = d.querySelector(".c-lala-courser");
   const etatCourse = d.querySelector(".c-lala-course-etat");
-  champMaps.value = c.maps_url;
 
   /* Les départs ne sont demandés qu'à la première fiche géolocalisée ouverte :
      inutile d'appeler le serveur pour un client qui vient chercher son pain. */
@@ -985,8 +992,9 @@ function carte(c) {
      cohérent avec le point réellement enregistré. */
   const poserPoint = (lat, lng, recentrer) => {
     c.coordonnees = { lat: lat, lng: lng };
+    // Seul geste autorisé à écrire les coordonnées en base (voir l'enregistrement).
+    c._pointPose = true;
     c.maps_url = lienExact(lat, lng);
-    champMaps.value = c.maps_url;
     if (repere) repere.setLatLng([lat, lng]);
     if (carte && recentrer) carte.setView([lat, lng], Math.max(carte.getZoom(), 17));
     rendreEtatMaps();
@@ -1023,31 +1031,13 @@ function carte(c) {
     setTimeout(() => carte.invalidateSize(), 0);
   };
 
-  champMaps.oninput = (e) => {
-    const brut = e.target.value;
-    c.maps_url = brut;
-    const r = extraireCoordonnees(brut);
+  /* Le champ de saisie du lien a été retiré : une frappe qui n'y produisait
+     pas de coordonnées lisibles effaçait le point posé sur la carte, ce qui
+     détruisait sans prévenir un vrai travail de géolocalisation. Le point se
+     pose désormais uniquement sur la carte ou par la recherche d'adresse —
+     deux gestes qui ne peuvent que le renseigner, jamais l'effacer.
+     maps_url reste écrit en base : il n'alimente plus que « Ouvrir dans Maps ». */
 
-    if (r.etat === "ok") {
-      c.coordonnees = { lat: r.lat, lng: r.lng };
-      if (repere) repere.setLatLng([r.lat, r.lng]);
-      if (carte) carte.setView([r.lat, r.lng], 18);
-      rendreEtatMaps();
-    } else {
-      // Coordonnées effacées dès que le lien devient inexploitable : mieux
-      // vaut aucun point qu'un point périmé qui ne correspond plus au lien.
-      c.coordonnees = null;
-      ouvrirMaps.hidden = true;
-      etatMaps.style.color = "var(--alerte)";
-      etatMaps.textContent =
-        r.etat === "court"     ? "— lien court : ouvrez-le dans Maps, puis copiez l'adresse de la barre du navigateur" :
-        r.etat === "hors_zone" ? "— point hors de Metro Manila (" + r.lat + ", " + r.lng + ")" :
-        r.etat === "vide"      ? "— aucune coordonnée" :
-                                 "— coordonnées introuvables dans ce lien";
-      if (r.etat === "vide") etatMaps.style.color = "var(--encre-doux)";
-    }
-    noter();
-  };
   /* ----- Recherche d'adresse (Nominatim, sans clé ni compte) -----
      La machine propose, Yoann tranche : le résultat n'est jamais enregistré
      tel quel sans qu'il l'ait vu sur la carte. Les adresses de Manille sont
@@ -1265,18 +1255,29 @@ $("btnEnregistrer").onclick = async () => {
          Avec merge, un champ absent de la liste est simplement laissé
          tel quel. Ajouter un champ à la fiche sans penser à cette liste
          ne peut plus rien détruire. */
-      paquet.set(doc(db, "clients", c.id), {
+      const champs = {
         nom: c.nom, telephone: c.telephone,
         telephone_local: c.telephone_local || "", adresse: c.adresse,
         // Collecté depuis les commandes, jamais saisi : on le réécrit tel
         // quel plutôt que de le laisser au hasard d'une lecture partielle.
         email: c.email || "",
-        maps_url: c.maps_url || "", coordonnees: c.coordonnees || null,
         groupe: c.groupe, tags: c.tags, notes: c.notes,
         archive: !!c.archive,
         nb_commandes: c.nb_commandes, total_depense: c.total_depense,
         derniere_commande: c.derniere_commande
-      }, { merge: true });
+      };
+
+      /* Les coordonnées ne sont écrites que si un point a été posé sur la
+         carte pendant cette session. Sans ce drapeau, enregistrer une fiche
+         pour changer une note réécrirait aussi le point — et le jour où la
+         copie en mémoire est incomplète, il part à la poubelle sans bruit.
+         Modifier une adresse ne peut donc plus rien détruire. */
+      if (c._pointPose && c.coordonnees) {
+        champs.coordonnees = c.coordonnees;
+        champs.maps_url = c.maps_url || "";
+      }
+
+      paquet.set(doc(db, "clients", c.id), champs, { merge: true });
     });
     await paquet.commit();
     modifies.clear();
