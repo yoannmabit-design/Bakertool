@@ -1228,7 +1228,12 @@ $("btnEnregistrer").onclick = async () => {
         instructions: $("instrPaiement").value.trim()
       },
       maj: new Date().toISOString()
-    });
+    }, { merge: true });
+    /* merge:true — ce formulaire ne connaît pas tous les champs du document.
+       rayons_notes (les conseils affichés sous chaque rayon de la vitrine)
+       est saisi directement dans la console Firebase : sans merge, chaque
+       enregistrement l'effaçait silencieusement. Vaut pour tout champ
+       ajouté à l'avenir hors de cet écran. */
 
     // --- Produits ---
     for (const p of produits) {
@@ -1253,7 +1258,12 @@ $("btnEnregistrer").onclick = async () => {
           // Plafond de production par jour de cuisson. 0 = pas de limite.
           capacite_jour: Number(p.capacite_jour) || 0,
           visible: true
-        });
+        }, { merge: true });
+        /* merge:true par précaution : une fiche produit peut porter des
+           champs écrits ailleurs (stock décrémenté par les commandes,
+           réglages à venir) que cet écran ne connaît pas. Tous les champs
+           gérés ici sont écrits explicitement à chaque fois, donc le merge
+           ne masque aucune suppression volontaire. */
       } else {
         await deleteDoc(ref).catch(() => {});
       }
