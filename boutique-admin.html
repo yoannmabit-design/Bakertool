@@ -530,6 +530,10 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChang
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, collection, getDocs, doc, getDoc, setDoc, deleteDoc }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  
+  /* Rayons : même source que la vitrine et le checkout, pour que la portée
+   des codes promo et le classement du catalogue ne divergent jamais. */
+import { RAYONS } from "./promo.js?v=2";
 
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -538,8 +542,7 @@ const db   = getFirestore(app);
 const $ = (id) => document.getElementById(id);
 const JOURS = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
 
-// Catégories de la vitrine — indépendantes de celles de l'ERP.
-const RAYONS = ["Breads", "Gluten Free", "Pastries", "Seasonal", "Frozen", "Other"];
+
 
 /* Rubans proposés sur la fiche produit. La vitrine affiche le libellé
    tel quel et en déduit la couleur ; ajouter une valeur ici suffit à la
