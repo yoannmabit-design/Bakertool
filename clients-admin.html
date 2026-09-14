@@ -571,7 +571,8 @@ $("nouveauGroupe").onkeydown = (e) => { if (e.key === "Enter") ajouterGroupe(); 
 
 $("btnImporter").onclick = async () => {
   if (!confirm("Parcourir les commandes et mettre à jour le fichier clients ?\n\n" +
-    "Les noms, adresses et statistiques sont repris. Vos tags, groupes et notes ne sont pas touchés."))
+       "Les noms, e-mails et statistiques sont repris depuis les commandes. " +
+    "Vos adresses, points de livraison, tags et notes ne sont pas touchés."))
     return;
 
   $("btnImporter").disabled = true;
