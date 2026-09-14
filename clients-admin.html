@@ -73,6 +73,14 @@
      puisque savoir où l'on est en train de travailler prime sur l'état
      de contenu pendant qu'on la consulte. */
   .client.ouvert{border-left-color:#2f4858}
+  /* Repérage temporaire en arrivant depuis une commande, même effet que sur
+     la page Commandes pour que le geste soit reconnaissable. */
+  .client.cible{animation:surligne-cli 2.6s ease-out}
+  @keyframes surligne-cli{
+    0%   {box-shadow:0 0 0 3px var(--accent)}
+    75%  {box-shadow:0 0 0 3px var(--accent)}
+    100% {box-shadow:0 0 0 3px transparent}
+  }
   .client.archive{opacity:.66}
   .client.archive .tete .nom::after{
     content:"archivé";font-size:12.5px;font-weight:400;
@@ -546,6 +554,7 @@ async function charger() {
     trier();
     majGroupes();
     afficher();
+    allerVersClient();
   } catch (e) {
     console.error(e);
     $("liste").innerHTML = '<div class="vide">Les clients n\'ont pas pu être chargés.</div>';
@@ -732,6 +741,41 @@ $("voirMasques").onchange = afficher;
 function ech(t) {
   return String(t ?? "").replace(/[&<>"]/g, x =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[x]));
+}
+
+/* ---------- Arrivée depuis une commande ----------
+   Le lien pointe vers ?client=ID. On amène la fiche à l'écran, on l'ouvre et
+   on la signale un instant : arriver en haut d'une liste de plusieurs
+   centaines de noms sans savoir lequel on cherchait annulerait l'intérêt du
+   lien. Les filtres en cours sont levés, sinon la fiche visée peut être
+   masquée par une recherche laissée en place. */
+function allerVersClient() {
+  const id = new URLSearchParams(location.search).get("client");
+  if (!id) return;
+
+  const vise = clients.find(c => c.id === id);
+  if (!vise) return;
+
+  // Une fiche archivée ou de test reste atteignable par un lien direct.
+  if (estMasque(vise) && !$("voirMasques").checked) {
+    $("voirMasques").checked = true;
+  }
+  $("recherche").value = "";
+  $("filtreGroupe").value = "";
+  $("seulementACompleter").checked = false;
+  afficher();
+
+  // L'URL est nettoyée pour qu'un rechargement ne rejoue pas indéfiniment
+  // la même ouverture.
+  history.replaceState(null, "", location.pathname);
+
+  const el = [...document.querySelectorAll("[data-client]")]
+    .find(x => x.dataset.client === id);
+  if (!el) return;
+  el._ouvrir();
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.classList.add("cible");
+  setTimeout(() => el.classList.remove("cible"), 2600);
 }
 
 /* ---------- Changements d'adresse ----------
@@ -1047,6 +1091,16 @@ function carte(c) {
   c.tags.forEach((t, i) => { if (puces[i]) puces[i].textContent = t; });
 
   const d = el.querySelector(".detail");
+  // Repère pour l'arrivée depuis une commande (?client=…) : le téléphone sert
+  // d'identifiant de fiche, il peut contenir un « + » qu'un sélecteur CSS
+  // digérerait mal — d'où un dataset parcouru à la main plutôt qu'un id.
+  el.dataset.client = c.id;
+  el._ouvrir = () => {
+    if (!d.hidden) return;
+    d.hidden = false;
+    el.classList.add("ouvert");
+    el._monterCarte();
+  };
   el.querySelector(".tete").onclick = () => {
     d.hidden = !d.hidden;
     el.classList.toggle("ouvert", !d.hidden);
