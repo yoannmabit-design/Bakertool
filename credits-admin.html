@@ -45,7 +45,14 @@
   .compte{background:var(--papier);border:1px solid var(--trait);
     border-radius:var(--r);padding:14px;margin-bottom:10px}
   .tete{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;cursor:pointer}
-  .tete .nom{font-weight:600;flex:1;min-width:130px}
+  /* flex:1 avec min-width:130px empêchait le nom de se comprimer : le solde
+     ne tenait plus sur la ligne et repassait dessous, ce qui donnait des
+     cartes deux fois plus hautes selon la longueur du nom et de l'e-mail. */
+  .tete .nom{font-weight:600;flex:1 1 130px;min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tete .mail{min-width:0}
+  .portee > summary{cursor:pointer;font-weight:600;padding:4px 0}
+  .portee[open] > summary{margin-bottom:4px}
   .tete .mail{font-size:14.5px;color:var(--encre-doux)}
   .tete .solde{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
   .tete .solde.vide{color:var(--encre-doux)}
@@ -303,8 +310,12 @@ function carte(c) {
           <label>Remise (%)</label>
           <input type="number" class="g-remise montant" min="0" max="90" step="1">
         </div>
-        <div style="grid-column:1/-1;">
-          <label>Portée de la remise <span style="opacity:.7">(vide = tout le panier, comme avant)</span></label>
+        <!-- Portée repliée par défaut : neuf comptes sur dix n'ont pas de
+             tarif de groupe, et ces cinq champs poussaient le formulaire de
+             mouvement et l'historique hors de l'écran. Le bloc s'ouvre seul
+             dès qu'un groupe tarifaire est choisi, ou s'il est déjà réglé. -->
+        <details class="portee" style="grid-column:1/-1;">
+          <summary>Portée de la remise <span style="opacity:.7">(vide = tout le panier, comme avant)</span></summary>
           <div class="g-rayons" style="display:flex; flex-wrap:wrap; gap:10px; padding:8px 0;"></div>
           <input type="text" class="g-produits-champ" placeholder="Codes produits concernés, séparés par des virgules (ex: PAI-BAG, BUT-CRO) — laisser vide si la portée est par rayon"
                  style="width:100%;padding:10px 11px;border:1px solid var(--trait);
@@ -314,7 +325,7 @@ function carte(c) {
                  style="width:120px;padding:10px 11px;border:1px solid var(--trait);
                  border-radius:var(--r);background:#fff;font-size:17px;min-height:44px">
           <p style="font-size:0.78rem;opacity:.7;margin-top:4px;">Un produit précis l'emporte sur un rayon si les deux sont remplis. Le minimum porte sur la quantité totale de ce qui correspond au rayon/produit choisi — en dessous, aucune remise sur ces articles-là.</p>
-        </div>
+        </details>
         <button class="action g-valider">Appliquer</button>
         <button class="action g-groupe">Appliquer à tout le groupe</button>
       </div>
@@ -372,6 +383,20 @@ function carte(c) {
   });
   el.querySelector(".g-produits-champ").value = (Array.isArray(c.remise_produits) ? c.remise_produits : []).join(", ");
   el.querySelector(".g-qte-min-champ").value = c.remise_qte_min || "";
+
+  /* Ouverture de la portée : à l'affichage si elle est déjà réglée — sinon
+     on masquerait un réglage existant — et au moment où un groupe tarifaire
+     est choisi, puisque c'est là qu'on a une raison de s'en occuper.
+     Jamais refermée automatiquement : ce serait reprendre la main pendant
+     que vous saisissez. */
+  const portee = el.querySelector(".portee");
+  const porteeReglee = rayonsActuels.length
+    || (Array.isArray(c.remise_produits) && c.remise_produits.length)
+    || Number(c.remise_qte_min) > 0;
+  portee.open = !!porteeReglee;
+  selGroupe.addEventListener("change", () => {
+    if (selGroupe.value) portee.open = true;
+  });
 
   el.querySelector(".g-valider").onclick = () => enregistrerGroupe(c, el);
   el.querySelector(".g-groupe").onclick  = () => appliquerAuGroupe(c, el);
