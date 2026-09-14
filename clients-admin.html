@@ -99,6 +99,20 @@
   .bloc-titre .aide{font-size:14px;font-weight:400;color:var(--encre-doux)}
   #aCompleter{margin-bottom:22px;padding-bottom:6px;border-bottom:2px solid var(--trait)}
   #aCompleter[hidden]{display:none}
+  #demenagements{margin-bottom:22px}
+  #demenagements[hidden]{display:none}
+  .demenagement{
+    border:1px solid var(--trait);border-left:3px solid var(--accent);
+    border-radius:var(--r);background:var(--papier);padding:13px 15px;margin-bottom:9px;
+  }
+  .dm-nom{font-weight:600;margin-bottom:8px}
+  .dm-nom .aide{font-weight:400;font-size:14px;color:var(--encre-doux)}
+  .dm-lignes{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;
+    font-size:15.5px;
+  }
+  .dm-lignes .aide{display:block;font-size:13.5px;color:var(--encre-doux);margin-bottom:2px}
+  .dm-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:11px}
   .manque{
     font-size:13px;padding:2px 8px;border-radius:10px;
     background:#f6e2de;color:#8c2f22;font-weight:600;
@@ -197,6 +211,11 @@
 
     <div class="criteres" id="criteres"></div>
     <div class="compte-res" id="compteRes" hidden></div>
+
+    <!-- Changements d'adresse repérés au dernier import. Vide et masqué tant
+         qu'aucun import n'a tourné : ce n'est pas un état permanent de la
+         page, c'est le compte rendu d'une action. -->
+    <div id="demenagements" hidden></div>
 
     <!-- Bloc des fiches incomplètes, au-dessus de la liste alphabétique.
          Les fiches qui s'y trouvent en sont retirées : les voir deux fois
@@ -571,8 +590,9 @@ $("nouveauGroupe").onkeydown = (e) => { if (e.key === "Enter") ajouterGroupe(); 
 
 $("btnImporter").onclick = async () => {
   if (!confirm("Parcourir les commandes et mettre à jour le fichier clients ?\n\n" +
-       "Les noms, e-mails et statistiques sont repris depuis les commandes. " +
-    "Vos adresses, points de livraison, tags et notes ne sont pas touchés."))
+    "Les noms, e-mails et statistiques sont repris depuis les commandes. " +
+    "Vos adresses, points de livraison, tags et notes ne sont pas touchés.\n\n" +
+    "Les changements d'adresse repérés vous seront proposés à la fin."))
     return;
 
   $("btnImporter").disabled = true;
@@ -591,16 +611,28 @@ $("btnImporter").onclick = async () => {
       if (!tel || c.statut === "annulee") return;
       const e = parTel[tel] = parTel[tel] || {
         telephone: tel, brut: (c.client?.telephone || "").replace(/\D/g, ""),
-        nom: "", adresse: "", email: "", nb: 0, total: 0, derniere: ""
+        nom: "", adresse: "", email: "", nb: 0, total: 0, derniere: "",
+        // Date de l'adresse retenue : getDocs ne rend pas les commandes dans
+        // l'ordre chronologique, « la dernière lue » n'est pas « la plus
+        // récente ». Sans ce repère, l'adresse retenue était celle du hasard.
+        adresseLe: ""
       };
       // Seul lien avec la collection « comptes ». La commande la plus
       // récente fait foi si le client a changé d'adresse.
       if (c.client?.email) e.email = c.client.email;
       e.nb += 1;
       e.total += Number(c.total) || 0;
-      if (c.client?.nom) e.nom = c.client.nom;
-      if (c.client?.adresse) e.adresse = c.client.adresse;
       const d1 = c.date_retrait || (c.cree_le || "").slice(0, 10);
+      if (c.client?.nom) e.nom = c.client.nom;
+      /* Une adresse ponctuelle n'est pas l'adresse du client : il a demandé
+         une livraison ailleurs pour cette fois seulement. La retenir la ferait
+         passer pour un déménagement, et sur une fiche neuve elle deviendrait
+         l'adresse de référence. Le checkout applique déjà la même règle en
+         refusant de l'enregistrer sur le compte. */
+      if (c.client?.adresse && !c.client?.adresse_ponctuelle && d1 >= e.adresseLe) {
+        e.adresse = c.client.adresse;
+        e.adresseLe = d1;
+      }
       if (d1 > e.derniere) e.derniere = d1;
     });
 
@@ -613,12 +645,22 @@ $("btnImporter").onclick = async () => {
     // ouvre un nouveau plutôt que de laisser commit() échouer d'un coup
     // sur tout l'import dès que l'historique dépasse ce seuil.
     const LOT_MAX = 450;
+    const demenagements = [];
     let paquet = writeBatch(db);
     let dansLot = 0;
     let ajoutes = 0, majs = 0;
 
     for (const e of Object.values(parTel)) {
       const ancien = existants[e.telephone];
+      /* Déménagement possible : la fiche porte une adresse, la commande la
+         plus récente en porte une autre. Rien n'est écrit ici — on collecte,
+         on affichera, tu trancheras. Voir signalerDemenagements(). */
+      if (ancien && ancien.adresse && e.adresse && !memeAdresse(ancien.adresse, e.adresse)) {
+        demenagements.push({
+          id: ancien.telephone, nom: e.nom || ancien.nom,
+          ancienne: ancien.adresse, nouvelle: e.adresse, le: e.adresseLe
+        });
+      }
       // Les statistiques sont recalculées ; tags, groupe et notes restent à vous.
       const fiche = {
         nom: e.nom || (ancien ? ancien.nom : ""),
@@ -672,6 +714,7 @@ $("btnImporter").onclick = async () => {
     if (dansLot > 0) await paquet.commit();
 
     await charger();
+    signalerDemenagements(demenagements);
     etat(`${ajoutes} client(s) ajouté(s), ${majs} mis à jour.`, "ok");
   } catch (e) {
     console.error(e);
@@ -689,6 +732,86 @@ $("voirMasques").onchange = afficher;
 function ech(t) {
   return String(t ?? "").replace(/[&<>"]/g, x =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[x]));
+}
+
+/* ---------- Changements d'adresse ----------
+   L'import ne touche jamais l'adresse d'une fiche existante : c'est
+   volontaire, l'adresse de la fiche est nettoyée à la main pour que la
+   géolocalisation tombe juste. Conséquence, un déménagement ne remonte
+   jamais tout seul. Ce panneau comble le trou sans rien décider à ta place. */
+
+/* Comparaison tolérante. Sans elle, « Unit 4B, » et « unit 4b » passeraient
+   pour deux adresses différentes et tu verrais un déménagement à chaque
+   commande. Accents, casse, ponctuation et espaces sont retirés — il reste
+   des faux positifs quand un client ajoute un repère, d'où les deux boutons
+   plutôt qu'une écriture automatique. */
+function normAdresse(t) {
+  return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+function memeAdresse(a, b) {
+  return normAdresse(a) === normAdresse(b);
+}
+
+function signalerDemenagements(liste) {
+  const boite = $("demenagements");
+  boite.innerHTML = "";
+  boite.hidden = !liste.length;
+  if (!liste.length) return;
+
+  boite.insertAdjacentHTML("beforeend", `
+    <div class="bloc-titre">
+      <span>${liste.length} changement(s) d'adresse possible(s)</span>
+      <span class="aide">rien n'a été modifié — à vous de trancher</span>
+    </div>`);
+
+  liste.forEach(d => {
+    const el = document.createElement("div");
+    el.className = "demenagement";
+    el.innerHTML = `
+      <div class="dm-nom">${ech(d.nom)}${d.le ? ' <span class="aide">— commande du ' + ech(d.le) + '</span>' : ""}</div>
+      <div class="dm-lignes">
+        <div><span class="aide">Sur la fiche</span><div>${ech(d.ancienne)}</div></div>
+        <div><span class="aide">Dernière commande</span><div>${ech(d.nouvelle)}</div></div>
+      </div>
+      <div class="dm-actions">
+        <button class="mineur dm-adopter" type="button">Adopter la nouvelle</button>
+        <button class="mineur dm-ignorer" type="button">Ignorer</button>
+        <span class="chiffre dm-etat"></span>
+      </div>`;
+
+    // Ignorer ne fait que retirer la ligne de l'écran : rien n'est mémorisé.
+    // Si le client continue de commander à la nouvelle adresse, la question
+    // reviendra au prochain import — et c'est bien ce qu'on veut.
+    el.querySelector(".dm-ignorer").onclick = () => el.remove();
+
+    el.querySelector(".dm-adopter").onclick = async () => {
+      const boutons = el.querySelectorAll("button");
+      boutons.forEach(b => b.disabled = true);
+      el.querySelector(".dm-etat").textContent = "Enregistrement…";
+      try {
+        /* Les coordonnées sont effacées en même temps que l'adresse change.
+           Les garder ferait pointer le repère sur l'ancien domicile : le
+           motard irait au mauvais endroit sans que rien ne le signale, ce qui
+           est pire que de ne rien faire. Remise à null, la fiche retombe dans
+           le bloc « À compléter » avec la mention « manque : point de
+           livraison » — tu la retrouves en haut et tu recliques sur la carte. */
+        await setDoc(doc(db, "clients", d.id),
+          { adresse: d.nouvelle, coordonnees: null, maps_url: "" }, { merge: true });
+        const c = clients.find(x => x.id === d.id);
+        if (c) { c.adresse = d.nouvelle; c.coordonnees = null; c.maps_url = ""; }
+        el.remove();
+        if (!boite.querySelector(".demenagement")) boite.hidden = true;
+        afficher();
+      } catch (err) {
+        console.error(err);
+        boutons.forEach(b => b.disabled = false);
+        el.querySelector(".dm-etat").textContent = "Échec — réessayez.";
+      }
+    };
+
+    boite.appendChild(el);
+  });
 }
 
 /* ----- Fiches incomplètes -----
