@@ -132,6 +132,9 @@
     padding:3px 8px;border-radius:3px;background:#efe6d8;color:var(--encre-doux);
   }
   .etiq.rouge{background:#f6e2de;color:var(--alerte)}
+  /* Adresse ponctuelle : même famille que les alertes, parce que c'est une
+     commande où l'automatisme de livraison ne s'applique pas. */
+  .etiq.ponctuelle{background:#f6e2de;color:var(--alerte);font-weight:700}
   .etiq.verte{background:#e2eede;color:var(--ok)}
   .etiq.bleue{background:#dfe8ee;color:var(--accent)}
   /* COD : ni payé ni "à encaisser en ligne" — l'argent arrive à la
@@ -955,6 +958,13 @@ function telLivraison(c) {
 }
 
 function coordonneesDe(c) {
+  /* Livraison ponctuelle ailleurs : le client a coché « livrer ailleurs cette
+     fois » au checkout. Le point GPS de la fiche désigne son domicile
+     habituel — l'envoyer à Lalamove ferait partir le motard au mauvais
+     endroit sans que rien ne le signale. Pas de coordonnées, donc pas de
+     course automatique : la commande sort des tournées et le bloc Lalamove
+     explique pourquoi (voir monterLalamove). */
+  if (c.client?.adresse_ponctuelle) return null;
   const k = cleTel(c.client?.telephone);
   if (!k) return null;
   const fiche = clients.find(x => cleTel(x.telephone || x.id) === k);
@@ -1049,6 +1059,9 @@ function carte(c) {
         c.abonnement_rang ? " " + c.abonnement_rang +
           (c.abonnement_total ? "/" + c.abonnement_total : "") : ""}</span>` : ""}
       ${c.credit_utilise > 0 ? `<span class="etiq">crédit ${peso(c.credit_utilise)}</span>` : ""}
+      ${c.client?.adresse_ponctuelle ? `<span class="etiq ponctuelle"
+        title="Livraison ailleurs pour cette commande — le point GPS de la fiche ne s'applique pas"
+        >Adresse ponctuelle</span>` : ""}
       <span class="etiq st-${CLASSE_STATUT[c.statut] || "nouvelle"}">${
         LIBELLES[c.statut] || c.statut}</span>
       ${c.paiement?.methode ? `<span class="etiq">${
@@ -1454,6 +1467,19 @@ function monterLalamove(c, el) {
 
   // Une commande annulée n'a pas à être livrée.
   if (c.statut === "annulee") return;
+
+  /* Adresse ponctuelle : dire pourquoi il n'y a pas de bouton, sinon son
+     absence passe pour une panne et on cherche ailleurs. La course reste
+     possible depuis l'application Lalamove, en tapant l'adresse à la main. */
+  if (c.client?.adresse_ponctuelle) {
+    zone.hidden = false;
+    zone.innerHTML = `
+      <div class="info"><b>Adresse ponctuelle</b> — le client a demandé une
+        livraison ailleurs pour cette commande. Le point GPS enregistré sur sa
+        fiche ne correspond pas : pas de course automatique, à commander à la
+        main sur l'adresse ci-dessus.</div>`;
+    return;
+  }
 
   // Course déjà commandée : plus de bouton, seulement le suivi.
   if (c.lalamove && c.lalamove.orderId) {
@@ -2353,11 +2379,38 @@ $("lotAnnuler").onclick = () => {
   afficher(false);
 };
 
+/* L'adresse imprimée sur l'étiquette de livraison vient de la fiche client
+   quand elle existe, pas de ce que le client a tapé au checkout.
+
+   Les deux divergent souvent : au checkout on reçoit « unit 4b near the church
+   tondo », sur la fiche l'adresse a été nettoyée à la main pour que la
+   géolocalisation tombe juste. C'est la version nettoyée que le motard doit
+   lire, et c'est aussi celle qui correspond au point GPS envoyé à Lalamove.
+
+   Repli sur l'adresse de la commande si la fiche n'existe pas ou n'a pas
+   d'adresse : mieux vaut le texte brut qu'une étiquette vide. Les retraits ne
+   sont pas concernés, ils n'impriment pas d'adresse.
+
+   La substitution se fait sur une copie : la commande en base garde ce que le
+   client a demandé ce jour-là. */
+function pourEtiquette(c) {
+  if (c.option?.type !== "livraison") return c;
+  /* Adresse ponctuelle : le client a explicitement demandé une livraison
+     ailleurs pour cette fois. C'est ce qu'il a écrit qui doit être imprimé —
+     y substituer l'adresse de sa fiche enverrait le motard chez lui. */
+  if (c.client?.adresse_ponctuelle) return c;
+  const k = cleTel(c.client?.telephone);
+  const fiche = k ? clients.find(x => cleTel(x.telephone || x.id) === k) : null;
+  const surFiche = fiche ? String(fiche.adresse || "").trim() : "";
+  if (!surFiche) return c;
+  return { ...c, client: { ...c.client, adresse: surFiche } };
+}
+
 $("lotImprimer").onclick = () => {
   const choisies = commandes.filter(c => selection.has(c.id));
   if (!choisies.length) return;
   try {
-    sessionStorage.setItem("etiquettes", JSON.stringify(choisies));
+    sessionStorage.setItem("etiquettes", JSON.stringify(choisies.map(pourEtiquette)));
     window.open("etiquettes.html", "_blank");
   } catch (e) {
     console.error(e);
