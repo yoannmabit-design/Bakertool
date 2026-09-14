@@ -164,6 +164,15 @@
   }
   .lien:hover{border-color:var(--accent)}
   .lien b{display:block;font-size:17px}
+  /* Compteur des commandes jamais ouvertes. Rouge et sur la carte elle-même :
+     c'est le seul endroit de l'accueil où l'information doit s'imposer avant
+     tout le reste. Masqué à zéro. */
+  .lien .badge{
+    display:inline-block;margin-left:8px;padding:1px 8px;border-radius:99px;
+    background:var(--alerte);color:#fff;font-size:13.5px;font-weight:700;
+    vertical-align:2px;
+  }
+  .lien.alerte{border-color:var(--alerte)}
   .lien span{font-size:14.5px;color:var(--encre-doux)}
 
   .vide{padding:26px;text-align:center;color:var(--encre-doux);font-size:16.5px}
@@ -210,8 +219,12 @@
     </div>
 
     <div class="liens">
-      <a class="lien" href="commandes-admin.html">
-        <b>Commandes</b><span>Statuts, encaissements, étiquettes</span></a>
+      <!-- La destination est réécrite au chargement : vers les nouvelles
+           commandes s'il y en a, vers « À traiter » sinon. Le href écrit ici
+           reste le repli si le comptage échoue. -->
+      <a class="lien" id="lienCommandes" href="commandes-admin.html">
+        <b>Commandes<span class="badge" id="badgeNouvelles" hidden>0</span></b>
+        <span id="sousCommandes">Statuts, encaissements, étiquettes</span></a>
       <a class="lien" href="boutique-admin.html">
         <b>Boutique</b><span>Produits, points de retrait, paiements</span></a>
       <a class="lien" href="clients-admin.html">
@@ -487,7 +500,29 @@ async function charger() {
 
 /* Le calcul et l'affichage, séparés de la lecture : le cache et le réseau
    passent tous les deux par ici. */
+/* Commandes jamais traitées. Appelé depuis rendre(), donc une première fois
+   sur le cache de session puis une seconde sur les données fraîches : le
+   chiffre s'affiche tout de suite et se corrige seul une seconde plus tard.
+
+   Le clic mène directement à la vue « Nouvelles » quand il y en a — c'est ce
+   qu'on vient faire. Sans nouvelle commande, il mène à « À traiter », qui est
+   déjà la vue par défaut de la page. */
+function majLienCommandes(commandes) {
+  const n = commandes.filter(c => c.statut === "nouvelle").length;
+  const lien = $("lienCommandes");
+  const badge = $("badgeNouvelles");
+  if (!lien || !badge) return;
+  badge.textContent = n;
+  badge.hidden = n === 0;
+  lien.classList.toggle("alerte", n > 0);
+  lien.href = n > 0 ? "commandes-admin.html?vue=nouvelles" : "commandes-admin.html";
+  $("sousCommandes").textContent = n > 0
+    ? (n === 1 ? "1 nouvelle commande à confirmer" : n + " nouvelles commandes à confirmer")
+    : "Statuts, encaissements, étiquettes";
+}
+
 function rendre(commandes) {
+  majLienCommandes(commandes);
   const auj = iso(new Date());
   const dans7 = iso(new Date(Date.now() + 7 * 86400000));
   const mois = auj.slice(0, 7);
