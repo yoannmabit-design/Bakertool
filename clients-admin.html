@@ -73,6 +73,11 @@
      puisque savoir où l'on est en train de travailler prime sur l'état
      de contenu pendant qu'on la consulte. */
   .rattache{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:7px}
+  .rattache[hidden]{display:none}
+  .rattache select{
+    flex:1;min-width:170px;padding:8px 10px;border:1px solid var(--trait);
+    border-radius:var(--r);font:inherit;font-size:15px;background:#fff;color:var(--encre);
+  }
   .client.ouvert{border-left-color:#2f4858}
   /* Repérage temporaire en arrivant depuis une commande, même effet que sur
      la page Commandes pour que le geste soit reconnaissable. */
@@ -518,6 +523,10 @@ async function charger() {
         const cle = (v.email || "").trim().toLowerCase();
         if (cle) comptesParTel.set(cle, {
           id: d.id,
+          email: cle,
+          // Nom affiché dans le sélecteur de rattachement : un e-mail seul
+          // ne suffit pas toujours à reconnaître un client.
+          nom: v.nom || "",
           groupe: v.groupe || "",
           remise: Number(v.remise) || 0,
           solde: Number(v.solde) || 0
@@ -541,6 +550,8 @@ async function charger() {
         // même piège que les champs de portée dans credits-admin.html.
         email: v.email || "",
         adresse: v.adresse || "",
+        // Divergence d'adresse déjà écartée, sous forme normalisée.
+        adresse_ignoree: v.adresse_ignoree || "",
         maps_url: v.maps_url || "",
         coordonnees: v.coordonnees || null,
         groupe: v.groupe || "",
@@ -665,7 +676,12 @@ $("btnImporter").onclick = async () => {
       /* Déménagement possible : la fiche porte une adresse, la commande la
          plus récente en porte une autre. Rien n'est écrit ici — on collecte,
          on affichera, tu trancheras. Voir signalerDemenagements(). */
-      if (ancien && ancien.adresse && e.adresse && !memeAdresse(ancien.adresse, e.adresse)) {
+      /* Une divergence déjà écartée ne revient pas. Sans cette mémoire, les
+         faux positifs — un repère ajouté par le client, une ville écrite deux
+         fois — étaient à revalider à chaque import. */
+      if (ancien && ancien.adresse && e.adresse
+          && !memeAdresse(ancien.adresse, e.adresse)
+          && normAdresse(e.adresse) !== (ancien.adresse_ignoree || "")) {
         demenagements.push({
           id: ancien.telephone, nom: e.nom || ancien.nom,
           ancienne: ancien.adresse, nouvelle: e.adresse, le: e.adresseLe
@@ -825,10 +841,26 @@ function signalerDemenagements(liste) {
         <span class="chiffre dm-etat"></span>
       </div>`;
 
-    // Ignorer ne fait que retirer la ligne de l'écran : rien n'est mémorisé.
-    // Si le client continue de commander à la nouvelle adresse, la question
-    // reviendra au prochain import — et c'est bien ce qu'on veut.
-    el.querySelector(".dm-ignorer").onclick = () => el.remove();
+    /* Ignorer mémorise, sur la fiche, la forme normalisée de l'adresse
+       écartée. Elle ne sera plus signalée. Une adresse encore différente,
+       elle, ressortira : c'est cette divergence-là qu'on écarte, pas le
+       principe de la surveillance. */
+    el.querySelector(".dm-ignorer").onclick = async () => {
+      const boutons = el.querySelectorAll("button");
+      boutons.forEach(b => b.disabled = true);
+      try {
+        await setDoc(doc(db, "clients", d.id),
+          { adresse_ignoree: normAdresse(d.nouvelle) }, { merge: true });
+        const c = clients.find(x => x.id === d.id);
+        if (c) c.adresse_ignoree = normAdresse(d.nouvelle);
+      } catch (err) {
+        // Échec d'écriture : la ligne disparaît quand même pour cet import,
+        // elle reviendra au suivant. Mieux que de bloquer l'écran.
+        console.error(err);
+      }
+      el.remove();
+      if (!boite.querySelector(".demenagement")) boite.hidden = true;
+    };
 
     el.querySelector(".dm-adopter").onclick = async () => {
       const boutons = el.querySelectorAll("button");
@@ -842,9 +874,15 @@ function signalerDemenagements(liste) {
            le bloc « À compléter » avec la mention « manque : point de
            livraison » — tu la retrouves en haut et tu recliques sur la carte. */
         await setDoc(doc(db, "clients", d.id),
-          { adresse: d.nouvelle, coordonnees: null, maps_url: "" }, { merge: true });
+          { adresse: d.nouvelle, coordonnees: null, maps_url: "",
+            // L'ancienne mémoire d'écart ne veut plus rien dire : elle portait
+            // sur une comparaison avec l'adresse qu'on vient de remplacer.
+            adresse_ignoree: "" }, { merge: true });
         const c = clients.find(x => x.id === d.id);
-        if (c) { c.adresse = d.nouvelle; c.coordonnees = null; c.maps_url = ""; }
+        if (c) {
+          c.adresse = d.nouvelle; c.coordonnees = null;
+          c.maps_url = ""; c.adresse_ignoree = "";
+        }
         el.remove();
         if (!boite.querySelector(".demenagement")) boite.hidden = true;
         afficher();
@@ -1024,7 +1062,8 @@ function carte(c) {
                   dans « My account », même après inscription. Ce bouton fait
                   le rattachement à la main. -->
              <div class="rattache">
-               <button type="button" class="mineur c-rattacher" hidden>Rattacher ses commandes au compte</button>
+               <select class="c-compte"></select>
+               <button type="button" class="mineur c-rattacher">Rattacher</button>
                <span class="chiffre c-rattacher-etat"></span>
              </div></div>
         <!-- Clé Firestore inchangée (« groupe ») : seul le libellé bouge.
@@ -1135,46 +1174,72 @@ function carte(c) {
     ? "— rattaché au compte boutique"
     : "— collecté à la prochaine commande connectée";
 
-  /* ----- Rattachement manuel des commandes au compte boutique -----
+  /* ----- Rattachement manuel au compte boutique -----
      « My account » retrouve les commandes par leur champ compte_uid, écrit au
      checkout seulement si le client était déjà connecté. Une commande passée
      en invité n'en a pas, et rien ne le lui ajoute quand le client s'inscrit
      après coup : il se connecte et ne voit rien.
 
-     Le bouton n'apparaît que si un compte boutique existe pour cet e-mail —
-     sans compte, il n'y a pas d'identifiant à écrire. */
+     Le rapprochement ne peut pas être deviné : le compte porte un e-mail sans
+     numéro, la commande un numéro sans e-mail. Il n'existe aucune clé commune,
+     seul vous savez que ce compte est cette cliente. D'où un choix explicite
+     plutôt qu'une détection.
+
+     Le rattachement écrit deux choses : l'e-mail sur la fiche client, ce qui
+     rend permanent le lien avec le compte (tarif de groupe, solde, prochaines
+     commandes), et compte_uid sur les commandes déjà passées, ce qui les fait
+     apparaître dans son espace. */
+  const selCompte = d.querySelector(".c-compte");
   const btnRattacher = d.querySelector(".c-rattacher");
   const etatRattacher = d.querySelector(".c-rattacher-etat");
-  btnRattacher.hidden = !cpt;
+  const zoneRattache = d.querySelector(".rattache");
+
+  // Fiche déjà rattachée : plus rien à choisir.
+  zoneRattache.hidden = !!cpt;
+
+  if (!cpt) {
+    /* Comptes non encore rattachés à une fiche. En proposer un déjà pris
+       mènerait à deux fiches pointant le même compte, donc à un solde et un
+       tarif partagés entre deux clients. */
+    const prisEmails = new Set(clients.map(x => (x.email || "").trim().toLowerCase()).filter(Boolean));
+    const libres = [...comptesParTel.values()]
+      .filter(a => !prisEmails.has(a.email))
+      .sort((a, b) => (a.nom || a.email).localeCompare(b.nom || b.email));
+
+    selCompte.innerHTML = libres.length
+      ? '<option value="">Choisir un compte…</option>' +
+        libres.map(a => `<option value="${ech(a.email)}">${
+          ech(a.nom ? a.nom + " — " + a.email : a.email)}</option>`).join("")
+      : '<option value="">Aucun compte disponible</option>';
+    btnRattacher.disabled = !libres.length;
+  }
 
   btnRattacher.onclick = async () => {
+    const email = selCompte.value;
+    if (!email) { etatRattacher.textContent = "Choisissez un compte."; return; }
+    const compte = comptesParTel.get(email);
+    if (!compte) { etatRattacher.textContent = "Compte introuvable."; return; }
+
     btnRattacher.disabled = true;
-    etatRattacher.textContent = "Recherche…";
+    etatRattacher.textContent = "Recherche des commandes…";
     try {
       /* Lecture de toute la collection, comme l'import : les numéros sont
          stockés sous des formes variables selon l'ancienneté des commandes,
          une requête where sur le téléphone en manquerait. Le volume reste
-         celui d'une boulangerie, l'opération est ponctuelle. */
-      const s = await getDocs(collection(db, "commandes"));
+         celui d'une boulangerie, et l'opération est ponctuelle. */
+      const snap = await getDocs(collection(db, "commandes"));
       const mien = cleTel(c.telephone);
       const aRattacher = [];
-      s.forEach(docCmd => {
+      snap.forEach(docCmd => {
         const v = docCmd.data();
-        if (v.compte_uid) return;                       // déjà rattachée
+        if (v.compte_uid) return;                        // déjà rattachée
         if (cleTel(v.client?.telephone) !== mien) return;
         aRattacher.push(docCmd.id);
       });
 
-      if (!aRattacher.length) {
-        etatRattacher.textContent = "Aucune commande à rattacher.";
-        btnRattacher.disabled = false;
-        return;
-      }
-
-      // L'écriture rend ces commandes visibles dans l'espace client : mieux
-      // vaut annoncer combien avant de le faire.
-      if (!confirm(`Rattacher ${aRattacher.length} commande(s) au compte de ${c.nom} ?\n\n` +
-                   "Elles apparaîtront dans son espace « My account ».")) {
+      if (!confirm(`Rattacher ${ech(c.nom)} au compte ${email} ?\n\n` +
+                   `${aRattacher.length} commande(s) apparaîtront dans son espace « My account ».\n` +
+                   "L'e-mail sera aussi inscrit sur sa fiche, ce qui lie son solde et son tarif de groupe.")) {
         etatRattacher.textContent = "";
         btnRattacher.disabled = false;
         return;
@@ -1184,10 +1249,21 @@ function carte(c) {
       for (let i = 0; i < aRattacher.length; i += 400) {
         const lot = writeBatch(db);
         aRattacher.slice(i, i + 400).forEach(id =>
-          lot.set(doc(db, "commandes", id), { compte_uid: cpt.id }, { merge: true }));
+          lot.set(doc(db, "commandes", id), { compte_uid: compte.id }, { merge: true }));
         await lot.commit();
       }
-      etatRattacher.textContent = `${aRattacher.length} commande(s) rattachée(s).`;
+      await setDoc(doc(db, "clients", c.id), { email }, { merge: true });
+      c.email = email;
+
+      etatRattacher.textContent = aRattacher.length
+        ? `${aRattacher.length} commande(s) rattachée(s).`
+        : "Compte rattaché. Aucune commande à reprendre.";
+      champEmail.value = email;
+      infoEmail.textContent = "— rattaché au compte boutique";
+      zoneRattache.hidden = true;
+      // Le tarif de groupe et le solde dépendent du compte : la fiche doit
+      // être redessinée pour les afficher.
+      afficher();
     } catch (e) {
       console.error(e);
       etatRattacher.textContent = "Échec — réessayez.";
