@@ -107,6 +107,13 @@
   .tete{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;cursor:pointer}
   .tete .ref{font-family:ui-monospace,monospace;font-size:14.5px;color:var(--encre-doux)}
   .tete .nom{font-weight:600;flex:1;min-width:120px}
+  /* Souligné en pointillé plutôt qu'en plein : c'est un lien, mais il ne doit
+     pas attirer l'œil plus que le nom lui-même. */
+  .tete .nom-lien{
+    color:inherit;text-decoration:underline;text-decoration-style:dotted;
+    text-underline-offset:3px;text-decoration-color:var(--encre-doux);
+  }
+  .tete .nom-lien:hover{text-decoration-color:var(--accent);color:var(--accent)}
   .tete .montant{font-weight:600;font-variant-numeric:tabular-nums}
   .tete .quand{color:var(--encre-doux);font-size:15px}
   .tete .fleche{color:var(--encre-doux);font-size:13px}
@@ -1102,7 +1109,29 @@ function carte(c) {
       <div class="edition" hidden></div>
     </div>`;
 
-  el.querySelector(".nom").textContent = c.client?.nom || "—";
+  /* Trois zones cliquables distinctes sur la carte : la case coche
+     sélectionne, le nom ouvre la fiche client, tout le reste déplie la
+     commande. Le nom devient un vrai lien (nouvel onglet, clic milieu, copie
+     de l'adresse) plutôt qu'un gestionnaire de clic, mais il faut arrêter la
+     propagation, sinon partir vers la fiche déplierait la carte au passage. */
+  const zoneNom = el.querySelector(".nom");
+  const telClient = cleTel(c.client?.telephone);
+  const ficheClient = telClient
+    ? clients.find(x => cleTel(x.telephone || x.id) === telClient) : null;
+  if (ficheClient) {
+    const a = document.createElement("a");
+    a.className = "nom-lien";
+    a.href = "clients-admin.html?client=" + encodeURIComponent(ficheClient.id);
+    a.textContent = c.client?.nom || "—";
+    a.title = "Ouvrir la fiche client";
+    a.onclick = (e) => e.stopPropagation();
+    zoneNom.textContent = "";
+    zoneNom.appendChild(a);
+  } else {
+    // Pas de fiche : un lien mènerait à une page vide. Le nom reste du texte,
+    // et déplier la carte marche comme partout ailleurs.
+    zoneNom.textContent = c.client?.nom || "—";
+  }
   if (!compacte) {
     // Le statut est déjà dans l'étiquette colorée de l'en-tête.
     el.querySelector(".resume").textContent =
