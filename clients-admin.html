@@ -88,6 +88,33 @@
     background:#e8eef1;color:var(--accent);
   }
   .puce.groupe{font-weight:600}
+  /* Fiches incomplètes : un bloc à part, en tête, plutôt qu'une couleur dans
+     la liste alphabétique. Un client créé par une commande arrive sans tag ni
+     point de livraison — noyé au milieu de tous les autres, il n'est jamais
+     retrouvé et le travail ne se fait pas. */
+  .bloc-titre{
+    display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;
+    margin:0 0 10px;font-size:16px;font-weight:600;color:var(--encre);
+  }
+  .bloc-titre .aide{font-size:14px;font-weight:400;color:var(--encre-doux)}
+  #aCompleter{margin-bottom:22px;padding-bottom:6px;border-bottom:2px solid var(--trait)}
+  #aCompleter[hidden]{display:none}
+  .manque{
+    font-size:13px;padding:2px 8px;border-radius:10px;
+    background:#f6e2de;color:#8c2f22;font-weight:600;
+  }
+  .criteres{display:flex;gap:7px;flex-wrap:wrap;margin:0 0 14px}
+  .criteres:empty{display:none}
+  .criteres .crit{
+    display:inline-flex;align-items:center;gap:7px;padding:5px 7px 5px 11px;
+    border:1px solid var(--trait);border-radius:99px;background:#fff;
+    font-size:14.5px;color:var(--encre);
+  }
+  .criteres .crit button{
+    border:none;background:transparent;color:var(--encre-doux);
+    font-size:17px;line-height:1;cursor:pointer;padding:0 3px;
+  }
+  .compte-res{font-size:14.5px;color:var(--encre-doux);margin:0 0 12px}
 
   .detail{margin-top:14px;padding-top:14px;border-top:1px dashed var(--trait)}
   .detail[hidden]{display:none}
@@ -134,9 +161,15 @@
   <main>
     <div class="outils">
       <input type="text" id="recherche" placeholder="Rechercher un nom, un numéro, un tag…">
-      <select id="filtreGroupe"><option value="">Tous les groupes</option></select>
+      <!-- « Tags » et non « groupes » : le groupe tarifaire est un autre champ,
+           en lecture seule sur la fiche et réglé dans Crédit. Deux menus qui
+           parlent de groupes prêtaient à confusion. -->
+      <select id="filtreGroupe"><option value="">Tous les tags</option></select>
       <label style="display:flex;align-items:center;gap:7px;margin:0;font-size:15.5px;color:var(--encre)">
         <input type="checkbox" id="voirMasques" style="width:auto"> Archivés et tests
+      </label>
+      <label style="display:flex;align-items:center;gap:7px;margin:0;font-size:15.5px;color:var(--encre)">
+        <input type="checkbox" id="seulementACompleter" style="width:auto"> À compléter seulement
       </label>
       <button class="mineur" id="btnImporter">Importer depuis les commandes</button>
       <button class="mineur" id="btnGroupes">Groupes tarifaires</button>
@@ -160,6 +193,20 @@
         </div>
         <span class="chiffre" id="etatGroupes"></span>
       </div>
+    </div>
+
+    <div class="criteres" id="criteres"></div>
+    <div class="compte-res" id="compteRes" hidden></div>
+
+    <!-- Bloc des fiches incomplètes, au-dessus de la liste alphabétique.
+         Les fiches qui s'y trouvent en sont retirées : les voir deux fois
+         ferait douter qu'on ait déjà traité la première. -->
+    <div id="aCompleter" hidden>
+      <div class="bloc-titre">
+        <span id="aCompleterTitre">À compléter</span>
+        <span class="aide">tag manquant, ou adresse sans point de livraison</span>
+      </div>
+      <div id="listeACompleter"></div>
     </div>
 
     <div id="liste"><div class="vide">Chargement…</div></div>
@@ -508,7 +555,7 @@ function majGroupes() {
   const noms = [...new Set(clients.map(c => c.groupe).filter(Boolean))].sort();
   const sel = $("filtreGroupe");
   const actuel = sel.value;
-  sel.innerHTML = '<option value="">Tous les groupes</option>' +
+  sel.innerHTML = '<option value="">Tous les tags</option>' +
     noms.map(g => `<option value="${g}">${g}</option>`).join("");
   sel.value = actuel;
 }
@@ -643,22 +690,97 @@ function ech(t) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[x]));
 }
 
+/* ----- Fiches incomplètes -----
+   Deux manques seulement, et ils ne se valent pas :
+
+   - pas de tag : la fiche n'a pas encore été qualifiée ;
+   - une adresse saisie mais aucun point de livraison : Lalamove ne sait pas
+     où aller, la course ne partira jamais.
+
+   Le GPS n'est exigé que si une adresse existe. Un client qui vient chercher
+   son pain n'a rien à géolocaliser : lui réclamer un point de livraison le
+   laisserait dans ce bloc à vie et rendrait le bloc inutile.
+
+   Rien n'est écrit en base : l'état se recalcule à l'affichage. Pas de champ
+   « nouveau » à poser, pas de champ à penser à retirer, et une fiche ancienne
+   restée incomplète remonte au même titre qu'une fiche du jour. */
+function manquesDe(c) {
+  const m = [];
+  if (!c.groupe) m.push("tag");
+  const co = c.coordonnees;
+  if (c.adresse && c.adresse.trim() && !(co && co.lat && co.lng)) m.push("point de livraison");
+  return m;
+}
+
+function estACompleter(c) {
+  // Une fiche archivée ou de test n'a rien à réclamer : elle est hors circuit.
+  if (estMasque(c)) return false;
+  return manquesDe(c).length > 0;
+}
+
+function peindreCriteres(f, g, seulement) {
+  const puces = [];
+  if (f)         puces.push(["recherche", "« " + $("recherche").value.trim() + " »"]);
+  if (g)         puces.push(["tag", "Tag " + g]);
+  if (seulement) puces.push(["acompleter", "À compléter seulement"]);
+  $("criteres").innerHTML = puces.map(([k, t]) =>
+    `<span class="crit">${ech(t)}<button type="button" data-crit="${k}"
+       title="Retirer ce critère" aria-label="Retirer ce critère">×</button></span>`).join("");
+}
+
+$("criteres").onclick = (e) => {
+  const b = e.target.closest("button[data-crit]");
+  if (!b) return;
+  if (b.dataset.crit === "recherche")   $("recherche").value = "";
+  if (b.dataset.crit === "tag")         $("filtreGroupe").value = "";
+  if (b.dataset.crit === "acompleter")  $("seulementACompleter").checked = false;
+  afficher();
+};
+
+$("seulementACompleter").onchange = () => afficher();
+
 function afficher() {
   majSuggestionsGroupes();
   const f = $("recherche").value.trim().toLowerCase();
   const g = $("filtreGroupe").value;
   const voirMasques = $("voirMasques").checked;
+  const seulement = $("seulementACompleter").checked;
   const liste = $("liste");
+  const bloc = $("aCompleter");
+  const listeAC = $("listeACompleter");
+
+  peindreCriteres(f, g, seulement);
 
   const vus = clients.filter(c => {
     // Archivés et fiches de test sortent des listes courantes : ils ne
     // doivent ni encombrer ni compter.
     if (!voirMasques && estMasque(c)) return false;
     if (g && c.groupe !== g) return false;
+    if (seulement && !estACompleter(c)) return false;
     if (!f) return true;
     return (c.nom + " " + c.telephone + " " + c.tags.join(" ") + " " + c.groupe)
       .toLowerCase().includes(f);
   });
+
+  /* Le bloc du haut prend les fiches incomplètes, la liste du bas garde les
+     autres. Les plus récemment actives en tête : les fiches clients n'ont pas
+     de date de création, la dernière commande est le repère le plus proche de
+     « celle qui vient d'arriver ». Une fiche sans aucune commande passe en
+     queue de bloc — elle a été créée à la main, elle n'urge pas. */
+  const incomplets = vus.filter(estACompleter)
+    .sort((a, b) => (b.derniere_commande || "").localeCompare(a.derniere_commande || ""));
+  const reste = vus.filter(c => !estACompleter(c));
+
+  listeAC.innerHTML = "";
+  bloc.hidden = incomplets.length === 0;
+  if (incomplets.length) {
+    $("aCompleterTitre").textContent = "À compléter (" + incomplets.length + ")";
+    incomplets.forEach(c => listeAC.appendChild(carte(c)));
+  }
+
+  const cr = $("compteRes");
+  cr.hidden = !(f || g || seulement);
+  if (!cr.hidden) cr.textContent = vus.length + " fiche(s) sur " + clients.length;
 
   liste.innerHTML = "";
   if (!vus.length) {
@@ -670,8 +792,14 @@ function afficher() {
       '</div>';
     return;
   }
+  if (!reste.length) {
+    // Tout est remonté dans le bloc : le dire, plutôt que de laisser un vide
+    // qui ressemble à un bug.
+    liste.innerHTML = '<div class="vide">Toutes les fiches affichées sont en haut, à compléter.</div>';
+    return;
+  }
 
-  vus.forEach(c => liste.appendChild(carte(c)));
+  reste.forEach(c => liste.appendChild(carte(c)));
 }
 
 /* ----- Lalamove : points de départ -----
@@ -703,6 +831,8 @@ function carte(c) {
       <span class="nom"></span>
       ${c.groupe ? '<span class="puce groupe"></span>' : ""}
       ${c.tags.map(() => '<span class="puce"></span>').join("")}
+      ${manquesDe(c).length && !estMasque(c)
+        ? '<span class="manque">manque : ' + ech(manquesDe(c).join(" et ")) + '</span>' : ""}
       <span class="tel"></span>
       <span class="chiffre">${c.nb_commandes} cmd · ${peso(c.total_depense)}</span>
     </div>
@@ -720,7 +850,10 @@ function carte(c) {
         <div><label>E-mail <span class="c-email-info" style="opacity:.75"></span></label>
              <input type="text" class="c-email" readonly
                     style="background:#f2ece2;color:var(--encre-doux)"></div>
-        <div><label>Segment interne</label><input type="text" class="c-groupe" list="groupesConnus"
+        <!-- Clé Firestore inchangée (« groupe ») : seul le libellé bouge.
+             Renommer le champ en base obligerait à migrer toutes les fiches
+             et à traquer chaque lecture, pour zéro gain visible. -->
+        <div><label>Tag</label><input type="text" class="c-groupe" list="groupesConnus"
              placeholder="revendeur, café, habitué…"></div>
         <div>
           <label>Groupe tarifaire <span class="c-tarif-info" style="opacity:.75"></span></label>
@@ -761,8 +894,11 @@ function carte(c) {
           <span class="chiffre c-lala-course-etat"></span>
         </div>
       </div>
-      <div style="margin-top:13px"><label>Tags (séparés par des virgules)</label>
-        <input type="text" class="c-tags" placeholder="marché, sans gluten, VIP"></div>
+      <!-- L'ancien champ « Tags (séparés par des virgules) » était ici, sous la
+           carte et le bloc Lalamove : invisible en pratique, et concurrent du
+           champ Tag ci-dessus. Il est retiré de la saisie, mais le tableau
+           « tags » reste lu, affiché en pastilles et cherché : rien n'est
+           perdu sur les fiches qui en portent. -->
       <div style="margin-top:13px"><label>Notes</label>
         <textarea class="c-notes"></textarea></div>
       <div class="actions">
@@ -801,7 +937,6 @@ function carte(c) {
   d.querySelector(".c-tel-local").value = c.telephone_local || "";
   d.querySelector(".c-groupe").value  = c.groupe;
   d.querySelector(".c-adresse").value = c.adresse;
-  d.querySelector(".c-tags").value    = c.tags.join(", ");
   d.querySelector(".c-notes").value   = c.notes;
   d.querySelector(".c-wa").href = "https://wa.me/" + c.telephone;
 
@@ -1149,10 +1284,6 @@ function carte(c) {
   };
 
   d.querySelector(".c-notes").oninput   = (e) => { c.notes = e.target.value; noter(); };
-  d.querySelector(".c-tags").oninput    = (e) => {
-    c.tags = e.target.value.split(",").map(t => t.trim()).filter(Boolean);
-    noter();
-  };
 
   return el;
 }
