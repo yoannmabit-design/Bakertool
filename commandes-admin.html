@@ -46,6 +46,45 @@
   .filtres button[aria-pressed="true"]{
     background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;
   }
+  /* Compteur des nouvelles commandes : rouge même quand le bouton n'est pas
+     actif, sinon la seule information qui doit sauter aux yeux se fondrait
+     dans la barre. Masqué à zéro — un compteur à 0 n'apprend rien et use
+     l'attention pour rien. */
+  .filtres button .compteur{
+    display:inline-block;min-width:20px;margin-left:6px;padding:1px 6px;
+    border-radius:99px;background:var(--alerte);color:#fff;
+    font-size:13.5px;font-weight:700;line-height:1.5;
+  }
+  .filtres button[aria-pressed="true"] .compteur{background:#fff;color:var(--alerte)}
+  /* Deuxième rang de filtres : critères plus rares que les trois vues, donc
+     repliés par défaut pour ne pas alourdir l'écran de tous les jours. */
+  .filtres-plus{
+    display:none;gap:9px;flex-wrap:wrap;align-items:flex-end;margin:-6px 0 14px;
+    padding:12px 13px;border:1px solid var(--trait);border-radius:var(--r);
+    background:#fffdf8;
+  }
+  .filtres-plus.ouvert{display:flex}
+  .filtres-plus label{
+    display:block;font-size:13.5px;color:var(--encre-doux);margin-bottom:3px;
+  }
+  .filtres-plus input,.filtres-plus select{
+    padding:8px 10px;border:1px solid var(--trait);border-radius:var(--r);
+    font:inherit;font-size:15.5px;background:#fff;color:var(--encre);
+  }
+  /* Critères actifs : sans rappel visible, on cherche pendant dix minutes
+     pourquoi une commande n'apparaît pas alors qu'un filtre est resté posé. */
+  .criteres{display:flex;gap:7px;flex-wrap:wrap;margin:0 0 14px}
+  .criteres:empty{display:none}
+  .criteres .crit{
+    display:inline-flex;align-items:center;gap:7px;padding:5px 7px 5px 11px;
+    border:1px solid var(--trait);border-radius:99px;background:#fff;
+    font-size:14.5px;color:var(--encre);
+  }
+  .criteres .crit button{
+    border:none;background:transparent;color:var(--encre-doux);
+    font-size:17px;line-height:1;cursor:pointer;padding:0 3px;
+  }
+  .compte-res{font-size:14.5px;color:var(--encre-doux);margin:0 0 12px}
 
   .jour{font-size:16px;color:var(--encre-doux);margin:22px 0 9px;font-weight:600}
   .cmd{
@@ -336,14 +375,34 @@
     </div>
 
     <div class="filtres" id="filtres">
+      <button data-f="nouvelles" aria-pressed="false">Nouvelles<span class="compteur" id="cptNouvelles" hidden>0</span></button>
       <button data-f="actives" aria-pressed="true">À traiter</button>
       <button data-f="impayees" aria-pressed="false">Impayées</button>
       <button data-f="toutes" aria-pressed="false">Toutes</button>
+      <button type="button" id="btnPlus" title="Filtrer par date, tag client ou code produit">＋ Filtres</button>
       <button type="button" id="btnReclasser" title="Remonter en tête ce qui attend encore une action"
               style="margin-left:auto">↕ Reclasser</button>
     </div>
     <input type="search" id="recherche"
-           placeholder="Chercher un client ou un article…">
+           placeholder="Chercher un client, un article, un n° de commande ou un code produit…">
+
+    <!-- Critères secondaires. La recherche libre ci-dessus couvre déjà le nom,
+         l'article, le numéro et le code : ce panneau sert aux bornes et aux
+         listes fermées, qu'on ne peut pas taper au clavier. -->
+    <div class="filtres-plus" id="filtresPlus">
+      <div><label for="fCode">Code produit</label>
+        <input type="text" id="fCode" list="codesConnus" placeholder="PAI-BAG" size="10"></div>
+      <div><label for="fTag">Tag client</label>
+        <select id="fTag"><option value="">Tous</option></select></div>
+      <div><label for="fDu">Commandée du</label>
+        <input type="date" id="fDu"></div>
+      <div><label for="fAu">au</label>
+        <input type="date" id="fAu"></div>
+      <button type="button" class="mineur" id="btnEffacerFiltres">Tout effacer</button>
+    </div>
+    <datalist id="codesConnus"></datalist>
+    <div class="criteres" id="criteres"></div>
+    <div class="compte-res" id="compteRes" hidden></div>
     <div id="liste"><div class="vide">Chargement…</div></div>
   </main>
 </div>
@@ -422,7 +481,13 @@ const CLASSE_STATUT = {
 // Portée de la génération des commandes d'abonnement, en jours.
 const FENETRE_JOURS = 10;
 
-let commandes = [], filtre = "actives";
+/* Vue de départ. La page d'accueil peut la fixer via ?vue=nouvelles quand
+   elle a compté des commandes non traitées : un seul clic depuis l'accueil
+   au lieu d'arriver sur « À traiter » puis de rebasculer. Toute autre valeur
+   est ignorée plutôt que de laisser la page dans un état inconnu. */
+const VUES = ["nouvelles", "actives", "impayees", "toutes"];
+const vueDemandee = new URLSearchParams(location.search).get("vue");
+let commandes = [], filtre = VUES.includes(vueDemandee) ? vueDemandee : "actives";
 let joursFermes = [];   // 0 = lundi
 let optionsRetrait = []; // options de retrait/livraison — pour la modification
 let catalogue = {};     // { code : { nom, prix_vente, rayon } } — pour la modification
@@ -529,6 +594,7 @@ async function charger() {
       signaler(crees + " commande(s) d'abonnement générée(s).");
     }
 
+    majListesFiltres();
     afficher();
     // Les destinations d'expédition conditionnent l'affichage du bouton de
     // tournée : une fois connues, on redessine.
@@ -583,6 +649,11 @@ function allerVersCommandeCiblee() {
    doit pouvoir la ranger quand on a fini de traiter une série. */
 $("btnReclasser").onclick = () => { afficher(true); };
 
+// Le bouton actif est écrit en dur dans le HTML sur « À traiter » : si l'URL
+// a demandé une autre vue, il faut le remettre d'accord avec l'état réel.
+$("filtres").querySelectorAll("button[data-f]").forEach(b =>
+  b.setAttribute("aria-pressed", b.dataset.f === filtre ? "true" : "false"));
+
 $("filtres").onclick = (e) => {
   const b = e.target.closest("button");
   if (!b || !b.dataset.f) return;
@@ -605,6 +676,10 @@ $("recherche").addEventListener("input", (e) => {
 
 function retenue(c) {
   if (filtre === "toutes") return true;
+  // Statut « nouvelle » et rien d'autre : ce que personne n'a encore regardé.
+  // Volontairement sans borne de date — une nouvelle commande dont la date de
+  // retrait est déjà passée est justement celle qu'il ne faut pas rater.
+  if (filtre === "nouvelles") return c.statut === "nouvelle";
   if (filtre === "impayees")
     return (c.paiement?.statut || "en attente") === "en attente" && c.statut !== "annulee";
   return !["remise", "annulee"].includes(c.statut);
@@ -620,7 +695,121 @@ let recherche = "";
 function correspond(c) {
   if (!recherche) return true;
   if (normaliser(c.client?.nom).includes(recherche)) return true;
-  return (c.panier || []).some(l => normaliser(l.nom).includes(recherche));
+  // Numéro de commande : on cherche aussi sur l'identifiant Firestore, seul
+  // repère des commandes anciennes qui n'ont pas de numéro lisible.
+  if (normaliser(c.numero || "").includes(recherche)) return true;
+  if (normaliser(c.id).includes(recherche)) return true;
+  return (c.panier || []).some(l =>
+    normaliser(l.nom).includes(recherche) ||
+    normaliser(codeLigne(l) || "").includes(recherche));
+}
+
+/* ---------- Critères secondaires ----------
+   Tout se filtre en mémoire : la page charge déjà la collection entière, une
+   requête Firestore par critère n'apporterait rien et imposerait des index
+   composites. */
+const crit = { code: "", tag: "", du: "", au: "" };
+
+// Le tag vit sur la fiche client (champ « groupe »), pas sur la commande :
+// on rapproche par téléphone, comme partout ailleurs dans cette page.
+function tagDe(c) {
+  const k = cleTel(c.client?.telephone);
+  if (!k) return "";
+  const fiche = clients.find(x => cleTel(x.telephone || x.id) === k);
+  return fiche ? (fiche.groupe || "") : "";
+}
+
+function passeCriteres(c) {
+  if (crit.code) {
+    const cherche = crit.code.trim().toUpperCase();
+    if (!(c.panier || []).some(l => String(codeLigne(l) || "").toUpperCase() === cherche))
+      return false;
+  }
+  if (crit.tag && tagDe(c) !== crit.tag) return false;
+  // Date de commande, pas date de retrait : « cree_le » est un horodatage ISO,
+  // les dix premiers caractères suffisent à le comparer à une date de champ.
+  const jour = (c.cree_le || "").slice(0, 10);
+  if (crit.du && (!jour || jour < crit.du)) return false;
+  if (crit.au && (!jour || jour > crit.au)) return false;
+  return true;
+}
+
+function critereActif() {
+  return !!(crit.code || crit.tag || crit.du || crit.au || recherche);
+}
+
+/* Rappel visible des critères posés, chacun retirable d'un clic. Sans lui,
+   un filtre oublié se lit comme une commande disparue. */
+function peindreCriteres() {
+  const boite = $("criteres");
+  const puces = [];
+  if (recherche)  puces.push(["recherche", "« " + $("recherche").value.trim() + " »"]);
+  if (crit.code)  puces.push(["code", "Code " + crit.code.toUpperCase()]);
+  if (crit.tag)   puces.push(["tag", "Tag " + crit.tag]);
+  if (crit.du)    puces.push(["du", "À partir du " + crit.du]);
+  if (crit.au)    puces.push(["au", "Jusqu'au " + crit.au]);
+  boite.innerHTML = puces.map(([k, t]) =>
+    `<span class="crit">${echapper(t)}<button type="button" data-crit="${k}"
+       title="Retirer ce critère" aria-label="Retirer ce critère">×</button></span>`).join("");
+}
+
+$("criteres").onclick = (e) => {
+  const b = e.target.closest("button[data-crit]");
+  if (!b) return;
+  const k = b.dataset.crit;
+  if (k === "recherche") { $("recherche").value = ""; recherche = ""; }
+  else { crit[k] = ""; $({ code: "fCode", tag: "fTag", du: "fDu", au: "fAu" }[k]).value = ""; }
+  afficher();
+};
+
+$("btnPlus").onclick = () => {
+  const p = $("filtresPlus");
+  p.classList.toggle("ouvert");
+  $("btnPlus").setAttribute("aria-pressed", p.classList.contains("ouvert") ? "true" : "false");
+};
+
+["fCode", "fTag", "fDu", "fAu"].forEach(id => {
+  $(id).oninput = () => {
+    crit.code = $("fCode").value.trim();
+    crit.tag  = $("fTag").value;
+    crit.du   = $("fDu").value;
+    crit.au   = $("fAu").value;
+    afficher();
+  };
+});
+
+$("btnEffacerFiltres").onclick = () => {
+  crit.code = crit.tag = crit.du = crit.au = "";
+  ["fCode", "fTag", "fDu", "fAu"].forEach(id => $(id).value = "");
+  $("recherche").value = ""; recherche = "";
+  afficher();
+};
+
+// Listes d'aide à la saisie, remplies d'après ce qui existe réellement :
+// proposer un code ou un tag inutilisé ne ferait que produire des vues vides.
+function majListesFiltres() {
+  const codes = new Set();
+  commandes.forEach(c => (c.panier || []).forEach(l => {
+    const k = codeLigne(l); if (k) codes.add(k);
+  }));
+  $("codesConnus").innerHTML =
+    [...codes].sort().map(k => `<option value="${echapper(k)}">`).join("");
+
+  const tags = [...new Set(clients.map(x => x.groupe).filter(Boolean))].sort();
+  const garde = $("fTag").value;
+  $("fTag").innerHTML = '<option value="">Tous</option>' +
+    tags.map(t => `<option value="${echapper(t)}">${echapper(t)}</option>`).join("");
+  if (tags.includes(garde)) $("fTag").value = garde;
+}
+
+/* Compteur des nouvelles commandes. Il compte sur la collection entière et
+   non sur la vue courante : c'est un rappel permanent, il ne doit pas
+   disparaître parce qu'on regarde ailleurs. */
+function majCompteurNouvelles() {
+  const n = commandes.filter(c => c.statut === "nouvelle").length;
+  const el = $("cptNouvelles");
+  el.textContent = n;
+  el.hidden = n === 0;
 }
 
 /* ---------- Affichage ---------- */
@@ -633,7 +822,15 @@ let ordreFige = null;
 
 function afficher(reclasser = true) {
   const liste = $("liste");
-  let vues = commandes.filter(retenue).filter(correspond);
+  majCompteurNouvelles();
+  peindreCriteres();
+  let vues = commandes.filter(retenue).filter(correspond).filter(passeCriteres);
+
+  // Combien on voit sur combien : affiché seulement quand un critère est posé,
+  // sinon le total de l'historique s'afficherait en permanence sans utilité.
+  const cr = $("compteRes");
+  cr.hidden = !critereActif();
+  if (!cr.hidden) cr.textContent = vues.length + " commande(s) sur " + commandes.length;
   // Seule la vue « Toutes » mélange des commandes closes et actives : elle
   // seule a besoin de les séparer.
   if (filtre === "toutes") vues = trierPourToutes(vues);
@@ -651,8 +848,10 @@ function afficher(reclasser = true) {
   liste.innerHTML = "";
 
   if (!vues.length) {
-    liste.innerHTML = recherche
-      ? '<div class="vide">Aucune commande ne correspond à la recherche.</div>'
+    liste.innerHTML = critereActif()
+      ? '<div class="vide">Aucune commande ne correspond aux critères.' +
+        '<br><br>Les filtres portent sur tout l\'historique : si rien ne sort, ' +
+        'c\'est que la commande cherchée n\'existe pas sous cette forme.</div>'
       : '<div class="vide">Aucune commande dans cette vue.</div>';
     return;
   }
