@@ -72,6 +72,7 @@
      travaille dans une longue liste — l'emporte sur violet/orange,
      puisque savoir où l'on est en train de travailler prime sur l'état
      de contenu pendant qu'on la consulte. */
+  .rattache{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:7px}
   .client.ouvert{border-left-color:#2f4858}
   /* Repérage temporaire en arrivant depuis une commande, même effet que sur
      la page Commandes pour que le geste soit reconnaissable. */
@@ -1017,7 +1018,15 @@ function carte(c) {
              connecté. C'est le seul lien avec le compte boutique. -->
         <div><label>E-mail <span class="c-email-info" style="opacity:.75"></span></label>
              <input type="text" class="c-email" readonly
-                    style="background:#f2ece2;color:var(--encre-doux)"></div>
+                    style="background:#f2ece2;color:var(--encre-doux)">
+             <!-- Les commandes passées sans être connecté ne portent pas
+                  d'identifiant de compte : elles n'apparaissent donc jamais
+                  dans « My account », même après inscription. Ce bouton fait
+                  le rattachement à la main. -->
+             <div class="rattache">
+               <button type="button" class="mineur c-rattacher" hidden>Rattacher ses commandes au compte</button>
+               <span class="chiffre c-rattacher-etat"></span>
+             </div></div>
         <!-- Clé Firestore inchangée (« groupe ») : seul le libellé bouge.
              Renommer le champ en base obligerait à migrer toutes les fiches
              et à traquer chaque lecture, pour zéro gain visible. -->
@@ -1125,6 +1134,66 @@ function carte(c) {
   infoEmail.textContent = c.email
     ? "— rattaché au compte boutique"
     : "— collecté à la prochaine commande connectée";
+
+  /* ----- Rattachement manuel des commandes au compte boutique -----
+     « My account » retrouve les commandes par leur champ compte_uid, écrit au
+     checkout seulement si le client était déjà connecté. Une commande passée
+     en invité n'en a pas, et rien ne le lui ajoute quand le client s'inscrit
+     après coup : il se connecte et ne voit rien.
+
+     Le bouton n'apparaît que si un compte boutique existe pour cet e-mail —
+     sans compte, il n'y a pas d'identifiant à écrire. */
+  const btnRattacher = d.querySelector(".c-rattacher");
+  const etatRattacher = d.querySelector(".c-rattacher-etat");
+  btnRattacher.hidden = !cpt;
+
+  btnRattacher.onclick = async () => {
+    btnRattacher.disabled = true;
+    etatRattacher.textContent = "Recherche…";
+    try {
+      /* Lecture de toute la collection, comme l'import : les numéros sont
+         stockés sous des formes variables selon l'ancienneté des commandes,
+         une requête where sur le téléphone en manquerait. Le volume reste
+         celui d'une boulangerie, l'opération est ponctuelle. */
+      const s = await getDocs(collection(db, "commandes"));
+      const mien = cleTel(c.telephone);
+      const aRattacher = [];
+      s.forEach(docCmd => {
+        const v = docCmd.data();
+        if (v.compte_uid) return;                       // déjà rattachée
+        if (cleTel(v.client?.telephone) !== mien) return;
+        aRattacher.push(docCmd.id);
+      });
+
+      if (!aRattacher.length) {
+        etatRattacher.textContent = "Aucune commande à rattacher.";
+        btnRattacher.disabled = false;
+        return;
+      }
+
+      // L'écriture rend ces commandes visibles dans l'espace client : mieux
+      // vaut annoncer combien avant de le faire.
+      if (!confirm(`Rattacher ${aRattacher.length} commande(s) au compte de ${c.nom} ?\n\n` +
+                   "Elles apparaîtront dans son espace « My account ».")) {
+        etatRattacher.textContent = "";
+        btnRattacher.disabled = false;
+        return;
+      }
+
+      // Par lots : writeBatch plafonne à 500 écritures.
+      for (let i = 0; i < aRattacher.length; i += 400) {
+        const lot = writeBatch(db);
+        aRattacher.slice(i, i + 400).forEach(id =>
+          lot.set(doc(db, "commandes", id), { compte_uid: cpt.id }, { merge: true }));
+        await lot.commit();
+      }
+      etatRattacher.textContent = `${aRattacher.length} commande(s) rattachée(s).`;
+    } catch (e) {
+      console.error(e);
+      etatRattacher.textContent = "Échec — réessayez.";
+      btnRattacher.disabled = false;
+    }
+  };
 
   /* ----- Groupe tarifaire, porté par le compte boutique ----- */
   const selTarif = d.querySelector(".c-tarif");
