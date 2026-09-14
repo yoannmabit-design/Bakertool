@@ -307,6 +307,11 @@ const modifies = new Set();
    client (collection « clients ») : les deux sont rapprochés par le numéro,
    seul point commun entre elles. */
 let comptesParTel = new Map();
+/* Comptes boutique indexés par numéro de mobile (clé normalisée). Depuis que
+   « My account » demande le numéro à la connexion, c'est lui qui rapproche un
+   compte d'une fiche client et de ses commandes, sans passer par l'e-mail —
+   que la moitié des clients ne donnent jamais. */
+let comptesParTelephone = new Map();
 
 /* Groupes tarifaires — lus dans Firestore, partagés avec l'admin Crédit.
    Le document se crée tout seul au premier chargement avec les groupes
@@ -516,11 +521,14 @@ async function charger() {
        numéro. L'ancien index par téléphone restait donc toujours vide, et
        aucune fiche ne trouvait son compte. */
     comptesParTel = new Map();
+    comptesParTelephone = new Map();
     try {
       const sc = await getDocs(collection(db, "comptes"));
       sc.forEach(d => {
         const v = d.data();
         const cle = (v.email || "").trim().toLowerCase();
+        const cleT = cleTel(v.telephone);
+        if (cleT) comptesParTelephone.set(cleT, { id: d.id, email: cle, nom: v.nom || "" });
         if (cle) comptesParTel.set(cle, {
           id: d.id,
           email: cle,
@@ -622,6 +630,8 @@ $("btnImporter").onclick = async () => {
   try {
     const s = await getDocs(collection(db, "commandes"));
     const parTel = {};
+    // Commandes à relier à un compte boutique, repérées au passage.
+    const aRelier = [];
     s.forEach(d => {
       const c = d.data();
       /* Clé normalisée aux dix derniers chiffres, comme partout ailleurs.
@@ -630,6 +640,14 @@ $("btnImporter").onclick = async () => {
          naissait sans coordonnées et masquait celle qui les portait. */
       const tel = cleTel(c.client?.telephone);
       if (!tel || c.statut === "annulee") return;
+
+      /* Commande jamais rattachée à un compte : si un compte boutique porte
+         ce numéro, c'est celui du client. On note l'appariement ici, on
+         écrira plus bas avec le reste. */
+      if (!c.compte_uid) {
+        const cpteTel = comptesParTelephone.get(tel);
+        if (cpteTel) aRelier.push({ id: d.id, uid: cpteTel.id });
+      }
       const e = parTel[tel] = parTel[tel] || {
         telephone: tel, brut: (c.client?.telephone || "").replace(/\D/g, ""),
         nom: "", adresse: "", email: "", nb: 0, total: 0, derniere: "",
@@ -667,12 +685,23 @@ $("btnImporter").onclick = async () => {
     // sur tout l'import dès que l'historique dépasse ce seuil.
     const LOT_MAX = 450;
     const demenagements = [];
+    /* Rattachements automatiques rendus possibles par le numéro de mobile
+       désormais demandé sur « My account ». Les commandes sans compte_uid
+       dont le téléphone correspond à un compte boutique sont reliées à ce
+       compte, et l'e-mail du compte est posé sur la fiche client.
+
+       Ce travail se fait ici et non côté client : les règles Firestore
+       interdisent à un client de chercher des commandes qui ne sont pas
+       déjà les siennes, ce qui est exactement ce qu'il faut. L'import,
+       lui, tourne avec vos droits. */
     let paquet = writeBatch(db);
     let dansLot = 0;
     let ajoutes = 0, majs = 0;
 
     for (const e of Object.values(parTel)) {
       const ancien = existants[e.telephone];
+      // Compte boutique portant ce numéro, s'il existe.
+      const compteTel = comptesParTelephone.get(cleTel(e.telephone));
       /* Déménagement possible : la fiche porte une adresse, la commande la
          plus récente en porte une autre. Rien n'est écrit ici — on collecte,
          on affichera, tu trancheras. Voir signalerDemenagements(). */
@@ -699,9 +728,11 @@ $("btnImporter").onclick = async () => {
            Conséquence à connaître : un déménagement ne remonte pas tout seul
            sur la fiche — c'est le prix de la stabilité du point de livraison. */
         adresse: (ancien && ancien.adresse) ? ancien.adresse : (e.adresse || ""),
-        // Jamais effacé : une commande en invité ne doit pas faire perdre
-        // le rattachement gagné par une commande connectée précédente.
-        email: e.email || (ancien ? (ancien.email || "") : ""),
+        /* Jamais effacé : une commande en invité ne doit pas faire perdre
+           le rattachement gagné par une commande connectée précédente.
+           Le compte trouvé par téléphone sert de dernier recours : c'est lui
+           qui rattrape les clients qui n'ont jamais commandé connectés. */
+        email: e.email || (ancien ? (ancien.email || "") : "") || (compteTel ? compteTel.email : ""),
         /* coordonnees et maps_url n'apparaissent volontairement PAS ici.
            Les préserver en les recopiant depuis « ancien » a déjà échoué une
            fois : il a suffi qu'une version antérieure oublie la recopie pour
@@ -739,9 +770,22 @@ $("btnImporter").onclick = async () => {
     }
     if (dansLot > 0) await paquet.commit();
 
+    /* Rattachement des commandes orphelines à leur compte boutique. Écrit
+       après les fiches pour que l'import reste utile même si cette partie
+       échoue : un rattachement raté sera repris au prochain import, alors
+       qu'une fiche manquante bloquerait le reste. */
+    for (let i = 0; i < aRelier.length; i += LOT_MAX) {
+      const lot = writeBatch(db);
+      aRelier.slice(i, i + LOT_MAX).forEach(r =>
+        lot.set(doc(db, "commandes", r.id), { compte_uid: r.uid }, { merge: true }));
+      await lot.commit();
+    }
+
     await charger();
     signalerDemenagements(demenagements);
-    etat(`${ajoutes} client(s) ajouté(s), ${majs} mis à jour.`, "ok");
+    etat(`${ajoutes} client(s) ajouté(s), ${majs} mis à jour` +
+         (aRelier.length ? `, ${aRelier.length} commande(s) rattachée(s) à un compte` : "") +
+         ".", "ok");
   } catch (e) {
     console.error(e);
     etat("L'import a échoué.", "err");
@@ -801,17 +845,67 @@ function allerVersClient() {
    géolocalisation tombe juste. Conséquence, un déménagement ne remonte
    jamais tout seul. Ce panneau comble le trou sans rien décider à ta place. */
 
-/* Comparaison tolérante. Sans elle, « Unit 4B, » et « unit 4b » passeraient
-   pour deux adresses différentes et tu verrais un déménagement à chaque
-   commande. Accents, casse, ponctuation et espaces sont retirés — il reste
-   des faux positifs quand un client ajoute un repère, d'où les deux boutons
-   plutôt qu'une écriture automatique. */
-function normAdresse(t) {
-  return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase().replace(/[^a-z0-9]/g, "");
+/* Comparaison d'adresses.
+
+   Une égalité stricte ne servait à rien : le client ajoute un repère, oublie
+   une virgule, écrit la ville deux fois, et chaque commande passait pour un
+   déménagement. On compare donc les mots, pas la chaîne.
+
+   Ne sont retenues que les divergences de fond — numéro d'unité, rue, quartier
+   ou résidence différents. Une adresse qui ne fait qu'en préciser une autre
+   (« 46A North » puis « 46A North Street near the church ») désigne le même
+   endroit et ne remonte pas. */
+
+// Mots vides : présents ou absents au hasard, ils ne disent rien du lieu.
+const MOTS_VIDES = new Set([
+  "near", "the", "and", "beside", "front", "back", "corner", "side",
+  "brgy", "barangay", "city", "metro", "manila", "philippines", "ph",
+  "st", "street", "rd", "road", "ave", "avenue", "blk", "block", "no"
+]);
+
+function motsAdresse(t) {
+  return new Set(
+    String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ")
+      .filter(m => m.length >= 2 && !MOTS_VIDES.has(m))
+  );
 }
+
+// Forme normalisée, utilisée pour mémoriser une divergence écartée.
+function normAdresse(t) {
+  return [...motsAdresse(t)].sort().join(" ");
+}
+
+/* Les mots porteurs d'un chiffre — « 4b », « 46a », « 12 » — désignent
+   l'unité, le lot ou le numéro de rue. Ce sont eux qui distinguent deux
+   voisins de palier, et ils comptent à part : sans ça, « Unit 4B Greenview »
+   et « Unit 9C Greenview » partagent assez de mots pour passer pour la même
+   adresse, alors que ce sont deux logements différents. */
+function chiffresAdresse(t) {
+  return [...motsAdresse(t)].filter(m => /\d/.test(m)).sort().join(" ");
+}
+
 function memeAdresse(a, b) {
-  return normAdresse(a) === normAdresse(b);
+  const A = motsAdresse(a), B = motsAdresse(b);
+  if (!A.size || !B.size) return true;   // rien à comparer : on se tait
+
+  // Numéros différents : c'est une autre adresse, quel que soit le reste.
+  if (chiffresAdresse(a) !== chiffresAdresse(b)) return false;
+
+  const communs = [...A].filter(m => B.has(m)).length;
+
+  /* Une adresse entièrement contenue dans l'autre ne fait que la préciser :
+     même lieu, texte plus bavard. C'est le cas le plus fréquent. */
+  if (communs === A.size || communs === B.size) return true;
+
+  /* Sinon : part de mots partagés, rapportée à la plus courte des deux.
+     Le seuil est haut à dessein. Le cas « adresse plus détaillée » est déjà
+     traité au-dessus par l'inclusion ; ce qui reste ici, ce sont deux textes
+     qui se contredisent sur un mot porteur — « Greenview » contre
+     « Bayview » — et ces mots-là désignent des endroits différents même
+     quand tout le reste concorde. La marge sert seulement à absorber une
+     faute de frappe isolée dans une adresse longue. */
+  return communs / Math.min(A.size, B.size) >= 0.8;
 }
 
 function signalerDemenagements(liste) {
