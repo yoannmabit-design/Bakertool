@@ -559,7 +559,11 @@ async function charger() {
         email: v.email || "",
         adresse: v.adresse || "",
         // Divergence d'adresse déjà écartée, sous forme normalisée.
-        adresse_ignoree: v.adresse_ignoree || "",
+        /* Adresse vérifiée à la main : ce client ne remonte plus jamais dans
+           les changements d'adresse, quelle que soit la suite. Mémoriser
+           l'adresse précise écartée ne suffisait pas — le client reformule
+           d'une commande à l'autre, et la question revenait. */
+        adresse_verifiee: !!v.adresse_verifiee,
         maps_url: v.maps_url || "",
         coordonnees: v.coordonnees || null,
         groupe: v.groupe || "",
@@ -710,7 +714,7 @@ $("btnImporter").onclick = async () => {
          fois — étaient à revalider à chaque import. */
       if (ancien && ancien.adresse && e.adresse
           && !memeAdresse(ancien.adresse, e.adresse)
-          && normAdresse(e.adresse) !== (ancien.adresse_ignoree || "")) {
+          && !ancien.adresse_verifiee) {
         demenagements.push({
           id: ancien.telephone, nom: e.nom || ancien.nom,
           ancienne: ancien.adresse, nouvelle: e.adresse, le: e.adresseLe
@@ -871,11 +875,6 @@ function motsAdresse(t) {
   );
 }
 
-// Forme normalisée, utilisée pour mémoriser une divergence écartée.
-function normAdresse(t) {
-  return [...motsAdresse(t)].sort().join(" ");
-}
-
 /* Les mots porteurs d'un chiffre — « 4b », « 46a », « 12 » — désignent
    l'unité, le lot ou le numéro de rue. Ce sont eux qui distinguent deux
    voisins de palier, et ils comptent à part : sans ça, « Unit 4B Greenview »
@@ -935,18 +934,21 @@ function signalerDemenagements(liste) {
         <span class="chiffre dm-etat"></span>
       </div>`;
 
-    /* Ignorer mémorise, sur la fiche, la forme normalisée de l'adresse
-       écartée. Elle ne sera plus signalée. Une adresse encore différente,
-       elle, ressortira : c'est cette divergence-là qu'on écarte, pas le
-       principe de la surveillance. */
+    /* Ignorer marque la fiche comme vérifiée, une fois pour toutes. Ce
+       client ne reviendra plus dans ce bloc, même si ses prochaines
+       commandes portent des adresses encore différentes.
+
+       C'est volontairement grossier : vous nettoyez une adresse une fois,
+       ensuite vous voulez qu'on vous laisse tranquille. Un vrai déménagement
+       se saura autrement — le client le dira, ou la livraison échouera. */
     el.querySelector(".dm-ignorer").onclick = async () => {
       const boutons = el.querySelectorAll("button");
       boutons.forEach(b => b.disabled = true);
       try {
         await setDoc(doc(db, "clients", d.id),
-          { adresse_ignoree: normAdresse(d.nouvelle) }, { merge: true });
+          { adresse_verifiee: true }, { merge: true });
         const c = clients.find(x => x.id === d.id);
-        if (c) c.adresse_ignoree = normAdresse(d.nouvelle);
+        if (c) c.adresse_verifiee = true;
       } catch (err) {
         // Échec d'écriture : la ligne disparaît quand même pour cet import,
         // elle reviendra au suivant. Mieux que de bloquer l'écran.
@@ -969,13 +971,13 @@ function signalerDemenagements(liste) {
            livraison » — tu la retrouves en haut et tu recliques sur la carte. */
         await setDoc(doc(db, "clients", d.id),
           { adresse: d.nouvelle, coordonnees: null, maps_url: "",
-            // L'ancienne mémoire d'écart ne veut plus rien dire : elle portait
-            // sur une comparaison avec l'adresse qu'on vient de remplacer.
-            adresse_ignoree: "" }, { merge: true });
+            /* Adopter, c'est aussi vérifier : l'adresse retenue est celle que
+               vous venez de valider, ce client n'a plus à être questionné. */
+            adresse_verifiee: true }, { merge: true });
         const c = clients.find(x => x.id === d.id);
         if (c) {
           c.adresse = d.nouvelle; c.coordonnees = null;
-          c.maps_url = ""; c.adresse_ignoree = "";
+          c.maps_url = ""; c.adresse_verifiee = true;
         }
         el.remove();
         if (!boite.querySelector(".demenagement")) boite.hidden = true;
