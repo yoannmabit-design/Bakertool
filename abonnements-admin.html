@@ -390,17 +390,63 @@ async function encaisser(a) {
   } catch (e) { console.error(e); signaler("Échec de l'encaissement."); }
 }
 
+/* Confirmation d'un abonnement.
+
+   C'est ici que le crédit annoncé à la souscription est réellement prélevé.
+   La vitrine ne peut pas le faire : les règles Firestore lui interdisent
+   d'écrire un solde ou un mouvement, ce qui est exactement ce qu'il faut.
+   Elle se contente donc d'inscrire credit_utilise sur l'abonnement, et le
+   débit a lieu au moment où vous confirmez.
+
+   Le mouvement et le solde partent dans le même lot que le changement de
+   statut : jamais l'un sans l'autre. Et credit_preleve marque l'opération
+   comme faite, pour qu'une double confirmation ne débite pas deux fois. */
 async function valider(a) {
+  const credit = Number(a.credit_utilise) || 0;
+  const aPrelever = credit > 0 && !a.credit_preleve && a.client?.uid;
+
+  let solde = null;
+  if (aPrelever) {
+    try {
+      const s = await getDoc(doc(db, "comptes", a.client.uid));
+      solde = Number(s.data()?.solde) || 0;
+    } catch (e) { console.error(e); }
+    if (solde !== null && solde < credit &&
+        !confirm(`Le solde de ${a.client.nom} est de ${peso(solde)}, ` +
+                 `insuffisant pour les ${peso(credit)} annoncés.\n\n` +
+                 "Confirmer quand même ? Le solde passera en négatif.")) return;
+  }
+
+  const reste = Math.max(0, (Number(a.total) || 0) - credit);
   if (!confirm(`Confirmer l'abonnement de ${a.client?.nom} ?\n\n` +
-    (a.paiement?.mode === "credit"
-      ? "Chaque livraison sera prélevée sur son crédit."
-      : "La fabrication est lancée. Le paiement se constate séparément, " +
-        "avec le bouton « Marquer payé »."))) return;
+    (aPrelever ? `${peso(credit)} seront prélevés sur son crédit.\n` : "") +
+    (reste > 0
+      ? "La fabrication est lancée. Le paiement se constate séparément, " +
+        "avec le bouton « Marquer payé »."
+      : "Entièrement réglé par le crédit — rien à encaisser."))) return;
+
   try {
-    await updateDoc(doc(db, "abonnements", a.id), { statut: "actif" });
+    const paquet = writeBatch(db);
+    paquet.update(doc(db, "abonnements", a.id), { statut: "actif" });
+
+    if (aPrelever) {
+      paquet.set(doc(collection(db, "comptes", a.client.uid, "mouvements")), {
+        type: "depense", montant: -credit,
+        note: "Abonnement — " + (a.nb_livraisons || "?") + " livraisons",
+        abonnement: a.id,
+        quand: new Date().toISOString(), par: auth.currentUser.email
+      });
+      paquet.update(doc(db, "comptes", a.client.uid), { solde: increment(-credit) });
+      paquet.update(doc(db, "abonnements", a.id), { credit_preleve: true });
+    }
+
+    await paquet.commit();
     a.statut = "actif";
+    if (aPrelever) a.credit_preleve = true;
     afficher();
-    signaler("Abonnement confirmé.");
+    signaler(aPrelever
+      ? `Abonnement confirmé. ${peso(credit)} prélevés sur le crédit.`
+      : "Abonnement confirmé.");
   } catch (e) { console.error(e); signaler("Échec de la confirmation."); }
 }
 
@@ -434,10 +480,16 @@ async function supprimer(a) {
 }
 
 /* Une livraison marquée livrée prélève le crédit quand c'est le mode choisi.
-   Le mouvement et le solde partent avec l'échéance : jamais l'un sans l'autre. */
+   Le mouvement et le solde partent avec l'échéance : jamais l'un sans l'autre.
+
+   Ne concerne plus que les abonnements souscrits sous l'ancienne règle, où
+   le crédit était une promesse honorée livraison après livraison. Depuis,
+   le crédit est prélevé en une fois à la confirmation : ces abonnements
+   portent credit_utilise, et marquer une livraison ne touche plus au solde.
+   Le code reste en place pour ne pas casser d'éventuels plans anciens. */
 async function marquerLivree(a, i) {
   const montant = Number(a.total_par_livraison) || 0;
-  const surCredit = a.paiement?.mode === "credit";
+  const surCredit = a.paiement?.mode === "credit" && !(Number(a.credit_utilise) > 0);
 
   let solde = null;
   if (surCredit) {
