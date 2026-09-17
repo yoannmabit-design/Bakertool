@@ -135,7 +135,18 @@
     font-family:ui-monospace,monospace;font-size:13.5px;
     background:#efe6d8;color:var(--encre-doux);padding:2px 7px;border-radius:3px;
   }
+  .par-rayon{
+    border:1px solid var(--trait);border-radius:var(--r);
+    padding:10px 13px;margin-bottom:14px;background:#fffdf8;
+  }
+  .par-rayon summary{cursor:pointer;font-weight:600}
+  .par-rayon-corps{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-top:12px}
   .produit .cat{font-size:13.5px;color:var(--encre-doux);text-transform:uppercase;letter-spacing:.05em}
+  /* Jours restreints : discret mais repérable en balayant la liste. */
+  .produit .jours-resume:not(:empty){
+    font-size:13px;padding:2px 7px;border-radius:3px;
+    background:#efe6d8;color:var(--encre-doux);letter-spacing:.04em;
+  }
   .produit .detail{margin-top:14px;padding-top:14px;border-top:1px dashed var(--trait)}
   .produit .detail[hidden]{display:none}
   .produit .tete{cursor:pointer;user-select:none}
@@ -380,6 +391,31 @@
         <div id="sansCode"></div>
         <div id="orphelins"></div>
         <input type="text" class="recherche" id="recherche" placeholder="Rechercher un produit…">
+
+        <!-- Réglage groupé des jours. Un rayon entier partage presque toujours
+             le même rythme de production : le sans gluten est cuit le vendredi
+             pour le week-end, tous ses produits suivent. Cocher quarante fiches
+             à la main mènerait à en oublier une. -->
+        <details class="par-rayon">
+          <summary>Régler les jours pour tout un rayon</summary>
+          <div class="par-rayon-corps">
+            <div>
+              <label for="rayonJours">Rayon</label>
+              <select id="rayonJours"></select>
+            </div>
+            <div>
+              <label>Jours <span style="opacity:.7">(aucun coché = tous les jours ouverts)</span></label>
+              <div class="jours" id="joursRayon"></div>
+            </div>
+            <button type="button" class="mineur" id="btnAppliquerJours">Appliquer au rayon</button>
+            <p class="aide" id="aideJoursRayon" style="margin:0">
+              Remplace les jours de tous les produits du rayon. Comme le reste
+              de cette page, rien n'est envoyé tant que vous n'avez pas
+              enregistré.
+            </p>
+          </div>
+        </details>
+
         <div id="listeProduits"><div class="vide">Chargement…</div></div>
       </div>
     </section>
@@ -673,6 +709,14 @@ function ajouterOption(o = {}) {
           <input type="checkbox" class="o-adresse-connue">
           Adresse déjà connue — ne demander que le n° d'unité
         </label>
+        <!-- Ce que vous transportez vous-même échappe aux contraintes du
+             coursier : le paiement en espèces redevient possible, et les
+             produits fragiles peuvent voyager. San Lorenzo et Pacific Plaza
+             sont des livraisons, mais c'est vous qui les faites. -->
+        <label class="bascule" style="margin-top:10px">
+          <input type="checkbox" class="o-je-livre">
+          Je livre moi-même — espèces acceptées, surgelés possibles
+        </label>
       </div>
       <div style="max-width:170px">
         <label>Tarif abonné (₱)</label>
@@ -703,6 +747,7 @@ function ajouterOption(o = {}) {
   bloc.querySelector(".o-variable").checked = !!o.tarif_variable;
   bloc.querySelector(".o-adresse").checked  = !!o.demander_adresse;
   bloc.querySelector(".o-adresse-connue").checked = !!o.adresse_connue;
+  bloc.querySelector(".o-je-livre").checked = !!o.je_livre;
   bloc.querySelector(".o-abo").value        =
     (o.tarif_abonne === null || o.tarif_abonne === undefined) ? "" : o.tarif_abonne;
   bloc.querySelector(".o-lieu").value     = o.lieu || "";
@@ -790,6 +835,8 @@ function lireOptions() {
     tarif_variable: b.querySelector(".o-variable").checked,
     demander_adresse: b.querySelector(".o-adresse").checked,
     adresse_connue: b.querySelector(".o-adresse-connue").checked,
+    // Vous assurez la course : ni coursier, ni ses contraintes.
+    je_livre: b.querySelector(".o-je-livre").checked,
     tarif_abonne: b.querySelector(".o-abo").value.trim() === ""
       ? null : Number(b.querySelector(".o-abo").value) || 0,
     lieu: b.querySelector(".o-lieu").value.trim(),
@@ -932,7 +979,13 @@ async function chargerProduits() {
         ruban: p.ruban || "",
         mode_stock: p.mode_stock || "illimite",
         stock: p.stock ?? 0,
-        capacite_jour: p.capacite_jour ?? 0
+        capacite_jour: p.capacite_jour ?? 0,
+        /* Jours où le produit peut être retiré ou livré. Tableau vide = tous
+           les jours ouverts, ce qui est le cas de tous les produits publiés
+           avant ce réglage : rien ne change sans action de votre part.
+           Même convention que les jours des options de livraison (0 = lundi),
+           pour qu'il n'y ait qu'une façon de lire un jour dans la boutique. */
+        jours_dispo: Array.isArray(p.jours_dispo) ? p.jours_dispo : []
       });
     });
 
@@ -1023,6 +1076,7 @@ function afficherProduits() {
         <span class="nom"></span>
         <span class="code"></span>
         <span class="cat"></span>
+        <span class="jours-resume"></span>
         <button type="button" class="plier" aria-expanded="${ouverts.has(p.id)}"
           aria-label="Déplier la fiche">&#9662;</button>
       </div>
@@ -1071,6 +1125,17 @@ function afficherProduits() {
         <label class="bascule" style="margin-top:8px">
           <input type="checkbox" class="abo"> Proposé dans les abonnements
         </label>
+        <div style="margin-top:14px">
+          <label>Jours de retrait et de livraison
+            <span style="opacity:.7">(aucun coché = tous les jours ouverts)</span></label>
+          <div class="jours p-jours"></div>
+          <p class="aide" style="margin:6px 0 0">
+            Pour un produit qui n'est pas cuit tous les jours. Le client le voit
+            toujours en vitrine, avec la mention des jours possibles ; au moment
+            de choisir sa date, seules les dates compatibles avec son panier lui
+            sont proposées.
+          </p>
+        </div>
         <div class="grille" style="margin-top:12px">
           <div>
             <label>Disponibilité</label>
@@ -1099,6 +1164,18 @@ function afficherProduits() {
     bloc.querySelector(".nom").textContent  = p.nom;
     bloc.querySelector(".code").textContent = p.id;
     bloc.querySelector(".cat").textContent = p.rayon + " · " + p.categorie;
+    /* Résumé des jours dans l'en-tête replié : sans lui, il faudrait déplier
+       chaque fiche pour savoir laquelle porte une restriction. Rien d'affiché
+       quand le produit est proposé tous les jours, ce qui est le cas général —
+       une mention sur chaque ligne n'apprendrait rien. */
+    const resumeJours = bloc.querySelector(".jours-resume");
+    const majResumeJours = () => {
+      const j = p.jours_dispo || [];
+      resumeJours.textContent = j.length
+        ? j.slice().sort((a, b) => a - b).map(n => JOURS[n].slice(0, 3)).join(" ")
+        : "";
+    };
+    majResumeJours();
     bloc.querySelector(".prix").value       = p.prix;
     bloc.querySelector(".photo").value      = p.photo;
     bloc.querySelector(".notice").value     = p.notice;
@@ -1125,6 +1202,21 @@ function afficherProduits() {
     const champCap = bloc.querySelector(".capacite");
     champCap.value = p.capacite_jour;
     champCap.oninput = (e) => p.capacite_jour = Math.max(0, Number(e.target.value) || 0);
+
+    /* Jours du produit. Même rendu que les jours des options plus haut : une
+       case par jour, rien de coché voulant dire « tous les jours ». */
+    const zoneJoursP = bloc.querySelector(".p-jours");
+    JOURS.forEach((j, i) => {
+      const l = document.createElement("label");
+      l.innerHTML = `<input type="checkbox" value="${i}"
+        ${(p.jours_dispo || []).includes(i) ? "checked" : ""}> ${j.slice(0, 3)}`;
+      l.querySelector("input").onchange = () => {
+        p.jours_dispo = [...zoneJoursP.querySelectorAll("input:checked")]
+          .map(c => Number(c.value));
+        majResumeJours();
+      };
+      zoneJoursP.appendChild(l);
+    });
 
     const detail = bloc.querySelector(".detail");
     const plier = bloc.querySelector(".plier");
@@ -1260,6 +1352,8 @@ $("btnEnregistrer").onclick = async () => {
           stock: p.mode_stock === "limite" ? Number(p.stock) || 0 : null,
           // Plafond de production par jour de cuisson. 0 = pas de limite.
           capacite_jour: Number(p.capacite_jour) || 0,
+          // Vide = tous les jours ouverts. Trié pour rester lisible en base.
+          jours_dispo: [...(p.jours_dispo || [])].sort((a, b) => a - b),
           visible: true
         }, { merge: true });
         /* merge:true par précaution : une fiche produit peut porter des
@@ -1327,6 +1421,44 @@ function majTypeCode() {
 }
 $("cpType").onchange = majTypeCode;
 majTypeCode();
+
+/* ---------- Jours par rayon ----------
+   Agit sur les produits chargés en mémoire, pas en base : l'enregistrement de
+   la page reste le seul moment où quelque chose part chez Firestore. Le geste
+   est donc annulable en rechargeant sans enregistrer. */
+RAYONS.forEach(r => {
+  const o = document.createElement("option");
+  o.value = o.textContent = r;
+  $("rayonJours").appendChild(o);
+});
+JOURS.forEach((j, i) => {
+  const l = document.createElement("label");
+  l.innerHTML = `<input type="checkbox" value="${i}"> ${j.slice(0, 3)}`;
+  $("joursRayon").appendChild(l);
+});
+
+$("btnAppliquerJours").onclick = () => {
+  const rayon = $("rayonJours").value;
+  const jours = [...$("joursRayon").querySelectorAll("input:checked")]
+    .map(c => Number(c.value));
+  const vises = produits.filter(p => p.rayon === rayon);
+  if (!vises.length) {
+    $("aideJoursRayon").textContent = "Aucun produit dans ce rayon.";
+    return;
+  }
+  // Confirmation explicite : l'action écrase le réglage de chaque fiche du
+  // rayon, y compris celles qu'on vient peut-être d'ajuster à la main.
+  const quoi = jours.length
+    ? jours.map(n => JOURS[n]).join(", ")
+    : "tous les jours ouverts";
+  if (!confirm(`Appliquer « ${quoi} » aux ${vises.length} produit(s) du rayon ${rayon} ?\n\n` +
+               "Les jours actuels de ces fiches seront remplacés."))
+    return;
+  vises.forEach(p => p.jours_dispo = [...jours]);
+  afficherProduits();
+  $("aideJoursRayon").textContent =
+    `${vises.length} produit(s) du rayon ${rayon} réglés. Pensez à enregistrer.`;
+};
 
 // Cases de portée, bâties sur la même liste que les fiches produits.
 RAYONS.forEach(r => {
