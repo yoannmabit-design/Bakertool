@@ -164,6 +164,16 @@
   }
   .lien:hover{border-color:var(--accent)}
   .lien b{display:block;font-size:17px}
+  .chiffres{margin:0 0 12px;font-size:17px}
+  .chiffres b{font-size:21px}
+  /* Sept barres, hauteur proportionnelle au meilleur jour de la semaine :
+     on lit la forme, pas les valeurs exactes — celles-ci sont en infobulle. */
+  .v-graphe{display:flex;align-items:flex-end;gap:7px;height:74px}
+  .v-jour{flex:1;display:flex;flex-direction:column;justify-content:flex-end;
+    align-items:center;gap:4px;height:100%}
+  .v-jour .v-barre{width:100%;min-height:2px;border-radius:3px 3px 0 0;
+    background:var(--accent)}
+  .v-jour span{font-size:12px;color:var(--encre-doux)}
   /* Compteur des commandes jamais ouvertes. Rouge et sur la carte elle-même :
      c'est le seul endroit de l'accueil où l'information doit s'imposer avant
      tout le reste. Masqué à zéro. */
@@ -216,6 +226,13 @@
       <h2>Résumé des produits</h2>
       <p class="aide">Articles à sortir, commandes confirmées uniquement.</p>
       <div id="resume"><div class="vide">Chargement…</div></div>
+    </div>
+
+    <div class="carte suivi" id="carteVisites">
+      <h2>Fréquentation <span class="periode">Boutique en ligne</span></h2>
+      <p class="aide">Visites de la vitrine, une par session. Ni traçage, ni
+        donnée sur les visiteurs — seulement le nombre.</p>
+      <div id="visites"><div class="vide">Chargement…</div></div>
     </div>
 
     <div class="liens">
@@ -469,6 +486,10 @@ function ecrireCache(commandes, produits) {
 }
 
 async function charger() {
+  // La fréquentation part en parallèle, sans await : quatorze petites
+  // lectures ne doivent pas retarder les commandes, qui sont l'essentiel.
+  chargerVisites();
+
   // 1. Peinture immédiate depuis le cache, s'il est frais.
   const cache = lireCache();
   if (cache) {
@@ -519,6 +540,56 @@ function majLienCommandes(commandes) {
   $("sousCommandes").textContent = n > 0
     ? (n === 1 ? "1 nouvelle commande à confirmer" : n + " nouvelles commandes à confirmer")
     : "Statuts, encaissements, étiquettes";
+}
+
+/* ---------- Fréquentation ----------
+   Lue à part et après le reste : c'est un chiffre de confort, il ne doit ni
+   retarder l'écran ni le faire échouer s'il manque. */
+async function chargerVisites() {
+  const zone = $("visites");
+  if (!zone) return;
+  try {
+    const jours = [];
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(Date.now() - i * 86400000);
+      jours.push(iso(d));
+    }
+    const lus = await Promise.all(jours.map(j =>
+      getDoc(doc(db, "visites", j)).then(s => Number(s.data()?.visites) || 0)
+                                   .catch(() => 0)));
+    const parJour = jours.map((j, i) => ({ jour: j, n: lus[i] }));
+    const auj = parJour[0].n;
+    const sept = parJour.slice(0, 7).reduce((t, x) => t + x.n, 0);
+    const precedent = parJour.slice(7, 14).reduce((t, x) => t + x.n, 0);
+
+    if (!sept && !precedent) {
+      zone.innerHTML = '<div class="vide">Aucune visite enregistrée pour ' +
+        "l'instant. Le comptage démarre au prochain déploiement de la vitrine.</div>";
+      return;
+    }
+
+    // Écart entre les deux semaines : c'est la tendance qui intéresse, pas
+    // le chiffre brut d'un jour isolé.
+    const ecart = precedent ? Math.round(((sept - precedent) / precedent) * 100) : null;
+    const signe = ecart === null ? "" :
+      (ecart > 0 ? " (+" + ecart + " %)" : " (" + ecart + " %)");
+
+    // Barres en proportion du meilleur jour, pour lire la forme d'un coup d'œil.
+    const max = Math.max(...parJour.slice(0, 7).map(x => x.n), 1);
+    const barres = parJour.slice(0, 7).reverse().map(x =>
+      `<div class="v-jour" title="${x.jour} — ${x.n} visite(s)">
+         <div class="v-barre" style="height:${Math.round((x.n / max) * 100)}%"></div>
+         <span>${x.jour.slice(8)}</span>
+       </div>`).join("");
+
+    zone.innerHTML = `
+      <p class="chiffres"><b>${auj}</b> aujourd'hui &middot;
+        <b>${sept}</b> sur sept jours${signe}</p>
+      <div class="v-graphe">${barres}</div>`;
+  } catch (e) {
+    console.error("Fréquentation", e);
+    zone.innerHTML = '<div class="vide">Fréquentation indisponible.</div>';
+  }
 }
 
 function rendre(commandes) {
