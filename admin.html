@@ -164,6 +164,14 @@
   }
   .lien:hover{border-color:var(--accent)}
   .lien b{display:block;font-size:17px}
+  .tickets{display:flex;gap:12px;flex-wrap:wrap}
+  .tk{
+    flex:1;min-width:150px;padding:11px 13px;
+    border:1px solid var(--trait);border-radius:var(--r);background:#fffdf8;
+  }
+  .tk-titre{display:block;font-size:13.5px;color:var(--encre-doux)}
+  .tk b{display:block;font-size:23px;line-height:1.25}
+  .tk-detail{font-size:13.5px;color:var(--encre-doux)}
   .chiffres{margin:0 0 12px;font-size:17px}
   .chiffres b{font-size:21px}
   /* Sept barres, hauteur proportionnelle au meilleur jour de la semaine :
@@ -229,9 +237,10 @@
     </div>
 
     <div class="carte suivi" id="carteVisites">
-      <h2>Fréquentation <span class="periode">Boutique en ligne</span></h2>
-      <p class="aide">Visites de la vitrine, une par session. Ni traçage, ni
-        donnée sur les visiteurs — seulement le nombre.</p>
+      <h2>Fréquentation et chiffres <span class="periode">Boutique en ligne</span></h2>
+      <div id="ticket"></div>
+      <p class="aide" style="margin-top:16px">Visites de la vitrine, une par
+        session. Ni traçage, ni donnée sur les visiteurs — seulement le nombre.</p>
       <div id="visites"><div class="vide">Chargement…</div></div>
     </div>
 
@@ -592,8 +601,53 @@ async function chargerVisites() {
   }
 }
 
+/* ---------- Ticket moyen ----------
+   Calculé sur les commandes déjà en mémoire : aucune lecture de plus.
+
+   La date retenue est celle du retrait et non celle de la commande — c'est
+   le jour où le pain sort, donc celui qui correspond à l'activité. Une
+   commande passée lundi pour samedi compte sur samedi.
+
+   Les annulées sont exclues : elles ne représentent aucune vente, et les
+   compter à zéro écraserait la moyenne. */
+function moyenne(commandes, jours) {
+  const debut = iso(new Date(Date.now() - (jours - 1) * 86400000));
+  const fin = iso(new Date());
+  const retenues = commandes.filter(c =>
+    c.statut !== "annulee" &&
+    c.date_retrait && c.date_retrait >= debut && c.date_retrait <= fin);
+  const total = retenues.reduce((t, c) => t + (Number(c.total) || 0), 0);
+  return { nb: retenues.length, total, moyen: retenues.length ? total / retenues.length : 0 };
+}
+
+function rendreTicket(commandes) {
+  const zone = $("ticket");
+  if (!zone) return;
+  const semaine = moyenne(commandes, 7);
+  const mois = moyenne(commandes, 30);
+
+  if (!semaine.nb && !mois.nb) {
+    zone.innerHTML = '<div class="vide">Aucune commande sur les 30 derniers jours.</div>';
+    return;
+  }
+
+  // Le nombre de commandes est affiché à côté de la moyenne : une moyenne
+  // calculée sur trois commandes ne se lit pas comme une sur quarante.
+  const ligne = (titre, m) => `
+    <div class="tk">
+      <span class="tk-titre">${titre}</span>
+      <b>${m.nb ? peso(Math.round(m.moyen)) : "—"}</b>
+      <span class="tk-detail">${m.nb} commande(s) &middot; ${peso(Math.round(m.total))}</span>
+    </div>`;
+
+  zone.innerHTML = '<div class="tickets">' +
+    ligne("Ticket moyen, 7 jours", semaine) +
+    ligne("Ticket moyen, 30 jours", mois) + '</div>';
+}
+
 function rendre(commandes) {
   majLienCommandes(commandes);
+  rendreTicket(commandes);
   const auj = iso(new Date());
   const dans7 = iso(new Date(Date.now() + 7 * 86400000));
   const mois = auj.slice(0, 7);
