@@ -77,6 +77,12 @@
   input:focus,textarea:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px}
   textarea{min-height:64px;resize:vertical}
   .grille{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
+  .je-livre-bloc{
+    margin-top:12px;padding:10px 13px;border:1px solid var(--trait);
+    border-radius:var(--r);background:#fffdf8;
+  }
+  .je-livre-bloc .bascule{margin:0}
+  .je-livre-bloc .aide{margin:4px 0 0 26px}
   .ligne{display:flex;gap:10px;align-items:flex-end;margin-bottom:10px;flex-wrap:wrap}
   .ligne > div{flex:1;min-width:130px}
   button.action{
@@ -709,19 +715,31 @@ function ajouterOption(o = {}) {
           <input type="checkbox" class="o-adresse-connue">
           Adresse déjà connue — ne demander que le n° d'unité
         </label>
-        <!-- Ce que vous transportez vous-même échappe aux contraintes du
-             coursier : le paiement en espèces redevient possible, et les
-             produits fragiles peuvent voyager. San Lorenzo et Pacific Plaza
-             sont des livraisons, mais c'est vous qui les faites. -->
-        <label class="bascule" style="margin-top:10px">
-          <input type="checkbox" class="o-je-livre">
-          Je livre moi-même — espèces acceptées, surgelés possibles
-        </label>
       </div>
       <div style="max-width:170px">
         <label>Tarif abonné (₱)</label>
         <input type="number" class="o-abo" min="0" step="1" placeholder="tarif normal">
       </div>
+    </div>
+
+    <!-- Sur sa propre ligne, hors de la grille des champs : en colonne, le
+         libellé se repliait sur quatre lignes et déformait les tarifs.
+
+         Hors du bloc « adresse déjà connue » aussi, qui n'apparaît que si
+         l'adresse est demandée : qui transporte la commande n'a rien à voir
+         avec la saisie d'une adresse, et la case doit rester visible sur
+         toutes les options.
+
+         Ce que vous transportez vous-même échappe aux contraintes du
+         coursier : le paiement en espèces redevient possible, et les produits
+         fragiles peuvent voyager. Pacific Plaza est une livraison, mais c'est
+         vous qui la faites. -->
+    <div class="je-livre-bloc">
+      <label class="bascule">
+        <input type="checkbox" class="o-je-livre"> Je livre moi-même
+      </label>
+      <p class="aide">Espèces acceptées et surgelés possibles, puisque aucun
+        coursier n'intervient.</p>
     </div>
 
     <div>
