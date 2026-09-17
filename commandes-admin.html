@@ -2545,6 +2545,17 @@ $("lotAppliquer").onclick = async () => {
       }
     }
 
+    /* Remboursement par lot : chaque commande se traite une par une, avec sa
+       propre confirmation. Poser la question globalement reviendrait à
+       créditer en bloc des clients aux situations différentes — l'un payé,
+       l'autre pas, un troisième sans compte. */
+    if (paiement === "rembourse") {
+      for (const id of ids) {
+        const c = commandes.find(x => x.id === id);
+        if (c) await proposerRemboursement(c);
+      }
+    }
+
     selection.clear();
     $("lotStatut").value = "";
     $("lotPaiement").value = "";
@@ -2635,6 +2646,69 @@ async function lierEcheance(c, nouveauStatut) {
   }
 }
 
+/* ---------- Passage en « Remboursé » ----------
+   Le crédit qui avait servi à payer la commande est restitué tout seul par
+   appliquerCredit() à l'annulation. L'argent réellement encaissé, lui, ne
+   l'est pas : il a quitté GCash ou la banque, rien dans la base ne le sait.
+
+   La FAQ promet au client que le montant revient en crédit sur son compte.
+   Cette promesse ne tient que si vous y pensez, et c'est exactement le genre
+   d'oubli qui se remarque du côté du client avant le vôtre.
+
+   Le déclencheur est le statut de paiement « Remboursé », et non l'annulation :
+   un article manquant ou une erreur de tarif se rembourse sans rien annuler,
+   et une commande annulée n'a pas toujours été encaissée. Le geste dit
+   l'intention, l'annulation non.
+
+   Rien n'est jamais écrit en silence : il arrive qu'on rembourse en espèces.
+
+   Rend true si un mouvement a été écrit. */
+async function proposerRemboursement(c) {
+  const paye = Number(c.paiement?.montant_paye) || 0;
+  /* Montant à rendre. Si le paiement est marqué payé sans montant saisi, on
+     retient le total de la commande : c'est le cas courant, et la question
+     laisse le dernier mot. */
+  const encaisse = paye > 0 ? paye : (Number(c.total) || 0);
+  // Le crédit déjà consommé revient par son propre chemin à l'annulation : on
+  // ne rembourse ici que la part payée en argent, sinon le client serait
+  // crédité deux fois du même montant.
+  const enArgent = Math.max(0, encaisse - (Number(c.credit_utilise) || 0));
+  if (enArgent <= 0) return false;
+  if (c.remboursee) return false;   // déjà fait, on ne repasse pas dessus
+
+  if (!c.compte_uid) {
+    signaler(peso(enArgent) + " à rembourser, mais aucun compte client " +
+      "rattaché à cette commande : à régler depuis Crédit.", "err");
+    return false;
+  }
+
+  if (!confirm(`Remettre ${peso(enArgent)} en crédit sur le compte de ` +
+               `${c.client?.nom || "ce client"} ?\n\n` +
+               (paye > 0 ? "" : "Aucun montant encaissé n'était saisi : c'est le " +
+                                "total de la commande qui est repris.\n\n") +
+               "Annuler si vous remboursez autrement.")) return false;
+
+  try {
+    const paquet = writeBatch(db);
+    paquet.set(doc(collection(db, "comptes", c.compte_uid, "mouvements")), {
+      type: "remboursement", montant: enArgent,
+      note: "Remboursement commande " + (c.numero || c.id),
+      quand: new Date().toISOString(), par: auth.currentUser.email
+    });
+    paquet.update(doc(db, "comptes", c.compte_uid), { solde: increment(enArgent) });
+    // Drapeau sur la commande : une seconde annulation ne recrédite pas.
+    paquet.update(doc(db, "commandes", c.id), { remboursee: true });
+    await paquet.commit();
+    c.remboursee = true;
+    signaler(peso(enArgent) + " remis en crédit.", "ok");
+    return true;
+  } catch (e) {
+    console.error("Remboursement", e);
+    signaler("Le crédit n'a pas pu être écrit — à saisir depuis Crédit.", "err");
+    return false;
+  }
+}
+
 /* ---------- Enregistrement ---------- */
 async function enregistrer(c, champs) {
   try {
@@ -2659,6 +2733,9 @@ async function enregistrer(c, champs) {
     if (champs["paiement.statut"]) {
       c.paiement = c.paiement || {};
       c.paiement.statut = champs["paiement.statut"];
+      // Après coup : la commande est déjà enregistrée, un refus ou un échec
+      // ici ne la remet pas en cause.
+      if (champs["paiement.statut"] === "rembourse") await proposerRemboursement(c);
     }
     if ("paiement.methode" in champs) {
       c.paiement = c.paiement || {};
