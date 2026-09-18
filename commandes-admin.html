@@ -2535,11 +2535,29 @@ function adresseLivraison(c) {
   return surFiche || c.client?.adresse || "";
 }
 
+/* Les étiquettes reçoivent une copie de la commande, corrigée d'après la
+   fiche client : le nom sur toutes, l'adresse sur les livraisons.
+
+   Le nom porté par la commande est celui tapé au checkout — souvent le seul
+   prénom, parfois tout en capitales. La fiche, elle, porte le nom complet que
+   vous avez mis au propre, et c'est lui qui s'affiche partout ailleurs dans
+   l'admin. Sans cette substitution, l'étiquette était le seul endroit à
+   montrer autre chose, ce qui donne à penser que la correction n'a pas pris.
+
+   Rien n'est écrit en base : la commande garde ce que le client a saisi. */
 function pourEtiquette(c) {
-  if (c.option?.type !== "livraison") return c;
-  const a = adresseLivraison(c);
-  if (!a || a === c.client?.adresse) return c;
-  return { ...c, client: { ...c.client, adresse: a } };
+  const nom = nomDe(c);
+  const client = { ...c.client };
+  let change = false;
+
+  if (nom && nom !== client.nom) { client.nom = nom; change = true; }
+
+  if (c.option?.type === "livraison") {
+    const a = adresseLivraison(c);
+    if (a && a !== client.adresse) { client.adresse = a; change = true; }
+  }
+
+  return change ? { ...c, client } : c;
 }
 
 $("lotImprimer").onclick = () => {
