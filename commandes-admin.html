@@ -73,6 +73,13 @@
   }
   /* Critères actifs : sans rappel visible, on cherche pendant dix minutes
      pourquoi une commande n'apparaît pas alors qu'un filtre est resté posé. */
+  .rappel-import{
+    padding:11px 14px;margin:0 0 14px;border-radius:var(--r);
+    border:1px solid var(--trait);border-left:3px solid #2f4858;
+    background:#f3f6f9;font-size:15.5px;color:var(--encre);
+  }
+  .rappel-import[hidden]{display:none}
+  .rappel-import a{color:var(--accent)}
   .criteres{display:flex;gap:7px;flex-wrap:wrap;margin:0 0 14px}
   .criteres:empty{display:none}
   .criteres .crit{
@@ -139,6 +146,9 @@
     padding:3px 8px;border-radius:3px;background:#efe6d8;color:var(--encre-doux);
   }
   .etiq.rouge{background:#f6e2de;color:var(--alerte)}
+  /* Fiche à compléter : bleu et non rouge — ce n'est pas une alerte, c'est un
+     travail à faire avant de lancer une course. */
+  .etiq.neuf{background:#e0e8f0;color:#2f4858;font-weight:700}
   /* Adresse ponctuelle : même famille que les alertes, parce que c'est une
      commande où l'automatisme de livraison ne s'applique pas. */
   .etiq.ponctuelle{background:#f6e2de;color:var(--alerte);font-weight:700}
@@ -411,6 +421,11 @@
       <button type="button" class="mineur" id="btnEffacerFiltres">Tout effacer</button>
     </div>
     <datalist id="codesConnus"></datalist>
+    <!-- Rappel d'import : une commande dont le client n'a pas de fiche ne
+         peut ni recevoir de tag, ni porter de point de livraison, ni afficher
+         son tarif. L'oubli est facile — la commande, elle, s'affiche très
+         bien. -->
+    <div class="rappel-import" id="rappelImport" hidden></div>
     <div class="criteres" id="criteres"></div>
     <div class="compte-res" id="compteRes" hidden></div>
     <div id="liste"><div class="vide">Chargement…</div></div>
@@ -833,6 +848,7 @@ let ordreFige = null;
 function afficher(reclasser = true) {
   const liste = $("liste");
   majCompteurNouvelles();
+  majRappelImport();
   peindreCriteres();
   let vues = commandes.filter(retenue).filter(correspond).filter(passeCriteres);
 
@@ -1069,6 +1085,9 @@ function carte(c) {
       ${c.client?.adresse_ponctuelle ? `<span class="etiq ponctuelle"
         title="Livraison ailleurs pour cette commande — le point GPS de la fiche ne s'applique pas"
         >Adresse ponctuelle</span>` : ""}
+      ${ficheAVerifier(c) ? `<span class="etiq neuf"
+        title="Fiche client à compléter : ${echapper(ficheAVerifier(c))}"
+        >Nouveau · ${echapper(ficheAVerifier(c))}</span>` : ""}
       <span class="etiq st-${CLASSE_STATUT[c.statut] || "nouvelle"}">${
         LIBELLES[c.statut] || c.statut}</span>
       ${c.paiement?.methode ? `<span class="etiq">${
@@ -2429,6 +2448,46 @@ $("lotAnnuler").onclick = () => {
 
    La substitution se fait sur une copie : la commande en base garde ce que le
    client a demandé ce jour-là. */
+/* Rappel visible tant que des commandes n'ont pas de fiche client. Compté sur
+   toute la collection et non sur la vue courante : le travail à faire ne
+   dépend pas de l'écran qu'on regarde. */
+function majRappelImport() {
+  const zone = $("rappelImport");
+  if (!zone) return;
+  const sansFiche = commandes.filter(c =>
+    c.statut !== "annulee" && ficheAVerifier(c) === "pas encore importé").length;
+  zone.hidden = sansFiche === 0;
+  if (!zone.hidden) {
+    zone.innerHTML = `<b>${sansFiche} commande(s)</b> dont le client n'a pas
+      encore de fiche. <a href="clients-admin.html">Importer depuis les
+      commandes</a> pour leur poser un tag et un point de livraison.`;
+  }
+}
+
+/* ---------- Fiche client à compléter ----------
+   Même règle que le bloc « À compléter » de l'écran Clients : pas de tag, ou
+   une adresse sans point de livraison. C'est le vrai sens de « nouveau
+   client » au moment de préparer une commande — non pas son ancienneté, mais
+   le fait qu'on ne peut pas encore livrer sans vérifier.
+
+   Une commande dont le téléphone ne correspond à aucune fiche compte aussi :
+   c'est le cas le plus courant, il suffit que l'import n'ait pas encore
+   tourné. La pastille sert alors de rappel.
+
+   Rend la raison, ou une chaîne vide si tout est en ordre. */
+function ficheAVerifier(c) {
+  const k = cleTel(c.client?.telephone);
+  if (!k) return "";
+  const fiche = clients.find(x => cleTel(x.telephone || x.id) === k);
+  if (!fiche) return "pas encore importé";
+  const manques = [];
+  if (!fiche.groupe) manques.push("tag");
+  const co = fiche.coordonnees;
+  if (fiche.adresse && String(fiche.adresse).trim() && !(co && co.lat && co.lng))
+    manques.push("point de livraison");
+  return manques.join(" et ");
+}
+
 /* ---------- Nom affichable ----------
    Les clients tapent leur nom tout en capitales une fois sur trois, et une
    liste de tournée qui crie est pénible à lire. On corrige à l'affichage
