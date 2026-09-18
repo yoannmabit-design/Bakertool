@@ -1122,7 +1122,7 @@ function carte(c) {
     const a = document.createElement("a");
     a.className = "nom-lien";
     a.href = "clients-admin.html?client=" + encodeURIComponent(ficheClient.id);
-    a.textContent = c.client?.nom || "—";
+    a.textContent = nomDe(c) || "—";
     a.title = "Ouvrir la fiche client";
     a.onclick = (e) => e.stopPropagation();
     zoneNom.textContent = "";
@@ -1130,7 +1130,7 @@ function carte(c) {
   } else {
     // Pas de fiche : un lien mènerait à une page vide. Le nom reste du texte,
     // et déplier la carte marche comme partout ailleurs.
-    zoneNom.textContent = c.client?.nom || "—";
+    zoneNom.textContent = nomDe(c) || "—";
   }
   if (!compacte) {
     // Le statut est déjà dans l'étiquette colorée de l'en-tête.
@@ -1247,13 +1247,13 @@ function ouvrirTournee(date, groupables, panneau) {
       const co = coordonneesDe(c);
       return {
         cle: c.id,
-        titre: (c.client?.nom || "—") + " · " + (adresseLivraison(c) || "sans adresse"),
+        titre: (nomDe(c) || "—") + " · " + (adresseLivraison(c) || "sans adresse"),
         marque: c.numero || c.id,
         commande: c,
         arrivee: () => ({
           lat: String(co.lat), lng: String(co.lng),
           adresse: adresseLivraison(c),
-          nom: c.client?.nom || c.client?.telephone || "",
+          nom: nomDe(c) || c.client?.telephone || "",
           tel: telLivraison(c),
           commandeId: c.id
         })
@@ -1619,7 +1619,7 @@ function monterLalamove(c, el) {
       }
       armee = Date.now() + 10000;
       btnCourse.textContent = "Confirmer : " + (cotation.devise || "PHP") + " "
-        + cotation.total + " → " + (c.client?.nom || "");
+        + cotation.total + " → " + nomDe(c);
       btnCourse.style.background = "#f6e2de";
       etatCourse.style.color = "";
       etatCourse.textContent = "Second clic dans les 10 secondes pour engager.";
@@ -1643,7 +1643,7 @@ function monterLalamove(c, el) {
         quotationId: cotation.quotationId,
         stopIdDepart: stops[0] && stops[0].stopId,
         stopIdArrivee: stops[1] && stops[1].stopId,
-        nomClient: c.client?.nom || c.client?.telephone || "",
+        nomClient: nomDe(c) || c.client?.telephone || "",
         telClient: telLivraison(c),
         consignes: adresseLivraison(c).slice(0, 200)
       });
@@ -2429,6 +2429,31 @@ $("lotAnnuler").onclick = () => {
 
    La substitution se fait sur une copie : la commande en base garde ce que le
    client a demandé ce jour-là. */
+/* ---------- Nom affichable ----------
+   Les clients tapent leur nom tout en capitales une fois sur trois, et une
+   liste de tournée qui crie est pénible à lire. On corrige à l'affichage
+   seulement : la donnée reste ce que le client a écrit, et si une fiche
+   porte un nom mis au propre à la main, c'est lui qui s'affiche.
+
+   Uniquement sur un nom entièrement en majuscules — « LE LAY » corrigé en
+   « Le Lay » est un gain, mais toucher à « McDonald » ou « van Dijk » serait
+   une dégradation, donc ces noms-là sont laissés tels quels.
+
+   Le trait d'union et l'apostrophe coupent les mots, pour que « Jean-Pierre »
+   et « O'Brien » reprennent leur majuscule au bon endroit. */
+function nomAffichable(n) {
+  const t = String(n || "").trim();
+  if (!t || t !== t.toUpperCase()) return t;   // pas tout en capitales : intact
+  return t.toLowerCase().replace(/\p{L}+/gu, m => m.charAt(0).toUpperCase() + m.slice(1));
+}
+
+function nomDe(c) {
+  // Le nom de la fiche client l'emporte : c'est celui que vous avez corrigé.
+  const k = cleTel(c.client?.telephone);
+  const fiche = k ? clients.find(x => cleTel(x.telephone || x.id) === k) : null;
+  return nomAffichable((fiche && fiche.nom) || c.client?.nom || "");
+}
+
 /* ---------- Adresse à utiliser pour une livraison ----------
    L'adresse portée par la commande est celle tapée au checkout : en
    majuscules, avec la ville écrite deux fois et trois repères de trop. Celle
@@ -2706,7 +2731,7 @@ async function proposerRemboursement(c) {
   }
 
   if (!confirm(`Remettre ${peso(enArgent)} en crédit sur le compte de ` +
-               `${c.client?.nom || "ce client"} ?\n\n` +
+               `${nomDe(c) || "ce client"} ?\n\n` +
                (paye > 0 ? "" : "Aucun montant encaissé n'était saisi : c'est le " +
                                 "total de la commande qui est repris.\n\n") +
                "Annuler si vous remboursez autrement.")) return false;
