@@ -623,8 +623,8 @@ $("nouveauGroupe").onkeydown = (e) => { if (e.key === "Enter") ajouterGroupe(); 
 
 $("btnImporter").onclick = async () => {
   if (!confirm("Parcourir les commandes et mettre à jour le fichier clients ?\n\n" +
-    "Les noms, e-mails et statistiques sont repris depuis les commandes. " +
-    "Vos adresses, points de livraison, tags et notes ne sont pas touchés.\n\n" +
+    "Les e-mails et statistiques sont repris depuis les commandes. " +
+    "Vos noms, adresses, points de livraison, tags et notes ne sont pas touchés.\n\n" +
     "Les changements d'adresse repérés vous seront proposés à la fin."))
     return;
 
@@ -722,7 +722,13 @@ $("btnImporter").onclick = async () => {
       }
       // Les statistiques sont recalculées ; tags, groupe et notes restent à vous.
       const fiche = {
-        nom: e.nom || (ancien ? ancien.nom : ""),
+        /* Le nom d'une fiche existante n'est jamais remplacé, comme l'adresse
+           et pour la même raison : les clients tapent leur nom tout en
+           capitales, avec un surnom ou une faute, et le vôtre a été mis au
+           propre à la main. Un import qui le réécrirait à chaque commande
+           annulerait la correction avant même que vous la remarquiez.
+           Le nom de la commande ne sert donc qu'à créer une fiche neuve. */
+        nom: (ancien && ancien.nom) ? ancien.nom : (e.nom || ""),
         telephone: e.telephone,
         /* L'adresse d'une fiche existante n'est jamais remplacée. Les clients
            écrivent la ville deux ou trois fois, ajoutent des repères, oublient
