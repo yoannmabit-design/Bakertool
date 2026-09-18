@@ -1150,7 +1150,14 @@ function carte(c) {
       ? `<div class="l"><span>${echapper(c.option?.nom || "")}</span>
          <span>à confirmer</span></div>` : "");
 
-  if (c.client?.adresse) el.querySelector(".adresse").textContent = c.client.adresse;
+  /* Afficher l'adresse qui servira réellement à livrer, et non celle tapée au
+     checkout : sans cela, on corrige une adresse dans le fichier clients et
+     la carte continue d'afficher l'ancienne, ce qui donne à penser que la
+     correction n'a pas pris. */
+  if (c.client?.adresse) {
+    el.querySelector(".adresse").textContent =
+      (c.option?.type === "livraison") ? adresseLivraison(c) : c.client.adresse;
+  }
   if (c.option?.lieu)    el.querySelector(".lieu").textContent = c.option.lieu;
   if (c.notes)           el.querySelector(".notes").textContent = "Note : " + c.notes;
 
@@ -1240,12 +1247,12 @@ function ouvrirTournee(date, groupables, panneau) {
       const co = coordonneesDe(c);
       return {
         cle: c.id,
-        titre: (c.client?.nom || "—") + " · " + (c.client?.adresse || "sans adresse"),
+        titre: (c.client?.nom || "—") + " · " + (adresseLivraison(c) || "sans adresse"),
         marque: c.numero || c.id,
         commande: c,
         arrivee: () => ({
           lat: String(co.lat), lng: String(co.lng),
-          adresse: c.client?.adresse || "",
+          adresse: adresseLivraison(c),
           nom: c.client?.nom || c.client?.telephone || "",
           tel: telLivraison(c),
           commandeId: c.id
@@ -1577,7 +1584,7 @@ function monterLalamove(c, el) {
     try {
       const r = await httpsCallable(fns, "lalamoveCotation")({
         lat: String(co.lat), lng: String(co.lng),
-        adresse: c.client?.adresse || "",
+        adresse: adresseLivraison(c),
         depart: selDepart.value
       });
       const q = r.data;
@@ -1638,7 +1645,7 @@ function monterLalamove(c, el) {
         stopIdArrivee: stops[1] && stops[1].stopId,
         nomClient: c.client?.nom || c.client?.telephone || "",
         telClient: telLivraison(c),
-        consignes: (c.client?.adresse || "").slice(0, 200)
+        consignes: adresseLivraison(c).slice(0, 200)
       });
       const o = r.data;
 
@@ -2422,17 +2429,33 @@ $("lotAnnuler").onclick = () => {
 
    La substitution se fait sur une copie : la commande en base garde ce que le
    client a demandé ce jour-là. */
-function pourEtiquette(c) {
-  if (c.option?.type !== "livraison") return c;
-  /* Adresse ponctuelle : le client a explicitement demandé une livraison
-     ailleurs pour cette fois. C'est ce qu'il a écrit qui doit être imprimé —
-     y substituer l'adresse de sa fiche enverrait le motard chez lui. */
-  if (c.client?.adresse_ponctuelle) return c;
+/* ---------- Adresse à utiliser pour une livraison ----------
+   L'adresse portée par la commande est celle tapée au checkout : en
+   majuscules, avec la ville écrite deux fois et trois repères de trop. Celle
+   de la fiche client a été nettoyée à la main pour que la géolocalisation
+   tombe juste et que le motard la lise.
+
+   C'est donc la fiche qui fait foi partout où une adresse sert à livrer —
+   étiquettes, panneau de tournée, course Lalamove — et non seulement à
+   l'impression comme c'était le cas jusqu'ici. Une correction faite dans le
+   fichier clients doit se voir immédiatement, sinon on la refait dix fois.
+
+   Deux exceptions : l'adresse ponctuelle, où le client a demandé une
+   livraison ailleurs pour cette fois, et la fiche sans adresse, où le texte
+   brut vaut mieux que rien. */
+function adresseLivraison(c) {
+  if (c.client?.adresse_ponctuelle) return c.client?.adresse || "";
   const k = cleTel(c.client?.telephone);
   const fiche = k ? clients.find(x => cleTel(x.telephone || x.id) === k) : null;
   const surFiche = fiche ? String(fiche.adresse || "").trim() : "";
-  if (!surFiche) return c;
-  return { ...c, client: { ...c.client, adresse: surFiche } };
+  return surFiche || c.client?.adresse || "";
+}
+
+function pourEtiquette(c) {
+  if (c.option?.type !== "livraison") return c;
+  const a = adresseLivraison(c);
+  if (!a || a === c.client?.adresse) return c;
+  return { ...c, client: { ...c.client, adresse: a } };
 }
 
 $("lotImprimer").onclick = () => {
