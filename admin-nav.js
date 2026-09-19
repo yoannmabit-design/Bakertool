@@ -31,6 +31,9 @@
     .nav-admin{
       background:#12100d;padding:0 14px;display:flex;gap:2px;
       overflow-x:auto;-webkit-overflow-scrolling:touch;
+      /* Figée en haut : c'est le seul élément qu'on veut atteindre à tout
+         moment, y compris au bas d'une longue liste de commandes. */
+      position:sticky;top:0;z-index:40;
     }
     .nav-admin a{
       color:#c9c0b4;text-decoration:none;font-size:14px;
@@ -84,19 +87,19 @@
       max-height:200px;
     }
     header.replie{max-height:0;padding-top:0;padding-bottom:0;opacity:0}
-    /* Languette : un bandeau disparu sans laisser de trace se lit comme une
-       panne, et rien n'indiquerait comment le retrouver. */
+    /* Languette : réduite au trait. Sans rien du tout, un en-tête disparu se
+       lirait comme une panne ; avec du texte, on remplace un bandeau par un
+       autre. Le trait suffit à dire qu'il y a quelque chose à tirer. */
     .languette-entete{
-      display:flex;align-items:center;justify-content:center;gap:9px;
-      background:#12100d;color:#c9c0b4;border:none;width:100%;
-      padding:5px 0 7px;cursor:pointer;font:inherit;font-size:12px;
-      letter-spacing:.09em;text-transform:uppercase;
-      font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+      display:flex;align-items:center;justify-content:center;
+      background:#12100d;border:none;width:100%;
+      padding:6px 0 8px;cursor:pointer;
     }
     .languette-entete .poignee{
       display:block;width:34px;height:3px;border-radius:2px;
-      background:#c9c0b4;opacity:.55;
+      background:#c9c0b4;opacity:.5;transition:opacity .15s;
     }
+    .languette-entete:hover .poignee{opacity:.85}
     @media print{
       .nav-admin,.alerte-fichier,.nom-fichier,.pastille,
       .languette-entete{display:none !important}
@@ -142,7 +145,10 @@
     languette.className = "languette-entete";
     languette.hidden = true;
     languette.setAttribute("aria-controls", "entete-admin");
-    languette.innerHTML = '<span class="poignee"></span> Afficher l\'en-tête';
+    // Le libellé n'est plus affiché, mais il reste lu par les lecteurs d'écran.
+    languette.innerHTML = '<span class="poignee"></span>';
+    languette.setAttribute("aria-label", "Afficher l'en-tête");
+    languette.title = "Afficher l'en-tête";
     if (!entete.id) entete.id = "entete-admin";
     entete.parentNode.insertBefore(languette, entete.nextSibling);
 
