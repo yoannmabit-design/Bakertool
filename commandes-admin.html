@@ -2033,6 +2033,21 @@ function appliquerCredit(paquet, c, nouveauStatut) {
   const rendre  = nouveauStatut === "annulee" && deja;
   if (!debiter && !rendre) return null;
 
+  /* Commande intégralement réglée par le crédit : il n'y a rien à encaisser.
+     Sans cette bascule, elle reste marquée « à encaisser » après le débit —
+     on relance le client pour rien, ou on encaisse une seconde fois à la
+     remise. Posé ici et pas seulement au checkout, pour rattraper aussi les
+     commandes passées avant cette correction et celles modifiées à la main. */
+  if (debiter && montant >= (Number(c.total) || 0) && (Number(c.total) || 0) > 0) {
+    paquet.update(doc(db, "commandes", c.id), {
+      "paiement.statut": "paye",
+      "paiement.methode": "credit",
+      "paiement.montant_paye": Number(c.total) || 0
+    });
+    c.paiement = { ...(c.paiement || {}), statut: "paye",
+                   methode: "credit", montant_paye: Number(c.total) || 0 };
+  }
+
   const signe = debiter ? -1 : 1;
   paquet.set(doc(collection(db, "comptes", c.compte_uid, "mouvements")), {
     type: debiter ? "depense" : "remboursement",
