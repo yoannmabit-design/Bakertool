@@ -70,8 +70,37 @@
       font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
       background:rgba(0,0,0,.25);padding:1px 5px;border-radius:3px;
     }
+    /* ---------- En-tête escamotable ----------
+       Sur un téléphone, l'en-tête mange une bonne part de l'écran pour une
+       information qu'on ne lit qu'une fois. Un balayage horizontal le replie,
+       un autre le ramène.
+
+       La barre de navigation, elle, ne se replie pas : elle est fine et elle
+       sert en permanence — la masquer obligerait à la rappeler avant chaque
+       changement de page. */
+    header{
+      overflow:hidden;
+      transition:max-height .22s ease, padding .22s ease, opacity .18s ease;
+      max-height:200px;
+    }
+    header.replie{max-height:0;padding-top:0;padding-bottom:0;opacity:0}
+    /* Languette : un bandeau disparu sans laisser de trace se lit comme une
+       panne, et rien n'indiquerait comment le retrouver. */
+    .languette-entete{
+      display:flex;align-items:center;justify-content:center;gap:9px;
+      background:#12100d;color:#c9c0b4;border:none;width:100%;
+      padding:5px 0 7px;cursor:pointer;font:inherit;font-size:12px;
+      letter-spacing:.09em;text-transform:uppercase;
+      font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+    }
+    .languette-entete .poignee{
+      display:block;width:34px;height:3px;border-radius:2px;
+      background:#c9c0b4;opacity:.55;
+    }
     @media print{
-      .nav-admin,.alerte-fichier,.nom-fichier,.pastille{display:none !important}
+      .nav-admin,.alerte-fichier,.nom-fichier,.pastille,
+      .languette-entete{display:none !important}
+      header{max-height:none;opacity:1}
     }
   `;
   document.head.appendChild(style);
@@ -90,6 +119,70 @@
   });
 
   document.body.insertBefore(barre, document.body.firstChild);
+
+  /* ---------- En-tête escamotable ----------
+     Replié ou déployé par un balayage horizontal, dans un sens comme dans
+     l'autre : c'est une bascule, pas deux gestes à retenir.
+
+     Le geste n'est reconnu que sur un déplacement franchement horizontal —
+     au moins 60 px de côté et deux fois plus large que haut — sinon un
+     défilement un peu oblique replierait l'en-tête sans qu'on ait rien
+     demandé. La barre de navigation défile horizontalement, elle aussi :
+     un balayage qui part de là ne compte pas, sans quoi on replierait
+     l'en-tête en cherchant simplement un onglet.
+
+     L'état est partagé par toutes les pages de l'administration : une fois
+     replié, il le reste en naviguant. */
+  const CLE_ENTETE = "yfb-admin-entete-replie";
+  const entete = document.querySelector("header");
+
+  if (entete) {
+    const languette = document.createElement("button");
+    languette.type = "button";
+    languette.className = "languette-entete";
+    languette.hidden = true;
+    languette.setAttribute("aria-controls", "entete-admin");
+    languette.innerHTML = '<span class="poignee"></span> Afficher l\'en-tête';
+    if (!entete.id) entete.id = "entete-admin";
+    entete.parentNode.insertBefore(languette, entete.nextSibling);
+
+    const appliquer = (replie) => {
+      entete.classList.toggle("replie", replie);
+      languette.hidden = !replie;
+      languette.setAttribute("aria-expanded", replie ? "false" : "true");
+      try { localStorage.setItem(CLE_ENTETE, replie ? "1" : ""); } catch {}
+    };
+    const basculer = () => appliquer(!entete.classList.contains("replie"));
+
+    let x0 = null, y0 = null, depuisNav = false;
+    document.addEventListener("touchstart", (e) => {
+      if (e.touches.length !== 1) return;    // pincement : pas un balayage
+      const t = e.touches[0];
+      x0 = t.clientX; y0 = t.clientY;
+      depuisNav = !!(t.target.closest && t.target.closest(".nav-admin"));
+    }, { passive: true });
+
+    document.addEventListener("touchend", (e) => {
+      if (x0 === null) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - x0, dy = t.clientY - y0;
+      const partiDeLaNav = depuisNav;
+      x0 = y0 = null; depuisNav = false;
+      if (partiDeLaNav) return;
+      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 2) return;
+      basculer();
+    }, { passive: true });
+
+    languette.addEventListener("click", basculer);
+    // Clic sur l'en-tête : le geste à la souris, où le balayage n'existe pas.
+    // Les boutons et liens qu'il contient gardent la priorité.
+    entete.addEventListener("click", (e) => {
+      if (e.target.closest("button, a, input, select, textarea")) return;
+      basculer();
+    });
+
+    try { appliquer(localStorage.getItem(CLE_ENTETE) === "1"); } catch {}
+  }
 
   /* ---------- Garde-fou de nom de fichier ---------- */
 
