@@ -968,23 +968,31 @@ function dateLongue(iso) {
    philippin. Trois sources, de la plus récente à la plus ancienne — celle
    saisie au checkout prime sur celle tapée à la main, qui prime sur le
    numéro de contact habituel. */
-/* Numéro au format international strict, tel que Lalamove l'exige.
+/* Message d'erreur Lalamove, en entier.
 
-   C'est la cause des refus 422 à la réservation : la cotation n'envoie
-   aucun numéro, seule la course en transmet un. Un client qui tape
-   « 0917 123 4567 » obtient donc une estimation normale, puis un refus
-   sec au moment d'engager le motard — et rien dans l'écran ne dit que le
-   problème est un espace dans un numéro de téléphone.
+   La fonction serveur lève HttpsError("…", "Lalamove 422", donnees) : le
+   troisième argument porte la réponse complète de Lalamove, celle qui
+   nomme le champ fautif. Elle arrive ici dans e.details, et l'admin
+   n'affichait que e.message — soit « Lalamove 422 », qui n'apprend rien
+   à personne et oblige à aller fouiller les logs du serveur.
 
-   Renvoie "" quand le numéro ne peut pas être ramené à un mobile
-   philippin. Mieux vaut le dire avant de cliquer que se faire refuser
-   après. */
-function telE164(brut) {
-  const n = String(brut || "").replace(/\D/g, "");
-  if (/^639\d{9}$/.test(n))  return "+" + n;          // 639171234567
-  if (/^09\d{9}$/.test(n))   return "+63" + n.slice(1);  // 09171234567
-  if (/^9\d{9}$/.test(n))    return "+63" + n;         // 9171234567
-  return "";
+   Un code d'erreur sans son motif, c'est une panne muette. */
+function messageErreur(e) {
+  const base = (e && e.message) ? e.message : "Échec.";
+  const d = e && e.details;
+  if (!d) return base;
+
+  /* Lalamove répond { errors: [{ id, message }] }. Les autres formes sont
+     rendues brutes : mieux vaut du JSON lisible que rien. */
+  let detail = "";
+  if (Array.isArray(d.errors) && d.errors.length) {
+    detail = d.errors.map(x => [x.id, x.message].filter(Boolean).join(" — ")).join(" · ");
+  } else if (typeof d === "string") {
+    detail = d;
+  } else {
+    try { detail = JSON.stringify(d); } catch { detail = ""; }
+  }
+  return detail ? base + " · " + detail : base;
 }
 
 function telLivraison(c) {
@@ -1292,7 +1300,7 @@ function ouvrirTournee(date, groupables, panneau) {
           lat: String(co.lat), lng: String(co.lng),
           adresse: adresseLivraison(c),
           nom: nomDe(c) || c.client?.telephone || "",
-          tel: telE164(telLivraison(c)),
+          tel: telLivraison(c),
           commandeId: c.id
         })
       };
@@ -1309,7 +1317,7 @@ function ouvrirTournee(date, groupables, panneau) {
         adresse: [l.adresse || l.contact_nom, consignes["lieu:" + l.cle] || ""]
                    .filter(Boolean).join(" — "),
         nom: l.contact_nom,
-        tel: telE164(l.contact_tel) || l.contact_tel,
+        tel: l.contact_tel,
         commandeId: null
       })
     }))
@@ -1444,7 +1452,7 @@ function ouvrirTournee(date, groupables, panneau) {
     } catch (e) {
       console.error(e);
       etatCoter.style.color = "var(--alerte)";
-      etatCoter.textContent = e && e.message ? e.message : "Cotation impossible.";
+      etatCoter.textContent = messageErreur(e) || "Cotation impossible.";
       cotation = null; btnCourse.hidden = true;
     } finally {
       btnCoter.disabled = choisis.size < 1;
@@ -1487,21 +1495,6 @@ function ouvrirTournee(date, groupables, panneau) {
     // Une destination fixe n'a pas de commande à marquer : elle peut être
     // réexpédiée autant de fois que nécessaire.
     const lot = selectionnees().filter(t => t.commande).map(t => t.commande);
-
-    /* Même vérification que pour une course simple, mais sur tout le lot :
-       un seul numéro mal formé fait refuser la tournée entière en 422. */
-    const mauvais = selectionnees()
-      .filter(t => !t.arrivee().tel)
-      .map(t => t.titre.split(" · ")[0]);
-    if (mauvais.length) {
-      desarmer();
-      etatCourse.style.color = "var(--alerte)";
-      etatCourse.textContent = "Numéro inutilisable par Lalamove pour : "
-        + mauvais.join(", ") + ". Corrigez « numéro local » sur leur fiche "
-        + "(format 09xx xxx xxxx), puis rechargez.";
-      return;
-    }
-
     try {
       const r = await httpsCallable(fns, "lalamoveCourseTournee")({
         quotationId: cotation.quotationId,
@@ -1539,7 +1532,7 @@ function ouvrirTournee(date, groupables, panneau) {
     } catch (e) {
       console.error(e);
       etatCourse.style.color = "var(--alerte)";
-      etatCourse.textContent = e && e.message ? e.message : "Réservation impossible.";
+      etatCourse.textContent = messageErreur(e) || "Réservation impossible.";
       btnCourse.disabled = false;
     }
   };
@@ -1652,7 +1645,7 @@ function monterLalamove(c, el) {
     } catch (e) {
       console.error(e);
       etatCoter.style.color = "var(--alerte)";
-      etatCoter.textContent = e && e.message ? e.message : "Cotation impossible.";
+      etatCoter.textContent = messageErreur(e) || "Cotation impossible.";
       cotation = null; btnCourse.hidden = true;
     } finally {
       btnCoter.disabled = false;
@@ -1685,19 +1678,6 @@ function monterLalamove(c, el) {
       return;
     }
 
-    /* Le numéro est vérifié ici, avant d'engager quoi que ce soit. Lalamove
-       le refuserait de toute façon, mais avec un « 422 » qui n'apprend rien
-       à personne. */
-    const telMotard = telE164(telLivraison(c));
-    if (!telMotard) {
-      desarmer();
-      etatCourse.style.color = "var(--alerte)";
-      etatCourse.textContent = "Numéro inutilisable par Lalamove : «"
-        + telLivraison(c) + "». Corrigez « numéro local » sur la fiche client "
-        + "(format 09xx xxx xxxx), puis rechargez.";
-      return;
-    }
-
     // Second clic : point de non-retour, un motard est assigné.
     desarmer();
     btnCourse.disabled = true;
@@ -1710,7 +1690,7 @@ function monterLalamove(c, el) {
         stopIdDepart: stops[0] && stops[0].stopId,
         stopIdArrivee: stops[1] && stops[1].stopId,
         nomClient: nomDe(c) || c.client?.telephone || "",
-        telClient: telMotard,
+        telClient: telLivraison(c),
         consignes: adresseLivraison(c).slice(0, 200)
       });
       const o = r.data;
@@ -1737,7 +1717,7 @@ function monterLalamove(c, el) {
     } catch (e) {
       console.error(e);
       etatCourse.style.color = "var(--alerte)";
-      etatCourse.textContent = e && e.message ? e.message : "Réservation impossible.";
+      etatCourse.textContent = messageErreur(e) || "Réservation impossible.";
       btnCourse.disabled = false;
     }
   };
