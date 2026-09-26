@@ -199,7 +199,11 @@
       <label style="display:flex;align-items:center;gap:7px;margin:0;font-size:15.5px;color:var(--encre)">
         <input type="checkbox" id="seulementACompleter" style="width:auto"> À compléter seulement
       </label>
-      <button class="mineur" id="btnImporter">Importer depuis les commandes</button>
+      <!-- Verrouillé tant que le fichier client n'est pas chargé : l'import
+           compare les commandes à la liste en mémoire, et une liste vide lui
+           fait prendre tous les clients pour des inconnus. -->
+      <button class="mineur" id="btnImporter" disabled
+              title="Chargement du fichier client…">Importer depuis les commandes</button>
       <button class="mineur" id="btnGroupes">Groupes tarifaires</button>
     </div>
 
@@ -579,9 +583,25 @@ async function charger() {
     majGroupes();
     afficher();
     allerVersClient();
+
+    /* Le fichier est en mémoire : l'import peut travailler. C'est le seul
+       endroit qui déverrouille le bouton.
+
+       Il était actif dès l'affichage de la page, avant même que la liste soit
+       lue. Un clic dans cet intervalle — une seconde ou deux sur un réseau
+       mobile — faisait tourner l'import sur une liste vide : chaque client
+       passait pour un inconnu, et ses champs saisis à la main étaient
+       réécrits à blanc. C'est arrivé. */
+    $("btnImporter").disabled = false;
+    $("btnImporter").title = "";
   } catch (e) {
+    /* Lecture échouée : le bouton reste verrouillé. Importer maintenant
+       comparerait les commandes à une liste vide. */
     console.error(e);
-    $("liste").innerHTML = '<div class="vide">Les clients n\'ont pas pu être chargés.</div>';
+    $("liste").innerHTML =
+      '<div class="vide">Les clients n\'ont pas pu être chargés.' +
+      '<br><br>L\'import reste bloqué tant que la liste n\'est pas lue — ' +
+      'rechargez la page.</div>';
   }
 }
 
@@ -702,6 +722,20 @@ $("btnImporter").onclick = async () => {
     let dansLot = 0;
     let ajoutes = 0, majs = 0;
 
+    /* Garde-fou : un fichier client bien rempli qui ne retrouve aucune de ses
+       fiches est le signe que la liste n'a pas été lue, pas que les clients
+       sont nouveaux. Continuer reviendrait à recréer tout le fichier à blanc.
+       On s'arrête et on le dit, plutôt que d'écrire. */
+    const dejaConnus = Object.keys(existants).filter(Boolean).length;
+    const retrouves = Object.values(parTel)
+      .filter(e => existants[e.telephone]).length;
+    if (dejaConnus >= 5 && retrouves === 0) {
+      etat("Import interrompu : aucune des " + dejaConnus + " fiches existantes " +
+           "n'a été retrouvée. Rechargez la page et réessayez — rien n'a été écrit.", "err");
+      $("btnImporter").disabled = false;
+      return;
+    }
+
     for (const e of Object.values(parTel)) {
       const ancien = existants[e.telephone];
       // Compte boutique portant ce numéro, s'il existe.
@@ -736,8 +770,19 @@ $("btnImporter").onclick = async () => {
            géolocalisation tombe juste, et un import qui la réécrirait
            détruirait ce travail à chaque nouvelle commande.
            Conséquence à connaître : un déménagement ne remonte pas tout seul
-           sur la fiche — c'est le prix de la stabilité du point de livraison. */
-        adresse: (ancien && ancien.adresse) ? ancien.adresse : (e.adresse || ""),
+           sur la fiche — c'est le prix de la stabilité du point de livraison.
+
+           Une adresse vide est une adresse comme une autre. Un client qui a
+           donné son adresse une fois puis vient toujours chercher lui-même :
+           on efface l'adresse de sa fiche, et elle doit rester effacée. Si
+           l'import la repêchait dans l'ancienne commande, la fiche
+           réclamerait un point de livraison à chaque import, pour une
+           livraison qui n'arrivera jamais.
+
+           D'où la lecture : dès qu'une fiche existe, son adresse est la
+           sienne — y compris quand c'est le vide. Seule une fiche neuve
+           prend celle de la commande. */
+        adresse: ancien ? (ancien.adresse || "") : (e.adresse || ""),
         /* Jamais effacé : une commande en invité ne doit pas faire perdre
            le rattachement gagné par une commande connectée précédente.
            Le compte trouvé par téléphone sert de dernier recours : c'est lui
@@ -750,17 +795,33 @@ $("btnImporter").onclick = async () => {
            Un champ qu'on n'écrit jamais ne peut pas être effacé — merge:true
            laisse intact ce qui n'est pas mentionné. Le seul chemin qui écrit
            les coordonnées est désormais le clic sur la carte. */
-        // Saisi à la main comme les coordonnées : un import ne l'écrase pas.
-        telephone_local: ancien ? (ancien.telephone_local || "") : "",
-        groupe: ancien ? ancien.groupe : "",
-        tags: ancien ? ancien.tags : [],
-        notes: ancien ? ancien.notes : "",
-        // L'archivage est une décision : un import ne doit pas la défaire.
-        archive: ancien ? !!ancien.archive : false,
         nb_commandes: e.nb,
         total_depense: e.total,
         derniere_commande: e.derniere
       };
+
+      /* Champs saisis à la main : tag, notes, numéro local, archivage.
+
+         Ils ne sont écrits QUE si la fiche existante a été retrouvée. Sinon
+         ils sont absents de l'objet, et merge:true laisse intact ce qui est
+         déjà en base.
+
+         La version précédente écrivait une valeur vide dans ce cas — « le
+         client est inconnu, donc il n'a pas de tag ». C'est faux : il peut
+         être parfaitement connu et simplement ne pas avoir été retrouvé, et
+         l'import effaçait alors d'un coup le travail de qualification de tout
+         le fichier. C'est arrivé.
+
+         Même principe que coordonnees et maps_url juste au-dessus : un champ
+         qu'on n'écrit pas ne peut pas être détruit. La règle vaut désormais
+         pour tout ce qui est saisi à la main. */
+      if (ancien) {
+        fiche.telephone_local = ancien.telephone_local || "";
+        fiche.groupe = ancien.groupe || "";
+        fiche.tags = Array.isArray(ancien.tags) ? ancien.tags : [];
+        fiche.notes = ancien.notes || "";
+        fiche.archive = !!ancien.archive;
+      }
       /* merge:true également. La fiche reprend déjà tout ce qu'elle connaît
          depuis « ancien », mais si un champ était ajouté ailleurs sans être
          repris ici, un import le détruirait. La fusion l'en empêche. */
