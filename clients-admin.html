@@ -66,7 +66,13 @@
      dessus à part le téléphone. Orange : la dernière commande date de
      moins d'une semaine. Ni l'un ni l'autre : couleur par défaut
      ci-dessus, inchangée. */
-  .client.vide{border-left-color:var(--vide)}
+  /* « sans-commande » et non « vide » : la classe .vide existe déjà pour le
+     message d'une liste sans résultat, avec 40 px de marge et du texte
+     centré. Les deux s'appliquaient ensemble, et toute fiche sans commande
+     se retrouvait deux fois plus haute que les autres, nom centré au
+     milieu. Deux sens pour un même mot dans une feuille de style, et c'est
+     le navigateur qui tranche — jamais comme on l'imaginait. */
+  .client.sans-commande{border-left-color:var(--vide)}
   .client.recent{border-left-color:var(--recent)}
   /* Bleu quand la fiche est ouverte : on voit d'un coup d'œil où l'on
      travaille dans une longue liste — l'emporte sur violet/orange,
@@ -1193,7 +1199,7 @@ function carte(c) {
   // de moins d'une semaine — l'ouverture de la fiche (classe "ouvert",
   // ajoutée plus bas au clic) l'emportera visuellement sur les deux.
   const ilYA7JOURS = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
-  const classeEtat = !c.nb_commandes ? " vide"
+  const classeEtat = !c.nb_commandes ? " sans-commande"
     : (c.derniere_commande >= ilYA7JOURS ? " recent" : "");
   el.className = "client" + classeEtat + (estMasque(c) ? " archive" : "");
   el.innerHTML = `
