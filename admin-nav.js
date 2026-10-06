@@ -42,6 +42,15 @@
       font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
     }
     .nav-admin a:hover{color:#fdf6ec}
+    /* Bouton d'activation des alertes : discret, en bout de barre, et
+       voué à disparaître une fois cliqué. */
+    .nav-admin .alertes-nav{
+      margin-left:auto;align-self:center;white-space:nowrap;
+      background:transparent;border:1px solid #4a443c;color:#c9c0b4;
+      font:inherit;font-size:13px;padding:6px 12px;border-radius:999px;
+      cursor:pointer;
+    }
+    .nav-admin .alertes-nav:disabled{opacity:.6;cursor:default}
     .nav-admin a[aria-current="page"]{
       color:#fdf6ec;font-weight:600;border-bottom-color:#fdf6ec;
     }
@@ -386,4 +395,123 @@
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw-admin.js").catch(() => {});
   }
+
+  /* ---------- Alertes sur le téléphone ----------
+
+     Jusqu'ici, découvrir une commande ou un message supposait d'ouvrir
+     l'administration. La nuit, au fournil, ou simplement en faisant autre
+     chose, l'information attendait. Ces notifications renversent ça : c'est
+     le téléphone qui prévient.
+
+     Pour vous seul, et c'est délibéré. Un seul appareil, le vôtre, que vous
+     pouvez tester en trente secondes. Côté client, il faudrait que chacun
+     ait installé la boutique sur son écran d'accueil et accepté les
+     notifications — une minorité le ferait, et vous ne sauriez jamais
+     lesquels : un canal qui prévient certains et pas d'autres ne sert à
+     rien.
+
+     Le bouton n'apparaît que tant que les alertes ne sont pas actives. Une
+     fois accordées, il disparaît pour toujours — c'est un réglage, pas une
+     commande, et un réglage fait n'a rien à faire dans une barre de menu. */
+
+  /* Clé publique Web Push, à générer dans la console Firebase :
+     Paramètres du projet → Cloud Messaging → Certificats push Web.
+     Publique par nature : elle vit dans le code de la page, elle ne
+     protège rien et ne peut rien signer. */
+  const CLE_PUSH = "BC_DeHU1IVn4XEcY0fuhL5Nnz-gyvSTVpLx5tyWSJEDPOK6E5qUkxwQvCFgMfBI5Txy85XjtvZLzwQZRHzDPCPE";
+
+  function boutonAlertes(auClic) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "alertes-nav";
+    b.textContent = "Alertes";
+    b.title = "Recevoir les commandes et les messages sur cet appareil";
+    b.onclick = async () => {
+      b.disabled = true;
+      b.textContent = "…";
+      const ok = await auClic();
+      if (ok) b.remove();
+      else {
+        b.disabled = false;
+        b.textContent = "Alertes";
+        b.title = "Refusé par le navigateur. Autorisez les notifications " +
+                  "pour ce site dans les réglages du téléphone.";
+      }
+    };
+    const barre = document.querySelector(".nav-admin");
+    if (barre) barre.appendChild(b);
+  }
+
+  (async function alertes() {
+    if (!("Notification" in window) || !("serviceWorker" in navigator)) return;
+    // Refusé une fois : le navigateur ne redemandera pas, et un bouton qui
+    // ne peut rien faire est pire que pas de bouton.
+    if (Notification.permission === "denied") return;
+    if (CLE_PUSH.startsWith("REMPLACER")) return;   // pas encore configuré
+
+    let fb, fs, auth, msg, app, user;
+    try {
+      [fb, fs, auth, msg] = await Promise.all([
+        import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js"),
+        import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js"),
+        import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js"),
+        import("https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js")
+      ]);
+      app = await attendreApp(fb);
+      if (!app) return;
+      // Le jeton se range sur la fiche administrateur : on attend donc de
+      // savoir qui est connecté.
+      user = await new Promise(r => {
+        const a = auth.getAuth(app);
+        if (a.currentUser) return r(a.currentUser);
+        const stop = auth.onAuthStateChanged(a, (u) => { if (u) { stop(); r(u); } });
+        setTimeout(() => r(null), 15000);
+      });
+      if (!user) return;
+      if (!(await msg.isSupported())) return;   // navigateur sans push
+    } catch {
+      return;   // sans ces modules, le menu reste intact
+    }
+
+    async function enregistrer() {
+      try {
+        if (Notification.permission !== "granted") {
+          const rep = await Notification.requestPermission();
+          if (rep !== "granted") return false;
+        }
+        /* Le service worker des notifications est désigné explicitement :
+           sans ça, Firebase irait en chercher un à la racine et pourrait
+           tomber sur sw-admin.js, qui ne sait pas afficher de
+           notification. */
+        const sw = await navigator.serviceWorker.register("firebase-messaging-sw.js");
+        const jeton = await msg.getToken(msg.getMessaging(app),
+          { vapidKey: CLE_PUSH, serviceWorkerRegistration: sw });
+        if (!jeton) return false;
+
+        /* arrayUnion : plusieurs appareils peuvent recevoir les alertes —
+           le téléphone et l'ordinateur du fournil — et réenregistrer le
+           même appareil n'ajoute rien. */
+        const db = fs.getFirestore(app);
+        await fs.setDoc(fs.doc(db, "admins", user.uid),
+          { appareils: fs.arrayUnion(jeton),
+            appareils_maj: new Date().toISOString() },
+          { merge: true });
+        return true;
+      } catch (e) {
+        console.warn("Alertes :", e && (e.code || e.message));
+        return false;
+      }
+    }
+
+    if (Notification.permission === "granted") {
+      /* Déjà accordées : on réenregistre sans rien demander ni afficher.
+         Les jetons se périment — réinstallation, vidage des données,
+         rotation décidée par le navigateur — et un jeton périmé fait
+         disparaître les alertes sans le moindre signe. */
+      enregistrer();
+      return;
+    }
+
+    boutonAlertes(enregistrer);
+  })();
 })();
