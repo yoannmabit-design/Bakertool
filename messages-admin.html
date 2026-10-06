@@ -62,10 +62,17 @@
      Les mêmes couleurs que partout ailleurs dans l'administration : rouge
      ce qui presse, orange ce qui est récent et vivant, vert ce qui est
      réglé. Un code couleur qui change de sens d'un écran à l'autre ne
-     s'apprend jamais. */
-  .fil.nonlu{border-left-color:var(--alerte)}
-  .fil.arepondre{border-left-color:var(--recent)}
-  .fil.repondu{border-left-color:var(--ok)}
+     s'apprend jamais.
+
+     Les teintes sont celles des cartes de commande, et non les --alerte et
+     --ok du texte : ces deux-là sont sombres et désaturées, faites pour être
+     lues en toutes lettres. Sur un liseré de quatre pixels, le bordeaux et
+     le vert bouteille se ressemblent — c'est le défaut qu'avait cet écran.
+     Le vert vif est exactement celui de « rien à faire » dans Commandes, où
+     il veut déjà dire la même chose. */
+  .fil.nonlu{border-left-color:#e03131}
+  .fil.arepondre{border-left-color:#d09a3f}
+  .fil.repondu{border-left-color:#00c853}
 
   .tete{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;cursor:pointer}
   .tete .nom{font-weight:600;flex:1 1 140px;min-width:0;
