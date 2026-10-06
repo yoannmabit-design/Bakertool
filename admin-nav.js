@@ -17,6 +17,7 @@
   const PAGES = [
     { fichier: "admin.html",                 titre: "Accueil",     attendu: "Administration" },
     { fichier: "commandes-admin.html",       titre: "Commandes",   attendu: "Commandes" },
+    { fichier: "messages-admin.html",        titre: "Messages",    attendu: "Messages" },
     { fichier: "abonnements-admin.html",     titre: "Abonnements", attendu: "Abonnements" },
     { fichier: "credits-admin.html",         titre: "Crédit",      attendu: "Crédit clients" },
     { fichier: "clients-admin.html",         titre: "Clients",     attendu: "Clients" },
@@ -250,7 +251,13 @@
       un: "commande à confirmer", plusieurs: "commandes à confirmer" },
     { fichier: "abonnements-admin.html", collection: "abonnements",
       champ: "statut", valeur: "nouveau",
-      un: "abonnement à valider", plusieurs: "abonnements à valider" }
+      un: "abonnement à valider", plusieurs: "abonnements à valider" },
+    /* Messages du client non encore lus. Vos propres réponses naissent
+       lu_admin à true : elles ne comptent jamais, sans quoi répondre
+       rallumerait la pastille. */
+    { fichier: "messages-admin.html",    collection: "messages",
+      champ: "lu_admin", valeur: false,
+      un: "message non lu", plusieurs: "messages non lus" }
   ];
 
   /* Solde négatif : une comparaison "<", pas une égalité — logique à part
