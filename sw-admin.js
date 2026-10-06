@@ -21,6 +21,7 @@ const VERSION = 'yfb-admin?v=9';
 const ESSENTIELS = [
   './', './index.html',
   './admin.html', './commandes-admin.html', './boutique-admin.html',
+  './messages-admin.html',
   './clients-admin.html', './credits-admin.html', './abonnements-admin.html',
   './produits-identifiants.html', './etiquettes.html', './affiche.html',
   './admin-nav.js', './promo.js', './qr.js', './manifest.json', './logo.png'
