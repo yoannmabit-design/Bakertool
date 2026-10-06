@@ -12,7 +12,7 @@
   :root{
     --creme:#fdf6ec;--papier:#fffdf9;--encre:#1f1b16;
     --encre-doux:#6b6157;--trait:#e2d7c6;--accent:#2f4858;
-    --alerte:#8c2f22;--ok:#3d6b3d;--r:6px;
+    --alerte:#8c2f22;--ok:#3d6b3d;--recent:#a85a1c;--r:6px;
   }
   *{box-sizing:border-box}
   body{
@@ -50,10 +50,22 @@
     border-left:4px solid var(--trait);
     border-radius:var(--r);padding:14px;margin-bottom:12px;
   }
-  /* Rouge tant qu'un message attend une réponse. C'est la seule couleur
-     de la page : s'il y en avait deux, aucune ne voudrait dire « à
-     traiter ». */
-  .fil.attente{border-left-color:var(--alerte)}
+  /* Code couleur du liseré, lu de gauche à droite sans ouvrir le fil.
+     Trois états, et un fil est toujours dans l'un des trois.
+
+     Rouge   — un message du client n'est pas lu. À traiter aujourd'hui.
+     Orange  — lu, mais le dernier mot est au client. Vous savez de quoi il
+               s'agit, la réponse reste à écrire ou à donner de vive voix.
+     Vert    — le dernier message est le vôtre. La balle est dans son camp,
+               il n'y a rien à faire.
+
+     Les mêmes couleurs que partout ailleurs dans l'administration : rouge
+     ce qui presse, orange ce qui est récent et vivant, vert ce qui est
+     réglé. Un code couleur qui change de sens d'un écran à l'autre ne
+     s'apprend jamais. */
+  .fil.nonlu{border-left-color:var(--alerte)}
+  .fil.arepondre{border-left-color:var(--recent)}
+  .fil.repondu{border-left-color:var(--ok)}
 
   .tete{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;cursor:pointer}
   .tete .nom{font-weight:600;flex:1 1 140px;min-width:0;
@@ -306,16 +318,21 @@ function fils() {
          lecture qui compte, pas la réponse : certaines questions se
          règlent par téléphone et n'appellent aucune réponse écrite. */
       attente: msgs.some(m => m.auteur === "client" && !m.lu_admin),
+      /* L'état qui donne la couleur du liseré. Voir le code couleur dans
+         la feuille de style : non lu, à répondre, répondu. */
+      etat: msgs.some(m => m.auteur === "client" && !m.lu_admin) ? "nonlu"
+            : (dernier.auteur === "admin" ? "repondu" : "arepondre"),
       qui: interlocuteur(uid)
     });
   });
 
-  /* Les fils en attente en tête, puis les plus récents. Le reste de la
-     liste sert de mémoire, pas de travail. */
-  liste.sort((a, b) => {
-    if (a.attente !== b.attente) return a.attente ? -1 : 1;
-    return String(b.dernier.cree_le || "").localeCompare(String(a.dernier.cree_le || ""));
-  });
+  /* Dans l'ordre du code couleur : non lus, puis à répondre, puis répondus,
+     et dans chaque groupe du plus récent au plus ancien. La liste descend
+     ainsi du travail qui presse vers ce qui ne sert plus que de mémoire. */
+  const rang = { nonlu: 0, arepondre: 1, repondu: 2 };
+  liste.sort((a, b) =>
+    rang[a.etat] - rang[b.etat] ||
+    String(b.dernier.cree_le || "").localeCompare(String(a.dernier.cree_le || "")));
   return liste;
 }
 
@@ -333,9 +350,13 @@ function correspond(f, q) {
 function peindre() {
   const q = $("recherche").value.trim();
   let liste = fils().filter(f => correspond(f, q));
-  if (seulementAttente) liste = liste.filter(f => f.attente);
+  /* « Sans réponse » retient le rouge et l'orange : non lu et lu-mais-pas-
+     répondu sont deux moments du même travail inachevé. Seul le vert sort
+     de la liste. */
+  const aFaire = (f) => f.etat !== "repondu";
+  if (seulementAttente) liste = liste.filter(aFaire);
 
-  const enAttente = fils().filter(f => f.attente).length;
+  const enAttente = fils().filter(aFaire).length;
   $("btnAttente").textContent = seulementAttente
     ? "Tous les fils"
     : "Sans réponse" + (enAttente ? " (" + enAttente + ")" : "");
@@ -353,7 +374,7 @@ function peindre() {
 
 function carte(f) {
   const el = document.createElement("div");
-  el.className = "fil" + (f.attente ? " attente" : "");
+  el.className = "fil " + f.etat;
 
   const nonLus = f.msgs.filter(m => m.auteur === "client" && !m.lu_admin).length;
   const apercu = String(f.dernier.texte || "").replace(/\s+/g, " ").slice(0, 120);
