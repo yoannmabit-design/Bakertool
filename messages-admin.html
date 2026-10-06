@@ -181,6 +181,13 @@ let clients  = [];      // fiches clients, pour le nom et le numéro local
 let seulementAttente = false;
 let ouverts = new Set();   // fils dépliés, conservés d'un rafraîchissement à l'autre
 
+/* Arrivée depuis une commande : ?client=<uid>. Le fil s'ouvre tout seul et
+   la page descend jusqu'à lui. Sans ça, le lien déposerait sur une liste de
+   trente fils où il faudrait retrouver à la main celui qu'on vient de
+   demander — et le lien ne servirait à rien. */
+const clientDemande = new URLSearchParams(location.search).get("client") || "";
+let aDeroule = false;   // le défilement n'a lieu qu'une fois
+
 /* Même normalisation que partout ailleurs dans l'administration : les dix
    derniers chiffres. Un client qui écrit tantôt 09171234567, tantôt
    +639171234567, est le même client. */
@@ -370,6 +377,22 @@ function peindre() {
 
   $("liste").innerHTML = "";
   liste.forEach(f => $("liste").appendChild(carte(f)));
+
+  /* Fil demandé par le lien d'une commande : ouvert et amené sous les yeux,
+     une seule fois. Les rafraîchissements suivants ne doivent pas ramener
+     la page en arrière pendant qu'on écrit. */
+  if (clientDemande && !aDeroule) {
+    const f = liste.find(x => x.uid === clientDemande);
+    if (f) {
+      aDeroule = true;
+      const el = $("liste").children[liste.indexOf(f)];
+      if (el) {
+        const corps = el.querySelector(".corps");
+        if (!ouverts.has(f.uid)) basculer(f, el, corps);
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
+  }
 }
 
 function carte(f) {
