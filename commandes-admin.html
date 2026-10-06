@@ -141,6 +141,15 @@
     display:inline-block;padding:9px 14px;border:1px solid var(--trait);
     border-radius:var(--r);text-decoration:none;color:var(--accent);font-size:16px;
   }
+  /* Nombre de messages non lus de ce client, posé sur le lien Messages.
+     Rouge, comme la pastille du menu et le liseré d'un fil non lu : le
+     même sens partout, « quelqu'un attend ». */
+  .pastilleMsg{
+    display:inline-block;min-width:19px;padding:0 5px;margin-left:5px;
+    border-radius:10px;background:var(--alerte);color:#fff;
+    font-size:13px;font-weight:600;text-align:center;line-height:19px;
+    vertical-align:1px;
+  }
   .etiq{
     font-size:13px;letter-spacing:.07em;text-transform:uppercase;
     padding:3px 8px;border-radius:3px;background:#efe6d8;color:var(--encre-doux);
@@ -520,6 +529,11 @@ let stockLimite = {};   // { code produit : true } — produits à stock décomp
 let nomVersCode = {};   // rattrapage : nom du produit -> code, pour les commandes d'avant les codes
 let abonnements = [];   // échéances d'abonnement à ajouter à la production
 let clients = [];       // pour la recherche par téléphone en création de commande
+/* Messages non lus par compte client. Sert uniquement à poser une pastille
+   sur le lien Messages d'une commande : savoir qu'un client a écrit au
+   moment où l'on prépare sa commande, c'est le seul instant où
+   l'information change quelque chose. */
+let msgNonLus = {};
 let comptes = [];       // idem, pour retrouver un tarif de groupe existant
 
 // Même normalisation que clients-admin.html : ne garder que les chiffres,
@@ -587,6 +601,20 @@ async function charger() {
         };
       });
     } catch (e) { console.error(e); }
+
+    /* Messages du client en attente. Une seule égalité, donc une lecture
+       légère, et un échec reste sans conséquence : sans cette table, le
+       lien Messages s'affiche simplement sans pastille. */
+    try {
+      msgNonLus = {};
+      const nl = await getDocs(query(collection(db, "messages"),
+                                     where("lu_admin", "==", false)));
+      nl.forEach(d => {
+        const v = d.data() || {};
+        if (v.auteur === "admin" || !v.compte_uid) return;
+        msgNonLus[v.compte_uid] = (msgNonLus[v.compte_uid] || 0) + 1;
+      });
+    } catch (e) { console.error("Messages non lus", e); }
 
     try {
       const sa = await getDocs(collection(db, "abonnements"));
@@ -1167,6 +1195,10 @@ function carte(c) {
             `<option value="${v}">${t}</option>`).join("")}
         </select>
         <a class="lien lienClient" target="_blank" rel="noopener">WhatsApp client</a>
+        ${c.compte_uid ? `
+        <a class="lien lienMessages" href="messages-admin.html?client=${echapper(c.compte_uid)}"
+           >Messages${msgNonLus[c.compte_uid]
+             ? ` <span class="pastilleMsg">${msgNonLus[c.compte_uid]}</span>` : ""}</a>` : ""}
         <button type="button" class="mineur btnModifier">Modifier la commande</button>
       </div>
 
