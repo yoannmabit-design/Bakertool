@@ -1022,6 +1022,27 @@ function coordonneesDe(c) {
   return (co && co.lat && co.lng) ? co : null;
 }
 
+/* Livraison par coursier : la seule qui justifie une course Lalamove.
+
+   Jusqu'ici c'était le point GPS de la fiche qui ouvrait la porte. Mais une
+   adresse sur une fiche n'est pas une demande de livraison : beaucoup sont
+   là à titre indicatif, pour savoir où habite le client, et il vient
+   chercher son pain. Le bouton apparaissait quand même, et une inattention
+   à six heures du matin fait sortir un motard pour rien.
+
+   Ce qui décide, c'est ce que le client a choisi en commandant. On relit
+   donc l'option de livraison dans les paramètres de la boutique : type
+   « livraison », et pas de « je livre moi-même ». Les retraits, les dépôts
+   et les tournées que vous assurez vous-même ne proposent plus rien.
+
+   Option introuvable — renommée ou supprimée depuis la commande : on s'en
+   tient au type enregistré sur la commande, qui ne bouge plus. */
+function livraisonParCoursier(c) {
+  if (c.option?.type !== "livraison") return false;
+  const o = optionsRetrait.find(x => x.nom === c.option?.nom);
+  return o ? !o.je_livre : true;
+}
+
 /* Points de départ : lus une seule fois par ouverture de page et partagés
    par toutes les commandes. Ajouter un lieu se fait dans Firestore, sans
    toucher à cette page. */
@@ -1267,12 +1288,15 @@ function carte(c) {
   return el;
 }
 
-/* Une commande est groupable si elle a un point de livraison, aucune course
-   déjà commandée, et n'est pas annulée. Même règle que le bloc individuel :
-   les clients en retrait n'apparaissent jamais. */
+/* Une commande est groupable si le client a demandé une livraison par
+   coursier, qu'elle a un point de livraison, qu'aucune course n'est déjà
+   commandée, et qu'elle n'est pas annulée. Même règle que le bloc
+   individuel : ce qui n'est pas livrable par Lalamove n'apparaît nulle
+   part, ni en tournée ni à l'unité. */
 function estGroupable(c) {
   if (c.statut === "annulee") return false;
   if (c.lalamove && c.lalamove.orderId) return false;
+  if (!livraisonParCoursier(c)) return false;
   return !!coordonneesDe(c);
 }
 
@@ -1511,20 +1535,29 @@ function ouvrirTournee(date, groupables, panneau) {
         quand: new Date().toISOString()
       };
 
+      /* Le numéro substitué se lit par commande, pas pour la tournée :
+         dans un lot de trois, un seul client peut être concerné, et c'est
+         sur sa commande à lui que l'avertissement doit apparaître. */
+      const substitue = {};
+      (o.arrets || []).forEach(a => {
+        if (a.commandeId) substitue[a.commandeId] = !!a.telSubstitue;
+      });
+
       /* La même course est écrite sur chaque commande du lot : c'est ce qui
          les fait toutes sortir des groupables et empêche de les recommander.
          Une écriture qui échoue n'annule pas la course, déjà partie. */
       try {
         if (lot.length) {
           const paquet = writeBatch(db);
-          lot.forEach(c => paquet.update(doc(db, "commandes", c.id), { lalamove: trace }));
+          lot.forEach(c => paquet.update(doc(db, "commandes", c.id),
+            { lalamove: { ...trace, telSubstitue: !!substitue[c.id] } }));
           await paquet.commit();
         }
       } catch (err) {
         console.error("Trace sur les commandes impossible", err);
         signaler("Tournée commandée, mais non enregistrée sur les commandes.", "err");
       }
-      lot.forEach(c => c.lalamove = trace);
+      lot.forEach(c => c.lalamove = { ...trace, telSubstitue: !!substitue[c.id] });
 
       panneau.hidden = true; panneau.innerHTML = "";
       afficher();
@@ -1550,6 +1583,11 @@ function monterLalamove(c, el) {
   // Une commande annulée n'a pas à être livrée.
   if (c.statut === "annulee") return;
 
+  /* Le client n'a pas demandé de coursier : retrait, dépôt, ou livraison que
+     vous assurez vous-même. Rien à proposer, et surtout rien à expliquer —
+     l'absence de bouton est ici la situation normale. */
+  if (!livraisonParCoursier(c)) return;
+
   /* Adresse ponctuelle : dire pourquoi il n'y a pas de bouton, sinon son
      absence passe pour une panne et on cherche ailleurs. La course reste
      possible depuis l'application Lalamove, en tapant l'adresse à la main. */
@@ -1569,7 +1607,12 @@ function monterLalamove(c, el) {
     zone.innerHTML = `
       <div class="info"><b>Lalamove</b> course ${echapper(c.lalamove.orderId)}
         — ${echapper(c.lalamove.statut || "")}
-        ${c.lalamove.prix ? "· " + echapper(String(c.lalamove.prix)) : ""}</div>`;
+        ${c.lalamove.prix ? "· " + echapper(String(c.lalamove.prix)) : ""}</div>
+      ${c.lalamove.telSubstitue ? `
+      <div class="info"><b>Le motard appellera la boulangerie</b> — le numéro
+        de ce client n'est pas philippin, Lalamove le refuse. Le vôtre a été
+        transmis à sa place. Pour éviter l'appel, renseignez « numéro local »
+        sur sa fiche client.</div>` : ""}`;
     if (c.lalamove.partageUrl) {
       const a = document.createElement("a");
       a.className = "lien"; a.target = "_blank"; a.rel = "noopener";
