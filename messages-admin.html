@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Messages — Yoann's French Bakery</title>
+<meta name="theme-color" content="#1a1a1a">
+<link rel="icon" href="logo.png" type="image/png">
+<link rel="apple-touch-icon" href="logo.png">
+<link rel="manifest" href="manifest.json">
+<style>
+  :root{
+    --creme:#fdf6ec;--papier:#fffdf9;--encre:#1f1b16;
+    --encre-doux:#6b6157;--trait:#e2d7c6;--accent:#2f4858;
+    --alerte:#8c2f22;--ok:#3d6b3d;--r:6px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--creme);color:var(--encre);
+    font:18px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  header{
+    background:var(--encre);color:var(--creme);padding:14px 18px;
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  }
+  header h1{font-size:19px;margin:0;font-weight:600}
+  header .qui{margin-left:auto;font-size:14.5px;opacity:.72}
+  header button{
+    background:transparent;border:1px solid #4a443c;color:var(--creme);
+    padding:8px 13px;border-radius:var(--r);font-size:15px;cursor:pointer;
+  }
+  main{max-width:820px;margin:0 auto;padding:20px 16px 60px}
+
+  .outils{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+  .outils input{flex:1;min-width:190px;padding:11px 12px;border:1px solid var(--trait);
+    border-radius:var(--r);background:#fff;font:inherit;font-size:17px;color:var(--encre)}
+  button.action{background:var(--accent);color:#fff;border:none;padding:11px 18px;
+    border-radius:var(--r);cursor:pointer;font-size:16.5px;font-weight:600}
+  button.action:disabled{opacity:.5;cursor:default}
+  button.mineur{
+    background:transparent;color:var(--accent);border:1px solid var(--trait);
+    padding:9px 14px;border-radius:var(--r);cursor:pointer;font-size:16px;
+  }
+
+  /* Un fil = un client. Les messages d'un même client sur plusieurs
+     commandes restent ensemble : on parle à une personne, pas à un
+     numéro de commande. */
+  .fil{
+    background:var(--papier);border:1px solid var(--trait);
+    border-left:4px solid var(--trait);
+    border-radius:var(--r);padding:14px;margin-bottom:12px;
+  }
+  /* Rouge tant qu'un message attend une réponse. C'est la seule couleur
+     de la page : s'il y en avait deux, aucune ne voudrait dire « à
+     traiter ». */
+  .fil.attente{border-left-color:var(--alerte)}
+
+  .tete{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;cursor:pointer}
+  .tete .nom{font-weight:600;flex:1 1 140px;min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tete .tel{font-family:ui-monospace,monospace;font-size:14.5px;color:var(--encre-doux)}
+  .tete .quand{font-size:14.5px;color:var(--encre-doux)}
+  .puce{
+    font-size:13px;padding:2px 8px;border-radius:10px;
+    background:#e8eef1;color:var(--accent);font-weight:600;
+  }
+  .puce.attente{background:#f6e2de;color:var(--alerte)}
+
+  .apercu{
+    margin:7px 0 0;font-size:16px;color:var(--encre-doux);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+
+  .corps{margin-top:14px;border-top:1px solid var(--trait);padding-top:12px}
+  .corps[hidden]{display:none}
+
+  .msg{margin-bottom:12px;max-width:85%}
+  .msg .bulle{
+    padding:10px 13px;border-radius:12px;font-size:16.5px;
+    white-space:pre-wrap;word-break:break-word;
+  }
+  .msg .meta{font-size:13.5px;color:var(--encre-doux);margin-top:4px}
+  .msg.client .bulle{background:#efe6d8;border-bottom-left-radius:3px}
+  .msg.admin{margin-left:auto}
+  .msg.admin .bulle{background:var(--accent);color:#fff;border-bottom-right-radius:3px}
+  .msg.admin .meta{text-align:right}
+
+  /* Rattachement à une commande : cliquable, puisque la question porte
+     presque toujours sur ce qu'elle contient. */
+  .surcmd{font-size:13.5px;color:var(--accent);text-decoration:none;
+    border-bottom:1px dotted var(--accent)}
+
+  .repondre{margin-top:14px}
+  .repondre textarea{
+    width:100%;min-height:86px;padding:11px 12px;border:1px solid var(--trait);
+    border-radius:var(--r);background:#fff;font:inherit;font-size:16.5px;
+    color:var(--encre);resize:vertical;
+  }
+  .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:9px}
+  .canaux{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .canaux a{
+    font-size:15px;text-decoration:none;color:var(--accent);
+    border:1px solid var(--trait);border-radius:var(--r);padding:7px 12px;
+  }
+  .aide{font-size:14.5px;color:var(--encre-doux);margin:10px 0 0}
+
+  .vide{padding:40px;text-align:center;color:var(--encre-doux)}
+  .etat{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);
+    background:var(--encre);color:var(--creme);padding:10px 18px;
+    border-radius:var(--r);font-size:16px;opacity:0;transition:opacity .2s}
+  .etat.vu{opacity:1}
+  .connexion{max-width:400px;margin:14vh auto;text-align:center;padding:0 20px}
+  .connexion h1{font-size:23.5px;margin:0 0 20px}
+</style>
+</head>
+<body>
+
+<div id="ecranConnexion" class="connexion">
+  <h1>Messages</h1>
+  <button class="action" id="btnConnexion">Se connecter avec Google</button>
+  <p id="msgConnexion" style="margin-top:18px;font-size:16px"></p>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <h1>Messages</h1>
+    <span class="qui" id="qui"></span>
+    <button id="btnRecharger">Actualiser</button>
+    <button id="btnDeconnexion">Quitter</button>
+  </header>
+
+  <main>
+    <div class="outils">
+      <input type="text" id="recherche" placeholder="Rechercher un nom, un numéro, un texte…">
+      <button class="mineur" id="btnAttente">Sans réponse</button>
+    </div>
+    <div id="liste"><div class="vide">Chargement…</div></div>
+  </main>
+</div>
+
+<div class="etat" id="etat"></div>
+
+<script src="admin-nav.js" defer></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, collection, getDocs, doc, getDoc, addDoc, updateDoc,
+         writeBatch }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDuq8KS8M_Z8U7BlSp6MvE-6Y9OYYaDujE",
+  authDomain: "bakertools-ae124.firebaseapp.com",
+  projectId: "bakertools-ae124",
+  storageBucket: "bakertools-ae124.firebasestorage.app",
+  messagingSenderId: "978584667113",
+  appId: "1:978584667113:web:868cc89788aff27717c178"
+};
+
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getFirestore(app);
+const $    = (id) => document.getElementById(id);
+
+let messages = [];      // tous les messages, à plat
+let comptes  = {};      // uid -> { nom, email, telephone }
+let clients  = [];      // fiches clients, pour le nom et le numéro local
+let seulementAttente = false;
+let ouverts = new Set();   // fils dépliés, conservés d'un rafraîchissement à l'autre
+
+/* Même normalisation que partout ailleurs dans l'administration : les dix
+   derniers chiffres. Un client qui écrit tantôt 09171234567, tantôt
+   +639171234567, est le même client. */
+function cleTel(t) {
+  const c = String(t || "").replace(/\D/g, "");
+  return c.length > 10 ? c.slice(-10) : c;
+}
+
+function ech(t) {
+  return String(t ?? "").replace(/[&<>"]/g, x =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[x]));
+}
+
+function signaler(texte, duree) {
+  const el = $("etat");
+  el.textContent = texte;
+  el.classList.add("vu");
+  clearTimeout(signaler.t);
+  signaler.t = setTimeout(() => el.classList.remove("vu"), duree || 2600);
+}
+
+/* Date lisible d'un coup d'œil : l'heure pour aujourd'hui, le jour sinon.
+   « 14:05 » répond à « est-ce récent ? » plus vite que « 06/10 14:05 ». */
+function quand(iso) {
+  const d = new Date(iso || "");
+  if (isNaN(d)) return "";
+  const aujourdhui = new Date().toDateString() === d.toDateString();
+  return aujourdhui
+    ? d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })
+      + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+}
+
+/* ---------- Connexion ---------- */
+$("btnConnexion").onclick = async () => {
+  try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+  catch (e) {
+    $("msgConnexion").textContent = "Connexion impossible. Autorisez les fenêtres surgissantes.";
+    console.error(e);
+  }
+};
+$("btnDeconnexion").onclick = () => signOut(auth);
+$("btnRecharger").onclick = charger;
+
+onAuthStateChanged(auth, async (user) => {
+  if (!user) { $("app").hidden = true; $("ecranConnexion").hidden = false; return; }
+  let autorise = false;
+  try { autorise = (await getDoc(doc(db, "admins", user.uid))).exists(); }
+  catch (e) { console.error(e); }
+  if (!autorise) {
+    await signOut(auth);
+    $("msgConnexion").innerHTML =
+      "Ce compte n'a pas accès.<br>Identifiant : <code>" + user.uid + "</code>";
+    return;
+  }
+  $("ecranConnexion").hidden = true;
+  $("app").hidden = false;
+  $("qui").textContent = user.email;
+  charger();
+});
+
+/* ---------- Chargement ----------
+
+   Trois lectures en parallèle plutôt qu'en file : les messages portent un
+   uid, et c'est dans les comptes et les fiches clients que se trouvent le
+   nom et le numéro à qui l'on parle. Les attendre l'une après l'autre
+   ferait patienter sur un écran vide pour rien. */
+async function charger() {
+  $("liste").innerHTML = '<div class="vide">Chargement…</div>';
+  const [rMsg, rCpt, rCli] = await Promise.allSettled([
+    getDocs(collection(db, "messages")),
+    getDocs(collection(db, "comptes")),
+    getDocs(collection(db, "clients"))
+  ]);
+
+  if (rMsg.status === "rejected") {
+    console.error(rMsg.reason);
+    $("liste").innerHTML =
+      '<div class="vide">Les messages n\'ont pas pu être lus.<br><br>' +
+      'Si c\'est la première ouverture de cet écran, les règles Firestore ' +
+      'de la collection <code>messages</code> ne sont probablement pas ' +
+      'encore en place.</div>';
+    return;
+  }
+
+  messages = rMsg.value.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  comptes = {};
+  if (rCpt.status === "fulfilled") {
+    rCpt.value.forEach(d => { comptes[d.id] = d.data() || {}; });
+  } else { console.error(rCpt.reason); }
+
+  clients = [];
+  if (rCli.status === "fulfilled") {
+    rCli.value.forEach(d => clients.push({ id: d.id, ...d.data() }));
+  } else { console.error(rCli.reason); }
+
+  peindre();
+}
+
+/* Qui parle. Le compte boutique porte l'e-mail et parfois le nom ; la fiche
+   client porte le nom mis au propre à la main et le numéro local. On prend
+   le meilleur des deux, la fiche d'abord puisque c'est vous qui l'écrivez. */
+function interlocuteur(uid) {
+  const cpt = comptes[uid] || {};
+  const k = cleTel(cpt.telephone);
+  const fiche = k ? clients.find(x => cleTel(x.telephone || x.id) === k) : null;
+  return {
+    nom: (fiche && fiche.nom) || cpt.nom || cpt.email || "Client",
+    email: cpt.email || "",
+    tel: (fiche && String(fiche.telephone_local || "").trim())
+         || cpt.telephone || (fiche && fiche.telephone) || ""
+  };
+}
+
+/* Un fil par client, et non par commande : la question d'un client sur sa
+   commande de mardi et celle sur son abonnement sont la même conversation,
+   avec la même personne. Chaque message garde son rattachement, affiché
+   au-dessus de la bulle. */
+function fils() {
+  const par = new Map();
+  messages.forEach(m => {
+    if (!m.compte_uid) return;   // sans rattachement, invisible de tous côtés
+    if (!par.has(m.compte_uid)) par.set(m.compte_uid, []);
+    par.get(m.compte_uid).push(m);
+  });
+
+  const liste = [];
+  par.forEach((msgs, uid) => {
+    msgs.sort((a, b) => String(a.cree_le || "").localeCompare(String(b.cree_le || "")));
+    const dernier = msgs[msgs.length - 1];
+    liste.push({
+      uid, msgs, dernier,
+      /* En attente dès qu'un message du client n'est pas lu. C'est la
+         lecture qui compte, pas la réponse : certaines questions se
+         règlent par téléphone et n'appellent aucune réponse écrite. */
+      attente: msgs.some(m => m.auteur === "client" && !m.lu_admin),
+      qui: interlocuteur(uid)
+    });
+  });
+
+  /* Les fils en attente en tête, puis les plus récents. Le reste de la
+     liste sert de mémoire, pas de travail. */
+  liste.sort((a, b) => {
+    if (a.attente !== b.attente) return a.attente ? -1 : 1;
+    return String(b.dernier.cree_le || "").localeCompare(String(a.dernier.cree_le || ""));
+  });
+  return liste;
+}
+
+function correspond(f, q) {
+  if (!q) return true;
+  const t = q.toLowerCase();
+  if (f.qui.nom.toLowerCase().includes(t)) return true;
+  if (f.qui.email.toLowerCase().includes(t)) return true;
+  if (cleTel(f.qui.tel).includes(cleTel(q)) && cleTel(q)) return true;
+  return f.msgs.some(m =>
+    String(m.texte || "").toLowerCase().includes(t) ||
+    String(m.numero || "").toLowerCase().includes(t));
+}
+
+function peindre() {
+  const q = $("recherche").value.trim();
+  let liste = fils().filter(f => correspond(f, q));
+  if (seulementAttente) liste = liste.filter(f => f.attente);
+
+  const enAttente = fils().filter(f => f.attente).length;
+  $("btnAttente").textContent = seulementAttente
+    ? "Tous les fils"
+    : "Sans réponse" + (enAttente ? " (" + enAttente + ")" : "");
+
+  if (!liste.length) {
+    $("liste").innerHTML = '<div class="vide">' +
+      (messages.length ? "Aucun fil ne correspond."
+                       : "Aucun message pour l'instant.") + "</div>";
+    return;
+  }
+
+  $("liste").innerHTML = "";
+  liste.forEach(f => $("liste").appendChild(carte(f)));
+}
+
+function carte(f) {
+  const el = document.createElement("div");
+  el.className = "fil" + (f.attente ? " attente" : "");
+
+  const nonLus = f.msgs.filter(m => m.auteur === "client" && !m.lu_admin).length;
+  const apercu = String(f.dernier.texte || "").replace(/\s+/g, " ").slice(0, 120);
+
+  el.innerHTML = `
+    <div class="tete">
+      <span class="nom">${ech(f.qui.nom)}</span>
+      ${nonLus ? `<span class="puce attente">${nonLus} non lu${nonLus > 1 ? "s" : ""}</span>` : ""}
+      <span class="tel">${ech(f.qui.tel)}</span>
+      <span class="quand">${ech(quand(f.dernier.cree_le))}</span>
+    </div>
+    <p class="apercu">${f.dernier.auteur === "admin" ? "Vous : " : ""}${ech(apercu)}</p>
+    <div class="corps" hidden></div>`;
+
+  const corps = el.querySelector(".corps");
+  el.querySelector(".tete").onclick = () => basculer(f, el, corps);
+  el.querySelector(".apercu").onclick = () => basculer(f, el, corps);
+
+  // Un fil déjà ouvert le reste après un rafraîchissement : on répond
+  // rarement d'un seul coup, et se faire refermer la conversation sous le
+  // nez à chaque envoi serait pénible.
+  if (ouverts.has(f.uid)) remplir(f, corps);
+  return el;
+}
+
+function basculer(f, el, corps) {
+  if (ouverts.has(f.uid)) {
+    ouverts.delete(f.uid);
+    corps.hidden = true; corps.innerHTML = "";
+    return;
+  }
+  ouverts.add(f.uid);
+  remplir(f, corps);
+  marquerLus(f);
+}
+
+function remplir(f, corps) {
+  corps.hidden = false;
+  const tel = cleTel(f.qui.tel);
+  // Le « 0 » initial convient aux applications locales ; WhatsApp et Viber
+  // veulent l'indicatif pays. Deux écritures du même numéro, chacune pour
+  // qui la comprend.
+  const inter = tel ? "63" + tel : "";
+
+  corps.innerHTML = `
+    ${f.msgs.map(bulle).join("")}
+    <div class="repondre">
+      <textarea placeholder="Votre réponse…" maxlength="2000"></textarea>
+      <div class="actions">
+        <button type="button" class="action envoyer">Répondre</button>
+        <span class="aide etatEnvoi" style="margin:0"></span>
+      </div>
+      ${tel ? `
+      <div class="canaux">
+        <a href="https://wa.me/${inter}" target="_blank" rel="noopener">WhatsApp</a>
+        <a href="viber://chat?number=%2B${inter}">Viber</a>
+        <a href="sms:+${inter}">SMS</a>
+      </div>
+      <p class="aide">La réponse écrite ici s'affiche dans son compte. Il n'en
+        est pas averti : pour une urgence, passez par un de ces canaux.</p>`
+      : `<p class="aide">Aucun numéro connu pour ce client : la réponse écrite
+        ici est le seul moyen de le joindre. Il la verra en ouvrant son compte.</p>`}
+    </div>`;
+
+  const zone = corps.querySelector("textarea");
+  const btn  = corps.querySelector(".envoyer");
+  const etat = corps.querySelector(".etatEnvoi");
+
+  btn.onclick = async () => {
+    const texte = zone.value.trim();
+    if (!texte) { zone.focus(); return; }
+    btn.disabled = true;
+    etat.textContent = "Envoi…";
+    try {
+      await addDoc(collection(db, "messages"), {
+        compte_uid: f.uid,
+        // Une réponse se rattache à la commande dont on parlait : c'est
+        // presque toujours la même conversation qui continue.
+        commande_id: f.dernier.commande_id || null,
+        numero: f.dernier.numero || null,
+        auteur: "admin",
+        texte,
+        // Déjà lu de votre côté, par construction : c'est vous qui l'écrivez.
+        lu_admin: true,
+        cree_le: new Date().toISOString()
+      });
+      zone.value = "";
+      etat.textContent = "";
+      await charger();
+      signaler("Réponse envoyée.");
+    } catch (e) {
+      console.error(e);
+      etat.textContent = "Envoi impossible. Réessayez.";
+      btn.disabled = false;
+    }
+  };
+}
+
+function bulle(m) {
+  const cote = m.auteur === "admin" ? "admin" : "client";
+  const lien = m.commande_id
+    ? `<a class="surcmd" href="commandes-admin.html?vue=toutes#${ech(m.commande_id)}"
+         >commande ${ech(m.numero || m.commande_id)}</a> · ` : "";
+  return `
+    <div class="msg ${cote}">
+      <div class="bulle">${ech(m.texte)}</div>
+      <div class="meta">${lien}${ech(quand(m.cree_le))}</div>
+    </div>`;
+}
+
+/* Marquer lu à l'ouverture du fil, et non à l'envoi d'une réponse : une
+   question réglée au téléphone n'appelle pas de réponse écrite, mais elle
+   a bien été traitée. Lier les deux laisserait la pastille allumée sur du
+   travail déjà fait, et une pastille qui ment finit par ne plus être
+   regardée. */
+async function marquerLus(f) {
+  const aMarquer = f.msgs.filter(m => m.auteur === "client" && !m.lu_admin);
+  if (!aMarquer.length) return;
+  try {
+    if (aMarquer.length === 1) {
+      await updateDoc(doc(db, "messages", aMarquer[0].id), { lu_admin: true });
+    } else {
+      const lot = writeBatch(db);
+      aMarquer.forEach(m => lot.update(doc(db, "messages", m.id), { lu_admin: true }));
+      await lot.commit();
+    }
+    aMarquer.forEach(m => m.lu_admin = true);
+    peindre();
+  } catch (e) {
+    // Sans conséquence : le fil reste marqué en attente, on réessaiera.
+    console.error("Marquage lu impossible", e);
+  }
+}
+
+$("recherche").oninput = peindre;
+$("btnAttente").onclick = () => { seulementAttente = !seulementAttente; peindre(); };
+</script>
+</body>
+</html>
