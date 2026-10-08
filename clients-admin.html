@@ -209,7 +209,7 @@
            compare les commandes à la liste en mémoire, et une liste vide lui
            fait prendre tous les clients pour des inconnus. -->
       <button class="mineur" id="btnImporter" disabled
-              title="Chargement du fichier client…">Importer depuis les commandes</button>
+              title="Chargement du fichier client…">Recalculer les statistiques</button>
       <button class="mineur" id="btnGroupes">Groupes tarifaires</button>
     </div>
 
@@ -1164,7 +1164,7 @@ function afficher() {
     liste.innerHTML = '<div class="vide">Aucun client ne correspond.' +
       (!voirMasques && masques
         ? '<br><br>' + masques + ' fiche(s) archivée(s) ou de test sont masquées.'
-        : '<br><br>Si le fichier est vide, cliquez sur « Importer depuis les commandes ».') +
+        : '<br><br>Si le fichier est vide, cliquez sur « Recalculer les statistiques ».') +
       '</div>';
     return;
   }
