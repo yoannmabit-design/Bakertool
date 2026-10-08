@@ -1,111 +1,553 @@
-/* Service worker de l'administration.
+/* ============================================================
+   Barre de navigation commune aux pages d'administration.
+   À inclure dans chaque page : <script src="admin-nav.js" defer></script>
+   Aucune iframe : chaque page reste autonome, seule la barre est partagée.
 
-   Deux régimes, volontairement différents :
+   La barre porte aussi le garde-fou de nom de fichier : chaque page
+   affiche sous quel nom elle doit être enregistrée, et prévient si son
+   contenu ne correspond pas à ce nom. Une page enregistrée par erreur
+   sur un autre fichier se signale ainsi dès son ouverture, au lieu de
+   passer inaperçue jusqu'à ce qu'un menu mène à la mauvaise page.
+   ============================================================ */
+(function () {
+  /* titre : libellé dans le menu.
+     attendu : titre propre de la page, c'est-à-dire le premier segment de
+     la balise <title>, avant le tiret ou la barre verticale. C'est lui qui
+     sert de contrôle : il doit correspondre au fichier ouvert. */
+  const PAGES = [
+    { fichier: "admin.html",                 titre: "Accueil",     attendu: "Administration" },
+    { fichier: "commandes-admin.html",       titre: "Commandes",   attendu: "Commandes" },
+    { fichier: "messages-admin.html",        titre: "Messages",    attendu: "Messages" },
+    { fichier: "abonnements-admin.html",     titre: "Abonnements", attendu: "Abonnements" },
+    { fichier: "credits-admin.html",         titre: "Crédit",      attendu: "Crédit clients" },
+    { fichier: "clients-admin.html",         titre: "Clients",     attendu: "Clients" },
+    { fichier: "boutique-admin.html",        titre: "Boutique",    attendu: "Boutique" },
+    { fichier: "produits-identifiants.html", titre: "Produits",    attendu: "Identifiants produits" }
+  ];
 
-   1. Les fichiers du site (pages, scripts, images) : réseau d'abord.
-      La version en ligne l'emporte toujours, le cache ne sert qu'en cas de
-      coupure. C'est ce qui permet de modifier une page sur GitHub et de la
-      revoir aussitôt, sans vider quoi que ce soit.
+  const ici = location.pathname.split("/").pop() || "admin.html";
 
-   2. Les modules Firebase servis par gstatic.com : cache d'abord.
-      Leur adresse porte le numéro de version (10.12.0), leur contenu ne
-      change donc jamais. Les redemander au réseau à chaque ouverture de
-      page coûtait plusieurs secondes, sur les six écrans d'administration,
-      à chaque bascule d'onglet. Une fois en cache, ils sont instantanés —
-      y compris au fournil sans réseau.
+  const style = document.createElement("style");
+  style.textContent = `
+    .nav-admin{
+      background:#12100d;padding:0 14px;display:flex;gap:2px;
+      overflow-x:auto;-webkit-overflow-scrolling:touch;
+      /* Figée en haut : c'est le seul élément qu'on veut atteindre à tout
+         moment, y compris au bas d'une longue liste de commandes. */
+      position:sticky;top:0;z-index:40;
+    }
+    .nav-admin a{
+      color:#c9c0b4;text-decoration:none;font-size:14px;
+      padding:12px 15px;white-space:nowrap;border-bottom:2px solid transparent;
+      font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+    }
+    .nav-admin a:hover{color:#fdf6ec}
+    /* Bouton d'activation des alertes : discret, en bout de barre, et
+       voué à disparaître une fois cliqué. */
+    .nav-admin .alertes-nav{
+      margin-left:auto;align-self:center;white-space:nowrap;
+      background:transparent;border:1px solid #4a443c;color:#c9c0b4;
+      font:inherit;font-size:13px;padding:6px 12px;border-radius:999px;
+      cursor:pointer;
+    }
+    .nav-admin .alertes-nav:disabled{opacity:.6;cursor:default}
+    .nav-admin a[aria-current="page"]{
+      color:#fdf6ec;font-weight:600;border-bottom-color:#fdf6ec;
+    }
+    /* Pastille d'attente : le chiffre porte l'information, la couleur ne
+       fait que la rendre visible de loin. Un daltonien lit le compte. */
+    .nav-admin .pastille{
+      display:inline-flex;align-items:center;justify-content:center;
+      min-width:18px;height:18px;padding:0 5px;margin-left:7px;
+      border-radius:9px;background:#ffc400;color:#12100d;
+      font-size:11.5px;font-weight:700;line-height:1;
+      position:relative;top:-1px;
+    }
+    /* Variante "alerte" : un solde négatif n'est pas juste une tâche en
+       attente comme une commande à confirmer, c'est un compte client dans
+       le rouge — couleur distincte pour ne pas la noyer parmi les
+       pastilles jaunes neutres. */
+    .nav-admin .pastille.alerte{background:#d32f2f;color:#fff}
+    .nom-fichier{
+      font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+      font-size:11.5px;font-weight:400;letter-spacing:0;
+      opacity:.55;margin-left:9px;white-space:nowrap;
+    }
+    .alerte-fichier{
+      background:#8c2f22;color:#fff;padding:12px 16px;font-size:14px;
+      line-height:1.45;
+      font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+    }
+    .alerte-fichier b{display:block;margin-bottom:3px}
+    .alerte-fichier code{
+      font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+      background:rgba(0,0,0,.25);padding:1px 5px;border-radius:3px;
+    }
+    /* ---------- En-tête escamotable ----------
+       Sur un téléphone, l'en-tête mange une bonne part de l'écran pour une
+       information qu'on ne lit qu'une fois. Un balayage horizontal le replie,
+       un autre le ramène.
 
-   Attention : ne jamais faire passer les pages HTML en cache d'abord.
-   Le régime 1 est un choix délibéré. */
-const VERSION = 'yfb-admin?v=10';
+       La barre de navigation, elle, ne se replie pas : elle est fine et elle
+       sert en permanence — la masquer obligerait à la rappeler avant chaque
+       changement de page. */
+    header{
+      overflow:hidden;
+      transition:max-height .22s ease, padding .22s ease, opacity .18s ease;
+      max-height:200px;
+    }
+    header.replie{max-height:0;padding-top:0;padding-bottom:0;opacity:0}
+    /* Languette : réduite au trait. Sans rien du tout, un en-tête disparu se
+       lirait comme une panne ; avec du texte, on remplace un bandeau par un
+       autre. Le trait suffit à dire qu'il y a quelque chose à tirer. */
+    .languette-entete{
+      display:flex;align-items:center;justify-content:center;
+      background:#12100d;border:none;width:100%;
+      padding:6px 0 8px;cursor:pointer;
+    }
+    .languette-entete .poignee{
+      display:block;width:34px;height:3px;border-radius:2px;
+      background:#c9c0b4;opacity:.5;transition:opacity .15s;
+    }
+    .languette-entete:hover .poignee{opacity:.85}
+    @media print{
+      .nav-admin,.alerte-fichier,.nom-fichier,.pastille,
+      .languette-entete{display:none !important}
+      header{max-height:none;opacity:1}
+    }
+  `;
+  document.head.appendChild(style);
 
-const ESSENTIELS = [
-  './', './index.html',
-  './admin.html', './commandes-admin.html', './boutique-admin.html',
-  './messages-admin.html',
-  './clients-admin.html', './credits-admin.html', './abonnements-admin.html',
-  './produits-identifiants.html', './etiquettes.html', './affiche.html',
-  './admin-nav.js', './promo.js', './qr.js', './manifest.json', './logo.png'
-];
+  const barre = document.createElement("nav");
+  barre.className = "nav-admin";
+  barre.setAttribute("aria-label", "Administration");
+  const liens = {};
+  PAGES.forEach(p => {
+    const a = document.createElement("a");
+    a.href = p.fichier;
+    a.textContent = p.titre;
+    if (p.fichier === ici) a.setAttribute("aria-current", "page");
+    liens[p.fichier] = a;
+    barre.appendChild(a);
+  });
 
-/* Ces trois modules sont chargés par toutes les pages d'administration, et
-   une seconde fois par admin-nav.js pour les pastilles. Ils sont précachés
-   à l'installation pour que la toute première bascule d'onglet en profite
-   déjà, sans attendre une visite de chauffe.
+  document.body.insertBefore(barre, document.body.firstChild);
 
-   Si le numéro de version du SDK change dans les pages, il doit changer ici
-   aussi : sans quoi la nouvelle version sera simplement téléchargée au
-   réseau comme avant, sans casse mais sans gain. */
-const SDK = 'https://www.gstatic.com/firebasejs/10.12.0/';
-const MODULES = [
-  SDK + 'firebase-app.js',
-  SDK + 'firebase-auth.js',
-  SDK + 'firebase-firestore.js',
-  SDK + 'firebase-functions.js'
-];
+  /* ---------- En-tête escamotable ----------
+     Replié ou déployé par un balayage horizontal, dans un sens comme dans
+     l'autre : c'est une bascule, pas deux gestes à retenir.
 
-function estModule(url) {
-  return url.startsWith(SDK);
-}
+     Le geste n'est reconnu que sur un déplacement franchement horizontal —
+     au moins 60 px de côté et deux fois plus large que haut — sinon un
+     défilement un peu oblique replierait l'en-tête sans qu'on ait rien
+     demandé. La barre de navigation défile horizontalement, elle aussi :
+     un balayage qui part de là ne compte pas, sans quoi on replierait
+     l'en-tête en cherchant simplement un onglet.
 
-self.addEventListener('install', (e) => {
-  self.skipWaiting();
-  e.waitUntil(
-    caches.open(VERSION).then(c => Promise.all([
-      c.addAll(ESSENTIELS).catch(() => {}),
-      // Requêtes cross-origin : en mode 'cors' pour obtenir une réponse
-      // lisible et réutilisable, et non une réponse opaque.
-      Promise.all(MODULES.map(u =>
-        fetch(u, { mode: 'cors' })
-          .then(r => (r.ok ? c.put(u, r) : null))
-          .catch(() => {})
-      ))
-    ])).catch(() => {})
-  );
-});
+     L'état est partagé par toutes les pages de l'administration : une fois
+     replié, il le reste en naviguant. */
+  const CLE_ENTETE = "yfb-admin-entete-replie";
+  const entete = document.querySelector("header");
 
-self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys()
-      .then(n => Promise.all(n.filter(x => x !== VERSION).map(x => caches.delete(x))))
-      .then(() => self.clients.claim())
-  );
-});
+  if (entete) {
+    const languette = document.createElement("button");
+    languette.type = "button";
+    languette.className = "languette-entete";
+    languette.hidden = true;
+    languette.setAttribute("aria-controls", "entete-admin");
+    // Le libellé n'est plus affiché, mais il reste lu par les lecteurs d'écran.
+    languette.innerHTML = '<span class="poignee"></span>';
+    languette.setAttribute("aria-label", "Afficher l'en-tête");
+    languette.title = "Afficher l'en-tête";
+    if (!entete.id) entete.id = "entete-admin";
+    entete.parentNode.insertBefore(languette, entete.nextSibling);
 
-self.addEventListener('fetch', (e) => {
-  const req = e.request;
-  if (req.method !== 'GET') return;
+    const appliquer = (replie) => {
+      entete.classList.toggle("replie", replie);
+      languette.hidden = !replie;
+      languette.setAttribute("aria-expanded", replie ? "false" : "true");
+      try { localStorage.setItem(CLE_ENTETE, replie ? "1" : ""); } catch {}
+    };
+    const basculer = () => appliquer(!entete.classList.contains("replie"));
 
-  const url = req.url;
+    let x0 = null, y0 = null, depuisNav = false;
+    document.addEventListener("touchstart", (e) => {
+      if (e.touches.length !== 1) return;    // pincement : pas un balayage
+      const t = e.touches[0];
+      x0 = t.clientX; y0 = t.clientY;
+      depuisNav = !!(t.target.closest && t.target.closest(".nav-admin"));
+    }, { passive: true });
 
-  /* ---- Régime 2 : modules Firebase, cache d'abord ---- */
-  if (estModule(url)) {
-    e.respondWith(
-      caches.match(req).then(cache => {
-        if (cache) return cache;
-        // Absent du cache (première visite, ou précache échoué) : on va le
-        // chercher et on le garde pour les fois suivantes.
-        return fetch(req).then(rep => {
-          if (rep.ok) {
-            const copie = rep.clone();
-            caches.open(VERSION).then(c => c.put(req, copie)).catch(() => {});
-          }
-          return rep;
-        });
-      })
-    );
-    return;
+    document.addEventListener("touchend", (e) => {
+      if (x0 === null) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - x0, dy = t.clientY - y0;
+      const partiDeLaNav = depuisNav;
+      x0 = y0 = null; depuisNav = false;
+      if (partiDeLaNav) return;
+      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 2) return;
+      basculer();
+    }, { passive: true });
+
+    languette.addEventListener("click", basculer);
+    // Clic sur l'en-tête : le geste à la souris, où le balayage n'existe pas.
+    // Les boutons et liens qu'il contient gardent la priorité.
+    entete.addEventListener("click", (e) => {
+      if (e.target.closest("button, a, input, select, textarea")) return;
+      basculer();
+    });
+
+    try { appliquer(localStorage.getItem(CLE_ENTETE) === "1"); } catch {}
   }
 
-  /* ---- Régime 1 : le reste du site, réseau d'abord ---- */
-  if (new URL(url).origin !== self.location.origin) return;
+  /* ---------- Garde-fou de nom de fichier ---------- */
 
-  e.respondWith(
-    fetch(req)
-      .then(rep => {
-        const copie = rep.clone();
-        caches.open(VERSION).then(c => c.put(req, copie)).catch(() => {});
-        return rep;
-      })
-      .catch(() => caches.match(req).then(r => r || caches.match('./admin.html')))
-  );
-});
+  // Le titre propre de la page : ce qui précède le premier tiret cadratin
+  // ou la première barre verticale.
+  function titrePropre() {
+    return (document.title || "").split(/[—|]/)[0].trim();
+  }
+
+  // Comparaison indulgente sur la casse, les accents et les espaces.
+  function pareil(a, b) {
+    const net = (s) => (s || "").toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, " ").trim();
+    return net(a) === net(b);
+  }
+
+  // Le nom du fichier, affiché à côté du titre de la page.
+  const cible = document.querySelector("header h1") || document.querySelector("h1");
+  if (cible) {
+    const marque = document.createElement("span");
+    marque.className = "nom-fichier";
+    marque.textContent = ici;
+    marque.title = "Nom du fichier — enregistrez la page sous ce nom.";
+    cible.appendChild(marque);
+  }
+
+  // Une page inconnue du menu n'est pas contrôlée : rien à comparer.
+  const fiche = PAGES.find(p => p.fichier === ici);
+  if (fiche && !pareil(titrePropre(), fiche.attendu)) {
+    const vu = titrePropre() || "sans titre";
+    const alerte = document.createElement("div");
+    alerte.className = "alerte-fichier";
+    alerte.innerHTML =
+      "<b>Ce fichier ne contient pas la page attendue.</b>" +
+      "Le fichier <code>" + ici + "</code> devrait contenir la page " +
+      "<b>" + fiche.attendu + "</b>, mais il contient <b>" + vu + "</b>. " +
+      "C'est le signe d'un enregistrement sous le mauvais nom : ne réenregistrez " +
+      "pas cette page ici avant d'avoir vérifié, l'historique GitHub du fichier " +
+      "permet de récupérer la bonne version.";
+    document.body.insertBefore(alerte, barre.nextSibling);
+  }
+
+  /* ---------- Pastilles d'attente ----------
+     Ce qui est arrivé et attend une décision : commandes reçues non
+     confirmées, abonnements à valider. Visible depuis toutes les pages,
+     et non depuis le seul accueil : le travail se fait surtout dans
+     Commandes, c'est là qu'il faut être prévenu.
+
+     Les commandes issues d'un abonnement validé naissent confirmées et
+     ne comptent donc pas : la pastille ne signale que ce qui demande
+     réellement une décision.
+
+     Le menu ne doit jamais casser une page : tout échec est silencieux,
+     et l'absence de pastille est un état normal. */
+  const ATTENTES = [
+    { fichier: "commandes-admin.html",   collection: "commandes",
+      champ: "statut", valeur: "nouvelle",
+      un: "commande à confirmer", plusieurs: "commandes à confirmer" },
+    { fichier: "abonnements-admin.html", collection: "abonnements",
+      champ: "statut", valeur: "nouveau",
+      un: "abonnement à valider", plusieurs: "abonnements à valider" },
+    /* Messages du client non encore lus. Vos propres réponses naissent
+       lu_admin à true : elles ne comptent jamais, sans quoi répondre
+       rallumerait la pastille. */
+    { fichier: "messages-admin.html",    collection: "messages",
+      champ: "lu_admin", valeur: false,
+      un: "message non lu", plusieurs: "messages non lus" }
+  ];
+
+  /* Solde négatif : une comparaison "<", pas une égalité — logique à part
+     de ATTENTES, avec sa propre pastille rouge plutôt que la jaune neutre. */
+  const ALERTE_SOLDE = { fichier: "credits-admin.html", collection: "comptes",
+    champ: "solde", un: "compte en négatif", plusieurs: "comptes en négatif" };
+
+  function poserPastille(fichier, nombre, mot, classe) {
+    const a = liens[fichier];
+    if (!a) return;
+    let el = a.querySelector(".pastille" + (classe ? "." + classe : ":not(.alerte)"));
+
+    if (!nombre) {
+      if (el) el.remove();
+      if (!a.querySelector(".pastille")) {
+        a.removeAttribute("aria-label");
+        a.removeAttribute("title");
+      }
+      return;
+    }
+
+    if (!el) {
+      el = document.createElement("span");
+      el.className = "pastille" + (classe ? " " + classe : "");
+      el.setAttribute("aria-hidden", "true");   // le libellé du lien le dit déjà
+      a.appendChild(el);
+    }
+    el.textContent = nombre > 99 ? "99+" : String(nombre);
+
+    const dit = (a.firstChild ? a.firstChild.textContent : "") +
+                " — " + nombre + " " + mot;
+    a.setAttribute("aria-label", dit);
+    a.title = dit;
+  }
+
+  /* Ce script s'exécute avant le module de la page : au premier regard,
+     Firebase n'est pas encore initialisé. On attend son apparition au
+     lieu d'abandonner, sans quoi aucune pastille ne s'afficherait au
+     chargement. */
+  async function attendreApp(fb, msMax) {
+    const fin = Date.now() + (msMax || 12000);
+    while (Date.now() < fin) {
+      if (fb.getApps().length) return fb.getApp();
+      await new Promise(r => setTimeout(r, 150));
+    }
+    return null;
+  }
+
+  async function compterSur(q, fs) {
+    // L'agrégation évite de rapatrier les documents ; si elle est
+    // refusée ou indisponible, on compte à l'ancienne.
+    try {
+      return (await fs.getCountFromServer(q)).data().count;
+    } catch {
+      return (await fs.getDocs(q)).size;
+    }
+  }
+
+  let occupe = false;
+  async function compter() {
+    if (occupe) return;
+    occupe = true;
+    try {
+      const [fb, fs] = await Promise.all([
+        import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js"),
+        import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js")
+      ]);
+
+      const app = await attendreApp(fb);
+      if (!app) return;               // page sans Firebase : rien à compter
+      const db = fs.getFirestore(app);
+
+      for (const t of ATTENTES) {
+        try {
+          const q = fs.query(fs.collection(db, t.collection),
+                             fs.where(t.champ, "==", t.valeur));
+          const n = await compterSur(q, fs);
+          poserPastille(t.fichier, n, n > 1 ? t.plusieurs : t.un);
+        } catch (e) {
+          // Règles Firestore ou connexion : on laisse le menu tel quel
+          // plutôt que d'afficher un zéro qui serait un mensonge.
+          console.warn("Pastille " + t.collection + " :", e && e.code);
+        }
+      }
+
+      try {
+        const t = ALERTE_SOLDE;
+        const q = fs.query(fs.collection(db, t.collection),
+                           fs.where(t.champ, "<", 0));
+        const n = await compterSur(q, fs);
+        poserPastille(t.fichier, n, n > 1 ? t.plusieurs : t.un, "alerte");
+      } catch (e) {
+        console.warn("Pastille comptes (solde négatif) :", e && e.code);
+      }
+    } catch {
+      // hors ligne : le menu reste utilisable
+    } finally {
+      occupe = false;
+    }
+  }
+
+  /* L'administration s'authentifie après le chargement : on attend
+     l'état de connexion, sans quoi les lectures partiraient trop tôt et
+     seraient refusées. */
+  (async function () {
+    try {
+      const [auth, fb] = await Promise.all([
+        import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js"),
+        import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js")
+      ]);
+      const app = await attendreApp(fb);
+      if (!app) return;
+      auth.onAuthStateChanged(auth.getAuth(app), (u) => { if (u) compter(); });
+    } catch {
+      compter();   // page sans authentification : on tente quand même
+    }
+  })();
+
+  // Un abonnement peut arriver pendant que la page est ouverte : on
+  // rafraîchit au retour sur l'onglet plutôt qu'en boucle.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") compter();
+  });
+
+  // Installation possible sur mobile, et consultation hors ligne au fournil.
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw-admin.js").catch(() => {});
+  }
+
+  /* ---------- Alertes sur le téléphone ----------
+
+     Jusqu'ici, découvrir une commande ou un message supposait d'ouvrir
+     l'administration. La nuit, au fournil, ou simplement en faisant autre
+     chose, l'information attendait. Ces notifications renversent ça : c'est
+     le téléphone qui prévient.
+
+     Pour vous seul, et c'est délibéré. Un seul appareil, le vôtre, que vous
+     pouvez tester en trente secondes. Côté client, il faudrait que chacun
+     ait installé la boutique sur son écran d'accueil et accepté les
+     notifications — une minorité le ferait, et vous ne sauriez jamais
+     lesquels : un canal qui prévient certains et pas d'autres ne sert à
+     rien.
+
+     Le bouton n'apparaît que tant que les alertes ne sont pas actives. Une
+     fois accordées, il disparaît pour toujours — c'est un réglage, pas une
+     commande, et un réglage fait n'a rien à faire dans une barre de menu. */
+
+  /* Clé publique Web Push, à générer dans la console Firebase :
+     Paramètres du projet → Cloud Messaging → Certificats push Web.
+     Publique par nature : elle vit dans le code de la page, elle ne
+     protège rien et ne peut rien signer. */
+  const CLE_PUSH = "BC_DeHU1IVn4XEcY0fuhL5Nnz-gyvSTVpLx5tyWSJEDPOK6E5qUkxwQvCFgMfBI5Txy85XjtvZLzwQZRHzDPCPE";
+
+  function boutonAlertes(auClic) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "alertes-nav";
+    b.textContent = "Alertes";
+    b.title = "Recevoir les commandes et les messages sur cet appareil";
+    b.onclick = async () => {
+      b.disabled = true;
+      b.textContent = "…";
+      const ok = await auClic();
+      if (ok) b.remove();
+      else {
+        b.disabled = false;
+        b.textContent = "Alertes";
+        b.title = "Refusé par le navigateur. Autorisez les notifications " +
+                  "pour ce site dans les réglages du téléphone.";
+      }
+    };
+    const barre = document.querySelector(".nav-admin");
+    if (barre) barre.appendChild(b);
+  }
+
+  (async function alertes() {
+    if (!("Notification" in window) || !("serviceWorker" in navigator)) return;
+    // Refusé une fois : le navigateur ne redemandera pas, et un bouton qui
+    // ne peut rien faire est pire que pas de bouton.
+    if (Notification.permission === "denied") return;
+    if (CLE_PUSH.startsWith("REMPLACER")) return;   // pas encore configuré
+
+    let fb, fs, auth, msg, app, user;
+    try {
+      [fb, fs, auth, msg] = await Promise.all([
+        import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js"),
+        import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js"),
+        import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js"),
+        import("https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js")
+      ]);
+      app = await attendreApp(fb);
+      if (!app) return;
+      // Le jeton se range sur la fiche administrateur : on attend donc de
+      // savoir qui est connecté.
+      user = await new Promise(r => {
+        const a = auth.getAuth(app);
+        if (a.currentUser) return r(a.currentUser);
+        const stop = auth.onAuthStateChanged(a, (u) => { if (u) { stop(); r(u); } });
+        setTimeout(() => r(null), 15000);
+      });
+      if (!user) return;
+      if (!(await msg.isSupported())) return;   // navigateur sans push
+    } catch {
+      return;   // sans ces modules, le menu reste intact
+    }
+
+    /* Notification reçue pendant que l'administration est ouverte.
+
+       Firebase ne passe par le service worker que si aucune page n'est au
+       premier plan. Dès qu'un écran de l'administration est affiché, la
+       notification lui est livrée à elle — et sans ce qui suit, la page la
+       recevait et la jetait : rien ne s'affichait, alors que l'envoi avait
+       parfaitement réussi.
+
+       C'est le cas le plus fréquent, pas un cas limite : les messages
+       arrivent surtout pendant que vous travaillez dans l'administration.
+
+       L'affichage passe par l'enregistrement du service worker et non par
+       un simple `new Notification(...)` : sur Android, cette forme-là est
+       refusée. */
+    function ecouterPremierPlan(sw) {
+      try {
+        msg.onMessage(msg.getMessaging(app), (charge) => {
+          const d = (charge && charge.data) || {};
+          sw.showNotification(d.titre || "Yoann's French Bakery", {
+            body: d.corps || "",
+            icon: "logo.png",
+            badge: "logo.png",
+            tag: d.tag || undefined,
+            data: { url: d.url || "commandes-admin.html" }
+          }).catch(() => {});
+        });
+      } catch (e) {
+        console.warn("Écoute au premier plan :", e && e.message);
+      }
+    }
+
+    async function enregistrer() {
+      try {
+        if (Notification.permission !== "granted") {
+          const rep = await Notification.requestPermission();
+          if (rep !== "granted") return false;
+        }
+        /* Le service worker des notifications est désigné explicitement :
+           sans ça, Firebase irait en chercher un à la racine et pourrait
+           tomber sur sw-admin.js, qui ne sait pas afficher de
+           notification. */
+        const sw = await navigator.serviceWorker.register("firebase-messaging-sw.js");
+        const jeton = await msg.getToken(msg.getMessaging(app),
+          { vapidKey: CLE_PUSH, serviceWorkerRegistration: sw });
+        if (!jeton) return false;
+
+        /* arrayUnion : plusieurs appareils peuvent recevoir les alertes —
+           le téléphone et l'ordinateur du fournil — et réenregistrer le
+           même appareil n'ajoute rien. */
+        const db = fs.getFirestore(app);
+        await fs.setDoc(fs.doc(db, "admins", user.uid),
+          { appareils: fs.arrayUnion(jeton),
+            appareils_maj: new Date().toISOString() },
+          { merge: true });
+        ecouterPremierPlan(sw);
+        return true;
+      } catch (e) {
+        console.warn("Alertes :", e && (e.code || e.message));
+        return false;
+      }
+    }
+
+    if (Notification.permission === "granted") {
+      /* Déjà accordées : on réenregistre sans rien demander ni afficher.
+         Les jetons se périment — réinstallation, vidage des données,
+         rotation décidée par le navigateur — et un jeton périmé fait
+         disparaître les alertes sans le moindre signe.
+
+         C'est aussi ici que l'écoute au premier plan se remet en place à
+         chaque ouverture de page : elle ne survit pas d'un chargement à
+         l'autre. */
+      enregistrer();
+      return;
+    }
+
+    boutonAlertes(enregistrer);
+  })();
+})();
