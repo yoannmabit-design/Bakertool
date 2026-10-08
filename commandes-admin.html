@@ -1164,6 +1164,12 @@ function carte(c) {
       ${ficheAVerifier(c) ? `<span class="etiq neuf"
         title="Fiche client à compléter : ${echapper(ficheAVerifier(c))}"
         >Nouveau · ${echapper(ficheAVerifier(c))}</span>` : ""}
+      ${c.controle_prix && c.controle_prix.ok === false ? `<span class="etiq rouge"
+        title="${echapper(c.controle_prix.motif || "")}"
+        >Prix à vérifier</span>` : ""}
+      ${c.controle_prix && c.controle_prix.ok === null ? `<span class="etiq"
+        title="${echapper(c.controle_prix.motif || "")}"
+        >Prix non vérifié</span>` : ""}
       <span class="etiq st-${CLASSE_STATUT[c.statut] || "nouvelle"}">${
         LIBELLES[c.statut] || c.statut}</span>
       ${c.paiement?.methode ? `<span class="etiq">${
@@ -1201,6 +1207,18 @@ function carte(c) {
              ? ` <span class="pastilleMsg">${msgNonLus[c.compte_uid]}</span>` : ""}</a>` : ""}
         <button type="button" class="mineur btnModifier">Modifier la commande</button>
       </div>
+
+      ${c.controle_prix && c.controle_prix.ok === false ? `
+      <div class="info" style="margin-top:12px;border-left:3px solid var(--alerte);
+           padding-left:10px">
+        <b>Prix à vérifier.</b> Le montant annoncé par la page ne correspond pas
+        au catalogue : ${echapper(c.controle_prix.motif || "")}.
+        Vérifiez avant de confirmer.
+      </div>` : ""}
+      ${c.controle_prix && c.controle_prix.ok === null ? `
+      <div class="info" style="margin-top:12px">
+        <b>Prix non vérifié.</b> ${echapper(c.controle_prix.motif || "")}.
+      </div>` : ""}
 
       <div class="lala" hidden style="margin-top:12px;padding-top:12px;
            border-top:1px dashed var(--trait)"></div>
