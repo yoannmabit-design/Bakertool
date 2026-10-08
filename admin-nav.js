@@ -473,6 +473,37 @@
       return;   // sans ces modules, le menu reste intact
     }
 
+    /* Notification reçue pendant que l'administration est ouverte.
+
+       Firebase ne passe par le service worker que si aucune page n'est au
+       premier plan. Dès qu'un écran de l'administration est affiché, la
+       notification lui est livrée à elle — et sans ce qui suit, la page la
+       recevait et la jetait : rien ne s'affichait, alors que l'envoi avait
+       parfaitement réussi.
+
+       C'est le cas le plus fréquent, pas un cas limite : les messages
+       arrivent surtout pendant que vous travaillez dans l'administration.
+
+       L'affichage passe par l'enregistrement du service worker et non par
+       un simple `new Notification(...)` : sur Android, cette forme-là est
+       refusée. */
+    function ecouterPremierPlan(sw) {
+      try {
+        msg.onMessage(msg.getMessaging(app), (charge) => {
+          const d = (charge && charge.data) || {};
+          sw.showNotification(d.titre || "Yoann's French Bakery", {
+            body: d.corps || "",
+            icon: "logo.png",
+            badge: "logo.png",
+            tag: d.tag || undefined,
+            data: { url: d.url || "commandes-admin.html" }
+          }).catch(() => {});
+        });
+      } catch (e) {
+        console.warn("Écoute au premier plan :", e && e.message);
+      }
+    }
+
     async function enregistrer() {
       try {
         if (Notification.permission !== "granted") {
@@ -496,6 +527,7 @@
           { appareils: fs.arrayUnion(jeton),
             appareils_maj: new Date().toISOString() },
           { merge: true });
+        ecouterPremierPlan(sw);
         return true;
       } catch (e) {
         console.warn("Alertes :", e && (e.code || e.message));
@@ -507,7 +539,11 @@
       /* Déjà accordées : on réenregistre sans rien demander ni afficher.
          Les jetons se périment — réinstallation, vidage des données,
          rotation décidée par le navigateur — et un jeton périmé fait
-         disparaître les alertes sans le moindre signe. */
+         disparaître les alertes sans le moindre signe.
+
+         C'est aussi ici que l'écoute au premier plan se remet en place à
+         chaque ouverture de page : elle ne survit pas d'un chargement à
+         l'autre. */
       enregistrer();
       return;
     }
