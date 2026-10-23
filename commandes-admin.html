@@ -1626,6 +1626,59 @@ function ouvrirTournee(date, groupables, panneau) {
    ou course déjà partie. L'orderId est écrit sur la commande dès qu'elle
    existe : c'est ce qui empêche de payer deux fois la même livraison si la
    page est rechargée ou la carte rouverte. */
+/* ---------- Le vrai statut d'une course ----------
+
+   Le statut écrit sur la commande date de la réservation et ne bouge plus.
+   Une course annulée dans l'application Lalamove resterait donc affichée
+   comme vivante, et la commande resterait bloquée : le bouton disparaît dès
+   qu'un orderId existe.
+
+   On demande donc à Lalamove, et c'est le serveur qui tranche : si la course
+   est annulée, refusée ou expirée, il efface le champ lalamove de la
+   commande et archive la tentative. La commande redevient alors une commande
+   à expédier, par le chemin habituel — il n'y a pas de mode particulier pour
+   une réexpédition.
+
+   Les courses déjà terminées ne sont pas réinterrogées : rien ne peut plus
+   changer. Un échec est silencieux — l'ancien statut reste affiché, ce qui
+   est exactement ce qu'on avait avant. */
+const COURSE_FINIE = ["CANCELED", "CANCELLED", "REJECTED", "EXPIRED", "COMPLETED"];
+
+async function rafraichirCourse(c, el) {
+  const statut = String(c.lalamove?.statut || "").toUpperCase();
+  if (COURSE_FINIE.includes(statut)) return;
+
+  try {
+    const r = await httpsCallable(fns, "lalamoveEtatCourse")({ commandeId: c.id });
+    const d = r.data || {};
+
+    if (d.etat === "liberee") {
+      /* La course n'aura pas lieu. Le serveur a déjà effacé le champ et
+         archivé la tentative ; on reflète la même chose en mémoire pour que
+         le réaffichage montre les boutons sans attendre un rechargement. */
+      const archive = Object.assign({}, c.lalamove, { statut: d.statut });
+      c.lalamove_historique = (c.lalamove_historique || []).concat([archive]);
+      delete c.lalamove;
+      monterLalamove(c, el);
+      signaler("Course " + (d.orderId || "") + " " + (d.statut || "").toLowerCase()
+               + " — la commande peut être réexpédiée.", "err");
+      return;
+    }
+
+    if (d.etat === "rafraichie") {
+      c.lalamove = Object.assign({}, c.lalamove, {
+        statut: d.statut,
+        prix: d.prix || c.lalamove.prix,
+        partageUrl: d.partageUrl || c.lalamove.partageUrl
+      });
+      const span = el.querySelector(".lalaStatut");
+      if (span) span.textContent = d.statut || "";
+    }
+  } catch (e) {
+    console.warn("État de la course non vérifié :", messageErreur(e) || e.message);
+  }
+}
+
 function monterLalamove(c, el) {
   const zone = el.querySelector(".lala");
   if (!zone) return;
@@ -1656,7 +1709,7 @@ function monterLalamove(c, el) {
     zone.hidden = false;
     zone.innerHTML = `
       <div class="info"><b>Lalamove</b> course ${echapper(c.lalamove.orderId)}
-        — ${echapper(c.lalamove.statut || "")}
+        — <span class="lalaStatut">${echapper(c.lalamove.statut || "")}</span>
         ${c.lalamove.prix ? "· " + echapper(String(c.lalamove.prix)) : ""}</div>
       ${c.lalamove.telSubstitue ? `
       <div class="info"><b>Le motard appellera la boulangerie</b> — le numéro
@@ -1670,6 +1723,7 @@ function monterLalamove(c, el) {
       a.style.marginTop = "7px";
       zone.appendChild(a);
     }
+    rafraichirCourse(c, el);
     return;
   }
 
@@ -1677,7 +1731,27 @@ function monterLalamove(c, el) {
   if (!co) return;   // client en retrait, ou fiche sans point de livraison
 
   zone.hidden = false;
-  zone.innerHTML = `
+  zone.innerHTML = "";   // monterLalamove est rappelée après chaque changement
+  /* Tentative précédente annulée : le dire avant les boutons. Sans cette
+     ligne, la fiche ressemble à une commande jamais expédiée et on peut
+     recommander une course sans savoir qu'une première a déjà été engagée
+     — et peut-être facturée. */
+  if (Array.isArray(c.lalamove_historique) && c.lalamove_historique.length) {
+    const h = c.lalamove_historique;
+    const d = h[h.length - 1];
+    const avis = document.createElement("div");
+    avis.className = "info";
+    avis.innerHTML =
+      "<b>" + (h.length > 1 ? h.length + " courses précédentes" : "Course précédente") +
+      " sans livraison</b> — la dernière, " + echapper(d.orderId || "") +
+      ", est " + echapper((d.statut || "").toLowerCase()) +
+      (d.prix ? " (" + echapper(String(d.prix)) + ")" : "") +
+      ". Vérifiez les frais éventuels dans l'application Lalamove avant d'en relancer une.";
+    zone.appendChild(avis);
+  }
+  const boutons = document.createElement("div");
+  zone.appendChild(boutons);
+  boutons.innerHTML = `
     <div class="actions" style="margin-top:0">
       <select class="lalaDepart"></select>
       <button type="button" class="mineur lalaCoter">Estimer la livraison</button>
