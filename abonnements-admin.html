@@ -572,7 +572,39 @@ async function sauter(a, i) {
                     : "Livraison sautée, sans report.");
 }
 
-/* ---------- Absence du boulanger : décalage global ---------- */
+/* ---------- Absence du boulanger : décalage global ----------
+
+   Le décalage se compte en semaines entières, jamais en jours.
+
+   Un abonné livré le mardi l'est parce que le mardi lui convient, et parce
+   que vous produisez ce jour-là. Décaler de trois jours le ferait tomber un
+   vendredi — et toute la suite de son abonnement resterait au vendredi, un
+   jour que ni lui ni vous n'avez choisi. L'erreur est définitive : rien,
+   ensuite, ne ramène la série à son jour d'origine.
+
+   En semaines, le jour de la semaine est conservé par construction. Un
+   mardi redevient un mardi, une semaine plus tard, ou deux si votre absence
+   dépasse sept jours. C'est exactement « le prochain même jour après
+   l'absence ».
+
+   Le nombre de semaines est unique pour tout le monde : c'est le plus petit
+   nombre qui sort toutes les livraisons touchées de la période. Décaler
+   chaque client d'une durée différente rendrait la tournée suivante
+   impossible à anticiper, et le message à envoyer aux clients
+   inexplicable. */
+
+/* Combien de semaines pour qu'une date sorte de la période d'absence.
+   On avance de sept en sept jusqu'à dépasser le dernier jour : pas
+   d'arithmétique à arrondir, donc pas d'erreur d'un jour aux changements
+   de mois ou d'heure légale. */
+function semainesPourSortir(dateIso, finIso) {
+  const d = new Date(dateIso + "T12:00:00");
+  const f = new Date(finIso + "T12:00:00");
+  let n = 0;
+  while (d <= f) { d.setDate(d.getDate() + 7); n++; }
+  return n;
+}
+
 $("btnAbsence").onclick = async () => {
   const debut = prompt("Premier jour de votre absence (AAAA-MM-JJ) :");
   if (!debut) return;
@@ -583,16 +615,25 @@ $("btnAbsence").onclick = async () => {
     (new Date(fin + "T12:00:00") - new Date(debut + "T12:00:00")) / 86400000) + 1;
   if (!(jours > 0)) return signaler("Dates incohérentes.");
 
+  const dansPeriode = (e) =>
+    e.statut === "planifiee" && e.date >= debut && e.date <= fin;
+
   const concernes = abos.filter(a => a.statut === "actif" &&
-    (a.echeances || []).some(e => e.statut === "planifiee" && e.date >= debut && e.date <= fin));
+    (a.echeances || []).some(dansPeriode));
 
   if (!concernes.length) return signaler("Aucune livraison sur cette période.");
 
-  const nb = concernes.reduce((t, a) => t +
-    a.echeances.filter(e => e.statut === "planifiee" && e.date >= debut && e.date <= fin).length, 0);
+  const touchees = concernes.flatMap(a => a.echeances.filter(dansPeriode));
+  const nb = touchees.length;
 
+  /* Toutes les livraisons touchées doivent sortir de la période : on retient
+     la plus exigeante. Une absence d'une semaine ou moins donne toujours 1. */
+  const semaines = Math.max(...touchees.map(e => semainesPourSortir(e.date, fin)));
+
+  const motSemaines = semaines === 1 ? "une semaine" : semaines + " semaines";
   if (!confirm(`${nb} livraison(s) chez ${concernes.length} client(s) tombent pendant votre absence.\n\n` +
-    `Toutes les livraisons à partir du ${debut} seront décalées de ${jours} jour(s).\n\n` +
+    `Toutes les livraisons à partir du ${debut} seront décalées de ${motSemaines}.\n` +
+    "Chaque client garde son jour de la semaine.\n\n" +
     "Pensez à prévenir les clients concernés.")) return;
 
   try {
@@ -601,7 +642,7 @@ $("btnAbsence").onclick = async () => {
       const echeances = a.echeances.map(e => {
         if (e.statut !== "planifiee" || e.date < debut) return e;
         const d = new Date(e.date + "T12:00:00");
-        d.setDate(d.getDate() + jours);
+        d.setDate(d.getDate() + 7 * semaines);
         return { ...e, date: iso(d), decalee: true };
       });
       paquet.update(doc(db, "abonnements", a.id), { echeances });
@@ -609,7 +650,7 @@ $("btnAbsence").onclick = async () => {
     });
     await paquet.commit();
     afficher();
-    signaler(`${concernes.length} abonnement(s) décalé(s) de ${jours} jour(s).`);
+    signaler(`${concernes.length} abonnement(s) décalé(s) de ${motSemaines}.`);
   } catch (e) { console.error(e); signaler("Échec du décalage."); }
 };
 
