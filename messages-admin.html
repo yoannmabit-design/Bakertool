@@ -355,6 +355,8 @@ function fils() {
     const dernier = msgs[msgs.length - 1];
     liste.push({
       uid, msgs, dernier,
+      // Depuis quand ce client attend. Voir attenteDepuis().
+      attenteDepuis: attenteDepuis(msgs),
       /* En attente dès qu'un message du client n'est pas lu. C'est la
          lecture qui compte, pas la réponse : certaines questions se
          règlent par téléphone et n'appellent aucune réponse écrite. */
@@ -367,14 +369,50 @@ function fils() {
     });
   });
 
-  /* Dans l'ordre du code couleur : non lus, puis à répondre, puis répondus,
-     et dans chaque groupe du plus récent au plus ancien. La liste descend
-     ainsi du travail qui presse vers ce qui ne sert plus que de mémoire. */
+  /* Deux ordres, parce que ce sont deux listes différentes.
+
+     Les fils qui attendent — non lus et à répondre — sont une file
+     d'attente : le plus ancien en premier. Celui qui patiente depuis
+     trois jours passe devant celui qui vient d'écrire. Classés du plus
+     récent, comme une messagerie ordinaire, une question ancienne
+     descendrait sous chaque nouvelle arrivée jusqu'à sortir de l'écran ;
+     c'est exactement comme ça qu'on oublie quelqu'un.
+
+     Les fils répondus sont une archive : du plus récent au plus ancien,
+     puisqu'on y cherche ce dont on vient de parler.
+
+     Les trois groupes restent dans l'ordre du code couleur : le travail
+     qui presse en haut, la mémoire en bas. */
   const rang = { nonlu: 0, arepondre: 1, repondu: 2 };
   liste.sort((a, b) =>
     rang[a.etat] - rang[b.etat] ||
-    String(b.dernier.cree_le || "").localeCompare(String(a.dernier.cree_le || "")));
+    (a.etat === "repondu"
+      // Archive : dernière activité, du plus récent au plus ancien.
+      ? String(b.dernier.cree_le || "").localeCompare(String(a.dernier.cree_le || ""))
+      // File d'attente : arrivée de la question, du plus ancien au plus récent.
+      : String(a.attenteDepuis || "").localeCompare(String(b.attenteDepuis || ""))));
   return liste;
+}
+
+/* Depuis quand le client attend une réponse.
+
+   Ce n'est pas la date du dernier message : un client qui écrit trois
+   fois de suite attend depuis le premier des trois, pas depuis le
+   dernier. Sans cette distinction, chaque relance le ferait remonter en
+   tête de file et le ferait passer pour un nouvel arrivant.
+
+   On remonte le fil depuis la fin jusqu'à votre dernière réponse, et on
+   garde la plus ancienne des questions qui la suivent. Si le dernier mot
+   est le vôtre, le client n'attend rien : la chaîne vide, qui se classe
+   avant tout, n'a alors aucune importance puisque ces fils-là sont triés
+   sur l'autre critère. */
+function attenteDepuis(msgs) {
+  let depuis = "";
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].auteur === "admin") break;
+    depuis = msgs[i].cree_le || depuis;
+  }
+  return depuis;
 }
 
 function correspond(f, q) {
