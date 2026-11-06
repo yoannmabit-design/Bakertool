@@ -225,6 +225,20 @@
   }
   .marche-cases label.non{color:var(--encre-doux);background:#f4efe7;text-decoration:line-through}
   .marche-cases input{flex:0 0 auto;width:18px;height:18px}
+  /* Produits hors boutique : une ligne chacun, avec ses boutons. */
+  .extra{
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    background:#fff;border:1px solid var(--trait);border-radius:var(--r);
+    padding:8px 11px;margin-bottom:8px;
+  }
+  .extra label{
+    display:flex;align-items:center;gap:8px;margin:0;cursor:pointer;
+    flex:1;min-width:160px;font-size:16px;color:var(--encre);
+  }
+  .extra label.non{color:var(--encre-doux);text-decoration:line-through}
+  .extra input[type=checkbox]{flex:0 0 auto;width:18px;height:18px}
+  .extra .extra-prix{font-weight:600;white-space:nowrap}
+  .extra button{padding:6px 11px;font-size:15px}
   @media (prefers-reduced-motion:no-preference){
     .produit{transition:border-color .15s}
   }
@@ -286,6 +300,40 @@
           <span class="etat" id="etatMarche"></span>
         </div>
         <div id="listeMarche"><div class="vide">Chargement…</div></div>
+
+        <!-- Produits hors boutique : rien à voir avec boutique_produits, ils
+             vivent dans parametres/boutique → marche.extras. -->
+        <div class="marche-rayon">
+          <h3>Hors boutique — au stand seulement</h3>
+          <p class="aide" style="margin:0 0 10px">
+            Produits d'un jour, ou vendus pour le compte de quelqu'un d'autre.
+            Le client les voit dans une rubrique à part, « Also on the stall ».
+            Leur case marche comme les autres ; retirez-les quand ils ne
+            reviennent plus. Le nom et la description sont affichés tels quels :
+            écrivez-les en anglais.
+          </p>
+          <div id="listeExtras"></div>
+          <div class="cadre">
+            <div class="grille">
+              <div>
+                <label for="extraNom">Nom affiché</label>
+                <input type="text" id="extraNom" placeholder="Calamansi jam (by Lorna)">
+              </div>
+              <div>
+                <label for="extraPrix">Prix (₱)</label>
+                <input type="number" id="extraPrix" min="0" step="1">
+              </div>
+            </div>
+            <div style="margin-top:12px">
+              <label for="extraDesc">Description — facultative</label>
+              <input type="text" id="extraDesc" placeholder="Small batch, 250 g jar">
+            </div>
+            <div class="marche-outils" style="margin:12px 0 0">
+              <button class="mineur" id="btnExtra" type="button">Ajouter au menu</button>
+              <button class="mineur" id="btnExtraAbandon" type="button" hidden>Abandonner</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="carte">
@@ -623,7 +671,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/fireba
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, collection, getDocs, doc, getDoc, setDoc, deleteDoc,
-         arrayUnion, arrayRemove }
+         arrayUnion, arrayRemove, runTransaction }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
   
   /* Rayons : même source que la vitrine et le checkout, pour que la portée
@@ -998,6 +1046,7 @@ async function chargerParametres() {
   // (marche et non « m » : m désigne déjà Maya plus haut dans la fonction)
   const marche = d.marche || {};
   marcheIndispo = new Set(Array.isArray(marche.indisponibles) ? marche.indisponibles : []);
+  marcheExtras = lireExtras(marche);
 
   const fermes = d.jours_fermes || [];
   $("jours").querySelectorAll("input").forEach(c => {
@@ -1477,6 +1526,16 @@ $("btnEnregistrer").onclick = async () => {
    en place.
    ============================================================ */
 let marcheIndispo = new Set();
+/* Produits hors boutique : [{ id, nom, prix, description }].
+   Identifiant « EXT-… » posé à la création, jamais modifié : c'est lui que
+   marche.indisponibles retient, comme le code d'un produit de la boutique. */
+let marcheExtras = [];
+let extraEnEdition = null;   // identifiant de l'extra en cours de modification
+
+function lireExtras(marche) {
+  return (marche && Array.isArray(marche.extras) ? marche.extras : [])
+    .filter(e => e && e.id && e.nom);
+}
 
 /* Adresse publique de la page. Sans .html : Cloudflare Pages sert la page
    sous les deux formes, et l'adresse courte donne un QR code moins dense,
@@ -1515,8 +1574,10 @@ function etatMarche(texte, type = "", annuler = null) {
 function afficherMarche() {
   const zone = $("listeMarche");
   const liste = produitsMarche();
+  afficherExtras();
   if (!liste.length) {
     zone.innerHTML = '<div class="vide">Aucun produit en vente hors rayon Frozen.</div>';
+    compterMarche();
     return;
   }
 
@@ -1554,9 +1615,142 @@ function afficherMarche() {
 }
 
 function compterMarche() {
-  const liste = produitsMarche();
-  const n = liste.filter(p => !marcheIndispo.has(p.id)).length;
-  etatMarche(`${n} sur ${liste.length} disponible${n > 1 ? "s" : ""} au stand.`);
+  const ids = [...produitsMarche(), ...marcheExtras].map(p => p.id);
+  const n = ids.filter(id => !marcheIndispo.has(id)).length;
+  etatMarche(`${n} sur ${ids.length} disponible${n > 1 ? "s" : ""} au stand.`);
+}
+
+/* ---------- Produits hors boutique ---------- */
+function afficherExtras() {
+  const zone = $("listeExtras");
+  zone.innerHTML = "";
+  [...marcheExtras].sort((a, b) => a.nom.localeCompare(b.nom)).forEach(x => {
+    const ligne = document.createElement("div");
+    ligne.className = "extra";
+
+    const dispo = !marcheIndispo.has(x.id);
+    const l = document.createElement("label");
+    l.className = dispo ? "" : "non";
+    const c = document.createElement("input");
+    c.type = "checkbox";
+    c.checked = dispo;
+    c.onchange = () => basculerMarche(x, c, l);   // même écriture que les autres
+    l.appendChild(c);
+    l.appendChild(document.createTextNode(x.nom));
+    ligne.appendChild(l);
+
+    const prix = document.createElement("span");
+    prix.className = "extra-prix";
+    prix.textContent = "₱" + Number(x.prix || 0).toLocaleString("fr-FR");
+    ligne.appendChild(prix);
+
+    const mod = document.createElement("button");
+    mod.type = "button";
+    mod.className = "mineur";
+    mod.textContent = "Modifier";
+    mod.onclick = () => modifierExtra(x);
+    ligne.appendChild(mod);
+
+    const ret = document.createElement("button");
+    ret.type = "button";
+    ret.className = "retirer";
+    ret.textContent = "Retirer";
+    ret.onclick = () => retirerExtra(x);
+    ligne.appendChild(ret);
+
+    zone.appendChild(ligne);
+  });
+}
+
+/* Toute écriture de la liste passe par une transaction : la liste est relue
+   sur le serveur, modifiée, puis réécrite d'un bloc. Un ajout fait depuis le
+   téléphone au stand ne peut donc pas être effacé par l'ordinateur resté
+   ouvert à la maison avec une liste plus ancienne. */
+async function ecrireExtras(transformer) {
+  const ref = doc(db, "parametres", "boutique");
+  const nouvelle = await runTransaction(db, async (t) => {
+    const s = await t.get(ref);
+    const actuelle = lireExtras(s.exists() ? s.data().marche : null);
+    const liste = transformer(actuelle);
+    t.set(ref, { marche: { extras: liste, maj: new Date().toISOString() } }, { merge: true });
+    return liste;
+  });
+  marcheExtras = nouvelle;
+  afficherExtras();
+  compterMarche();
+}
+
+function viderFormuleExtra() {
+  extraEnEdition = null;
+  $("extraNom").value = "";
+  $("extraPrix").value = "";
+  $("extraDesc").value = "";
+  $("btnExtra").textContent = "Ajouter au menu";
+  $("btnExtraAbandon").hidden = true;
+}
+
+function modifierExtra(x) {
+  extraEnEdition = x.id;
+  $("extraNom").value = x.nom;
+  $("extraPrix").value = x.prix ?? "";
+  $("extraDesc").value = x.description || "";
+  $("btnExtra").textContent = "Enregistrer la modification";
+  $("btnExtraAbandon").hidden = false;
+  $("extraNom").focus();
+}
+
+$("btnExtraAbandon").onclick = viderFormuleExtra;
+
+$("btnExtra").onclick = async () => {
+  const nom = $("extraNom").value.trim();
+  const prix = Number($("extraPrix").value);
+  const description = $("extraDesc").value.trim();
+  if (!nom) { etatMarche("Indiquez le nom affiché.", "err"); $("extraNom").focus(); return; }
+  if ($("extraPrix").value === "" || !Number.isFinite(prix) || prix < 0) {
+    etatMarche("Indiquez un prix.", "err"); $("extraPrix").focus(); return;
+  }
+
+  const enEdition = extraEnEdition;
+  $("btnExtra").disabled = true;
+  try {
+    if (enEdition) {
+      await ecrireExtras(liste => liste.map(e =>
+        e.id === enEdition ? { ...e, nom, prix, description } : e));
+      etatMarche(nom + " modifié.", "ok");
+    } else {
+      const id = "EXT-" + Date.now().toString(36).toUpperCase();
+      await ecrireExtras(liste => [...liste, { id, nom, prix, description }]);
+      etatMarche(nom + " ajouté au menu.", "ok");
+    }
+    viderFormuleExtra();
+  } catch (e) {
+    console.error(e);
+    etatMarche("Pas enregistré. Vérifiez la connexion.", "err");
+  } finally {
+    $("btnExtra").disabled = false;
+  }
+};
+
+// Retrait immédiat, rattrapable par Annuler : la fiche revient telle quelle,
+// avec le même identifiant, donc avec son état coché ou décoché.
+async function retirerExtra(x) {
+  try {
+    await ecrireExtras(liste => liste.filter(e => e.id !== x.id));
+    if (extraEnEdition === x.id) viderFormuleExtra();
+    etatMarche(x.nom + " retiré du menu.", "ok", async () => {
+      try {
+        await ecrireExtras(liste =>
+          liste.some(e => e.id === x.id) ? liste : [...liste, x]);
+        etatMarche(x.nom + " remis au menu.", "ok");
+      } catch (e) {
+        console.error(e);
+        etatMarche("Pas enregistré. Vérifiez la connexion.", "err");
+      }
+    });
+  } catch (e) {
+    console.error(e);
+    etatMarche("Le retrait n'a pas abouti. Vérifiez la connexion.", "err");
+  }
 }
 
 async function basculerMarche(p, caseACocher, label) {
