@@ -16,7 +16,7 @@
 
    Attention : ne jamais faire passer les pages HTML en cache d'abord.
    Le régime 1 est un choix délibéré. */
-const VERSION = 'yfb-admin?v=12';
+const VERSION = 'yfb-admin?v=13';
 
 const ESSENTIELS = [
   './', './index.html',

@@ -104,6 +104,26 @@
   .msg.admin .bulle{background:var(--accent);color:#fff;border-bottom-right-radius:3px}
   .msg.admin .meta{text-align:right}
 
+  /* Preuve de paiement jointe au message.
+
+     Sous la bulle et non dedans : une capture de téléphone est bien plus
+     étroite que la bulle, dimensionnée par son texte, et laissait à
+     l'intérieur un grand aplat de couleur vide. Dehors, elle se cale du
+     côté de son auteur et la pile se lit sans trou.
+
+     Hauteur plafonnée, sinon une capture verticale occupe tout le fil.
+     Un clic l'ouvre en grand dans un onglet. */
+  .msg .piece{
+    display:block;margin-top:6px;max-width:100%;max-height:250px;
+    border-radius:10px;border:1px solid var(--trait);
+    background:#fff;cursor:zoom-in;
+  }
+  .msg.admin .piece{margin-left:auto}
+  .msg .piece-partie{
+    margin-top:6px;font-size:14.5px;font-style:italic;color:var(--encre-doux);
+  }
+  .msg.admin .piece-partie{text-align:right}
+
   /* Rattachement à une commande : cliquable, puisque la question porte
      presque toujours sur ce qu'elle contient. */
   .surcmd{font-size:13.5px;color:var(--accent);text-decoration:none;
@@ -167,6 +187,12 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChang
 import { getFirestore, collection, getDocs, doc, getDoc, addDoc, updateDoc,
          writeBatch }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+/* Storage, pour les preuves de paiement jointes par les clients. Les
+   règles Storage autorisent la lecture au propriétaire du dossier et aux
+   comptes présents dans la collection admins — même source d'autorité que
+   les règles Firestore. */
+import { getStorage, ref as refStorage, getDownloadURL }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDuq8KS8M_Z8U7BlSp6MvE-6Y9OYYaDujE",
@@ -180,6 +206,7 @@ const firebaseConfig = {
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db   = getFirestore(app);
+const sto  = getStorage(app);
 const $    = (id) => document.getElementById(id);
 
 let messages = [];      // tous les messages, à plat
@@ -413,6 +440,8 @@ function carte(f) {
     <div class="tete">
       <span class="nom">${ech(f.qui.nom)}</span>
       ${nonLus ? `<span class="puce attente">${nonLus} non lu${nonLus > 1 ? "s" : ""}</span>` : ""}
+      ${f.msgs.some(m => m.piece && m.piece.chemin)
+        ? `<span class="puce">preuve</span>` : ""}
       <span class="tel">${ech(f.qui.tel)}</span>
       <span class="quand">${ech(quand(f.dernier.cree_le))}</span>
     </div>
@@ -469,6 +498,8 @@ function remplir(f, corps) {
         ici est le seul moyen de le joindre. Il la verra en ouvrant son compte.</p>`}
     </div>`;
 
+  peindrePieces(corps);
+
   const zone = corps.querySelector("textarea");
   const btn  = corps.querySelector(".envoyer");
   const etat = corps.querySelector(".etatEnvoi");
@@ -511,8 +542,53 @@ function bulle(m) {
   return `
     <div class="msg ${cote}">
       <div class="bulle">${ech(m.texte)}</div>
+      ${piecePour(m)}
       <div class="meta">${lien}${ech(quand(m.cree_le))}</div>
     </div>`;
+}
+
+/* La pièce jointe d'un message, si elle existe encore.
+
+   Trois états, et le troisième porte autant d'information que les autres :
+   une mention « preuve supprimée » atteste qu'une preuve a existé et que
+   le paiement a été constaté. Sans elle, vous verriez une image cassée et
+   vous chercheriez une panne.
+
+   L'adresse n'est pas stockée sur le message — une URL de téléchargement
+   porte un jeton qui resterait valable indéfiniment dans la base. Seul le
+   chemin l'est, et l'adresse est redemandée à l'affichage. */
+function piecePour(m) {
+  if (m.piece_supprimee) {
+    return `<div class="piece-partie">Preuve supprimée après constat du
+            paiement${m.piece_supprimee_le
+              ? " le " + ech(String(m.piece_supprimee_le).slice(0, 10)) : ""}.</div>`;
+  }
+  if (!m.piece || !m.piece.chemin) return "";
+  return `<img class="piece" alt="Preuve de paiement"
+               data-chemin="${ech(m.piece.chemin)}" loading="lazy">`;
+}
+
+/* Les adresses, demandées après l'affichage du fil.
+
+   Attendre toutes les adresses avant de peindre retarderait l'ouverture du
+   fil d'une à deux secondes pour une vignette. Chaque image se remplit
+   quand la sienne arrive.
+
+   Une pièce introuvable disparaît au lieu d'afficher une image cassée :
+   entre le chargement de la liste et l'ouverture du fil, la fonction de
+   paiement a pu l'effacer. */
+async function peindrePieces(racine) {
+  for (const img of (racine || document).querySelectorAll("img.piece[data-chemin]")) {
+    const chemin = img.dataset.chemin;
+    delete img.dataset.chemin;
+    try {
+      img.src = await getDownloadURL(refStorage(sto, chemin));
+      img.onclick = () => window.open(img.src, "_blank", "noopener");
+    } catch (e) {
+      console.warn("Pièce indisponible :", chemin, e.code || e.message);
+      img.remove();
+    }
+  }
 }
 
 /* Marquer lu à l'ouverture du fil, et non à l'envoi d'une réponse : une
