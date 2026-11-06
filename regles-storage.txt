@@ -1,0 +1,108 @@
+RÈGLES CLOUD STORAGE — PREUVES DE PAIEMENT
+
+Console Firebase → Storage → onglet Règles. C'est un jeu de règles séparé
+de celui de Firestore : les deux ne se touchent pas, et publier l'un
+n'écrase pas l'autre.
+
+Ce fichier porte l'extension .txt, et pas .rules, volontairement. Un
+fichier nommé storage.rules dans un dossier de travail peut être publié
+par un « firebase deploy » lancé sans --only, comme les règles Firestore
+l'ont été le 19 octobre. Un .txt ne sera jamais pris pour une source de
+déploiement.
+
+
+AVANT DE PUBLIER
+
+À la première publication, la console demandera d'accorder au compte de
+service de Cloud Storage le droit de lire Firestore. Acceptez : sans ce
+droit, la fonction firestore.exists() ci-dessous échoue et plus personne
+ne peut lire une pièce jointe, vous compris.
+
+
+────────────────────────────────────────────────────────────────────────
+
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    /* Même source d'autorité que les règles Firestore : la collection
+       admins. Un seul endroit décide qui est administrateur, donc retirer
+       un accès se fait en un seul geste.
+
+       Chaque appel compte comme une lecture Firestore et ajoute environ
+       75 ms. Sur l'ouverture d'une vignette, c'est invisible. */
+    function estAdmin() {
+      return request.auth != null
+             && firestore.exists(
+                  /databases/(default)/documents/admins/$(request.auth.uid));
+    }
+
+    /* Les preuves de paiement, rangées par client.
+
+       Le dossier porte l'uid du client, et la règle d'écriture exige que
+       cet uid soit le sien. C'est ce qui empêche de déposer un fichier
+       dans le dossier de quelqu'un d'autre — et comme vous avez le droit
+       de tout lire, un fichier mal rangé serait une preuve que vous
+       ouvririez en croyant regarder la bonne. */
+    match /preuves/{uid}/{fichier} {
+
+      // Le client voit ce qu'il a envoyé. Vous voyez tout.
+      allow read: if request.auth != null
+                  && (request.auth.uid == uid || estAdmin());
+
+      /* Dépôt par le client, dans son dossier, images seulement.
+         3 Mo de plafond : la page réduit la photo avant l'envoi, ce
+         plafond n'est là que pour le cas où la réduction échoue. Mieux
+         vaut un refus net qu'un envoi de huit mégaoctets sur une
+         connexion mobile.
+
+         contentType est vérifié non nul d'abord : sur un fichier sans
+         type déclaré, matches() lèverait une erreur et refuserait pour
+         une raison incompréhensible. */
+      allow create: if request.auth != null
+                    && request.auth.uid == uid
+                    && request.resource.size <= 3 * 1024 * 1024
+                    && request.resource.contentType != null
+                    && request.resource.contentType.matches('image/.*');
+
+      /* Ni remplacement, ni suppression, par personne.
+
+         Une preuve qu'on peut remplacer après coup ne prouve plus rien.
+         Et la suppression n'a pas besoin d'être autorisée ici : elle est
+         faite par la fonction Cloud au passage de la commande à « payé »,
+         avec le SDK Admin, qui ne passe pas par ces règles. */
+      allow update, delete: if false;
+    }
+
+    /* Tout le reste du bucket est fermé. Le bucket n'a jamais servi
+       jusqu'ici ; il ne s'ouvre que sur ce seul chemin. */
+    match /{chemin=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
+────────────────────────────────────────────────────────────────────────
+
+
+LE FILET DE SÉCURITÉ, À POSER DANS LA MÊME SESSION
+
+La suppression normale a lieu quand vous marquez la commande payée. Mais
+une preuve peut arriver sans commande rattachée — une question générale,
+un paiement d'abonnement, un client qui se trompe de sujet. Celles-là ne
+seraient jamais supprimées.
+
+Console Google Cloud → Cloud Storage → votre bucket → onglet Lifecycle
+(Cycle de vie) → Ajouter une règle :
+
+  Action      : Supprimer l'objet
+  Condition   : Âge de l'objet — 30 jours
+  Préfixe     : preuves/
+
+Trente jours, et non quatre-vingt-dix : c'est une capture bancaire, elle
+n'a aucune valeur passé la semaine où vous avez encaissé. Le nombre se
+change en deux clics si vous préférez.
+
+Cette règle est tenue par Google, côté serveur. Rien à déployer, rien qui
+puisse tomber en panne sans que vous le sachiez.
