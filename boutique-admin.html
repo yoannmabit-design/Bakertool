@@ -199,6 +199,32 @@
   .connexion h1{font-size:25px;margin:0 0 6px}
   .connexion p{color:var(--encre-doux);font-size:16.5px;margin:0 0 22px}
   .recherche{margin-bottom:14px}
+  /* ---------- Menu du marché ---------- */
+  .marche-lien{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+  .marche-lien code{
+    font-size:15px;background:#efe6d8;padding:6px 10px;border-radius:var(--r);
+    word-break:break-all;
+  }
+  .marche-lien a.mineur{text-decoration:none;display:inline-block}
+  .marche-outils{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+  .marche-outils .etat{margin:0}
+  .marche-outils .etat button{
+    background:none;border:none;color:var(--accent);text-decoration:underline;
+    font:inherit;cursor:pointer;padding:0 0 0 6px;
+  }
+  .marche-rayon{margin-bottom:16px}
+  .marche-rayon h3{
+    font-size:14.5px;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--encre-doux);margin:0 0 8px;font-weight:600;
+  }
+  .marche-cases{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+  .marche-cases label{
+    display:flex;align-items:center;gap:8px;margin:0;cursor:pointer;
+    font-size:16px;color:var(--encre);background:#fff;
+    border:1px solid var(--trait);border-radius:var(--r);padding:9px 11px;
+  }
+  .marche-cases label.non{color:var(--encre-doux);background:#f4efe7;text-decoration:line-through}
+  .marche-cases input{flex:0 0 auto;width:18px;height:18px}
   @media (prefers-reduced-motion:no-preference){
     .produit{transition:border-color .15s}
   }
@@ -235,6 +261,32 @@
 
     <!-- ---------- PARAMÈTRES ---------- -->
     <section id="vueParams">
+
+      <!-- Menu du stand, lu par marche.html (QR code et puce NFC).
+           En tête des paramètres : c'est la carte qu'on ouvre avant chaque
+           marché, et depuis le stand quand un produit part. -->
+      <div class="carte">
+        <h2>Menu du marché</h2>
+        <p class="aide">
+          La page ouverte par le QR code et la puce NFC du stand. Elle reprend
+          tous les produits en vente, sauf le rayon Frozen, au prix de la
+          boutique. Tout est disponible par défaut : décochez ce que vous
+          n'avez pas apporté, il reste affiché au client, grisé, avec
+          « Not today ». Chaque case s'enregistre aussitôt, sans passer par
+          le bouton du bas : on peut donc marquer un produit épuisé depuis le
+          stand, la page des clients se met à jour d'elle-même.
+        </p>
+        <div class="marche-lien">
+          <code id="marcheUrl"></code>
+          <button class="mineur" id="btnCopierMarche" type="button">Copier l'adresse</button>
+          <a class="mineur" id="lienAfficheMarche" href="affiche.html">Affiche et QR code</a>
+        </div>
+        <div class="marche-outils">
+          <button class="mineur" id="btnMarcheTout" type="button">Tout remettre disponible</button>
+          <span class="etat" id="etatMarche"></span>
+        </div>
+        <div id="listeMarche"><div class="vide">Chargement…</div></div>
+      </div>
 
       <div class="carte">
         <h2>Points de retrait et de livraison</h2>
@@ -570,7 +622,8 @@ const firebaseConfig = {
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, collection, getDocs, doc, getDoc, setDoc, deleteDoc }
+import { getFirestore, collection, getDocs, doc, getDoc, setDoc, deleteDoc,
+         arrayUnion, arrayRemove }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
   
   /* Rayons : même source que la vitrine et le checkout, pour que la portée
@@ -666,6 +719,9 @@ function ouvrir(onglet) {
   });
   // Les codes promo s'enregistrent un par un : la barre du bas n'a pas de sens ici.
   $("barreEnregistrer").hidden = (onglet === "codes");
+  // Un produit publié ou changé de rayon dans l'autre onglet doit apparaître
+  // dans la carte du marché sans recharger la page.
+  if (onglet === "params") afficherMarche();
   majLibellePlis();
 }
 $("ongletParams").onclick   = () => ouvrir("params");
@@ -876,6 +932,9 @@ JOURS.forEach((j, i) => {
    ============================================================ */
 async function chargerTout() {
   await Promise.all([chargerParametres(), chargerProduits()]);
+  // La carte du marché a besoin des deux : la liste des produits et l'état
+  // enregistré du stand.
+  afficherMarche();
 }
 
 async function chargerParametres() {
@@ -934,6 +993,11 @@ async function chargerParametres() {
   $("banqueNumero").value    = b.numero || "";
   $("banqueQR").value        = b.qr || "";
   $("instrPaiement").value   = pay.instructions || "";
+
+  // Produits marqués absents du stand. Champ absent = tout est disponible.
+  // (marche et non « m » : m désigne déjà Maya plus haut dans la fonction)
+  const marche = d.marche || {};
+  marcheIndispo = new Set(Array.isArray(marche.indisponibles) ? marche.indisponibles : []);
 
   const fermes = d.jours_fermes || [];
   $("jours").querySelectorAll("input").forEach(c => {
@@ -1386,6 +1450,7 @@ $("btnEnregistrer").onclick = async () => {
 
     const n = produits.filter(p => p.publie).length;
     etat(`Enregistré — ${n} produit${n > 1 ? "s" : ""} en vente.`, "ok");
+    afficherMarche();
   } catch (e) {
     console.error(e);
     etat("L'enregistrement a échoué. Vérifiez votre connexion, puis réessayez.", "err");
@@ -1393,6 +1458,150 @@ $("btnEnregistrer").onclick = async () => {
     $("btnEnregistrer").disabled = false;
   }
 };
+
+/* ============================================================
+   8 bis. MENU DU MARCHÉ
+   Lu par marche.html, la page du QR code et de la puce NFC du stand.
+
+   Un seul champ, dans le document déjà lu par la vitrine :
+     parametres/boutique → marche.indisponibles = [codes produit]
+   On y range les ABSENTS, pas les présents : un produit nouvellement mis en
+   vente apparaît donc au marché sans qu'il faille penser à le cocher, et un
+   document qui n'a jamais été réglé affiche tout le menu.
+
+   Chaque case écrit tout de suite, par arrayUnion / arrayRemove : l'écriture
+   ne touche que ce code-là dans la liste. Deux appareils qui cochent en même
+   temps (le téléphone au stand, l'ordinateur à la maison) ne s'écrasent pas
+   l'un l'autre, et rien d'autre du document n'est réécrit.
+   Le bouton Enregistrer du bas ne connaît pas ce champ : son merge le laisse
+   en place.
+   ============================================================ */
+let marcheIndispo = new Set();
+
+/* Adresse publique de la page. Sans .html : Cloudflare Pages sert la page
+   sous les deux formes, et l'adresse courte donne un QR code moins dense,
+   plus facile à lire de loin sur un stand. */
+const URL_MARCHE = "https://yoannthebaker.com/marche";
+$("marcheUrl").textContent = URL_MARCHE;
+$("lienAfficheMarche").href = "affiche.html?adresse=" + encodeURIComponent(URL_MARCHE);
+
+$("btnCopierMarche").onclick = async () => {
+  try {
+    await navigator.clipboard.writeText(URL_MARCHE);
+    etatMarche("Adresse copiée — à coller dans l'application qui écrit la puce NFC.", "ok");
+  } catch (e) {
+    etatMarche("Copie impossible ici : sélectionnez l'adresse à la main.", "err");
+  }
+};
+
+// Même règle que la vitrine : le rayon Frozen ne va pas au marché.
+function produitsMarche() {
+  return produits.filter(p => p.publie && p.rayon !== "Frozen");
+}
+
+function etatMarche(texte, type = "", annuler = null) {
+  const e = $("etatMarche");
+  e.className = "etat " + type;
+  e.textContent = texte;
+  if (annuler) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = "Annuler";
+    b.onclick = annuler;
+    e.appendChild(b);
+  }
+}
+
+function afficherMarche() {
+  const zone = $("listeMarche");
+  const liste = produitsMarche();
+  if (!liste.length) {
+    zone.innerHTML = '<div class="vide">Aucun produit en vente hors rayon Frozen.</div>';
+    return;
+  }
+
+  const groupes = {};
+  liste.forEach(p => { (groupes[p.rayon] = groupes[p.rayon] || []).push(p); });
+  const rang = (r) => { const i = RAYONS.indexOf(r); return i === -1 ? 99 : i; };
+  const cles = Object.keys(groupes).sort((a, b) => rang(a) - rang(b) || a.localeCompare(b));
+
+  zone.innerHTML = "";
+  cles.forEach(cle => {
+    const bloc = document.createElement("div");
+    bloc.className = "marche-rayon";
+    const h = document.createElement("h3");
+    h.textContent = cle;
+    bloc.appendChild(h);
+
+    const cases = document.createElement("div");
+    cases.className = "marche-cases";
+    groupes[cle].sort((a, b) => a.nom.localeCompare(b.nom)).forEach(p => {
+      const dispo = !marcheIndispo.has(p.id);
+      const l = document.createElement("label");
+      l.className = dispo ? "" : "non";
+      const c = document.createElement("input");
+      c.type = "checkbox";
+      c.checked = dispo;
+      c.onchange = () => basculerMarche(p, c, l);
+      l.appendChild(c);
+      l.appendChild(document.createTextNode(p.nom));
+      cases.appendChild(l);
+    });
+    bloc.appendChild(cases);
+    zone.appendChild(bloc);
+  });
+  compterMarche();
+}
+
+function compterMarche() {
+  const liste = produitsMarche();
+  const n = liste.filter(p => !marcheIndispo.has(p.id)).length;
+  etatMarche(`${n} sur ${liste.length} disponible${n > 1 ? "s" : ""} au stand.`);
+}
+
+async function basculerMarche(p, caseACocher, label) {
+  const dispo = caseACocher.checked;
+  caseACocher.disabled = true;
+  try {
+    await setDoc(doc(db, "parametres", "boutique"), {
+      marche: {
+        indisponibles: dispo ? arrayRemove(p.id) : arrayUnion(p.id),
+        maj: new Date().toISOString()
+      }
+    }, { merge: true });
+    if (dispo) marcheIndispo.delete(p.id); else marcheIndispo.add(p.id);
+    label.className = dispo ? "" : "non";
+    compterMarche();
+  } catch (e) {
+    console.error(e);
+    caseACocher.checked = !dispo;   // la case revient à ce qui est réellement en base
+    etatMarche("Pas enregistré : " + p.nom + ". Vérifiez la connexion.", "err");
+  } finally {
+    caseACocher.disabled = false;
+  }
+}
+
+/* « Tout remettre disponible » : remise à zéro avant chaque marché, la
+   liste des absents est vidée d'un coup. Pas de fenêtre de confirmation — un lien Annuler
+   remet l'état d'avant, comme ailleurs dans l'admin. */
+async function ecrireMarche(nouvelle, message, annulable = true) {
+  const avant = [...marcheIndispo];
+  try {
+    await setDoc(doc(db, "parametres", "boutique"), {
+      marche: { indisponibles: nouvelle, maj: new Date().toISOString() }
+    }, { merge: true });
+    marcheIndispo = new Set(nouvelle);
+    afficherMarche();   // redessine les cases et pose le compte…
+    etatMarche(message, "ok",   // …que le message remplace, avec son Annuler
+      annulable ? () => ecrireMarche(avant, "Annulé.", false) : null);
+  } catch (e) {
+    console.error(e);
+    etatMarche("Pas enregistré. Vérifiez la connexion.", "err");
+  }
+}
+
+$("btnMarcheTout").onclick = () =>
+  ecrireMarche([], "Tout est disponible.");
 
 /* ============================================================
    9. CODES PROMO

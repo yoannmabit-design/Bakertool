@@ -198,6 +198,12 @@ function dessiner() {
   .forEach(id => $(id).addEventListener("input", dessiner));
 $("niveau").addEventListener("change", dessiner);
 
+/* Adresse passée par un autre écran — la carte « Menu du marché » de
+   l'onglet Boutique envoie ici avec ?adresse=…/marche. Sans paramètre,
+   l'affiche garde l'adresse de la boutique, comme avant. */
+const demandee = new URLSearchParams(location.search).get("adresse");
+if (demandee) $("adresse").value = demandee;
+
 $("btnImprimer").onclick = () => window.print();
 
 // Le SVG seul, pour un flyer ou un autocollant fait ailleurs.
