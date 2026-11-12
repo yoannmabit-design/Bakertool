@@ -351,6 +351,26 @@
             <label for="delai">Délai minimum de commande (heures)</label>
             <input type="number" id="delai" min="0" step="1" value="24">
           </div>
+        </div>
+        <div style="margin-top:16px">
+          <label for="creneaux">Créneaux proposés (un par ligne)</label>
+          <textarea id="creneaux" placeholder="7h00 – 9h00&#10;9h00 – 11h00&#10;16h00 – 18h00"></textarea>
+        </div>
+        <div style="margin-top:16px">
+          <label>Jours de fermeture</label>
+          <div class="jours" id="jours"></div>
+        </div>
+      </div>
+
+      <div class="carte">
+        <h2>Contact</h2>
+        <p class="aide">
+          Par où le client peut vous joindre. Un canal laissé vide n'est
+          proposé nulle part : seuls ceux que vous remplissez apparaissent
+          sur la boutique et sur les confirmations de commande.
+          Numéros au format international sans le « + » (<code>639171234567</code>).
+        </p>
+        <div class="grille">
           <div>
             <label for="whatsapp">Numéro WhatsApp</label>
             <input type="text" id="whatsapp" placeholder="639171234567">
@@ -360,21 +380,13 @@
             <input type="text" id="viber" placeholder="639171234567">
           </div>
           <div>
-            <label for="email">Adresse e-mail</label>
-            <input type="text" id="email" placeholder="hello@exemple.com">
-          </div>
-          <div>
             <label for="messenger">Messenger — nom de la page</label>
             <input type="text" id="messenger" placeholder="yoannsfrenchbakery">
           </div>
-        </div>
-        <div style="margin-top:16px">
-          <label for="creneaux">Créneaux proposés (un par ligne)</label>
-          <textarea id="creneaux" placeholder="7h00 – 9h00&#10;9h00 – 11h00&#10;16h00 – 18h00"></textarea>
-        </div>
-        <div style="margin-top:16px">
-          <label>Jours de fermeture</label>
-          <div class="jours" id="jours"></div>
+          <div>
+            <label for="email">Adresse e-mail</label>
+            <input type="text" id="email" placeholder="hello@exemple.com">
+          </div>
         </div>
       </div>
 
