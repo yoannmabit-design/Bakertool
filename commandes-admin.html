@@ -317,6 +317,9 @@
   select[data-v="paye"]         {color:#3d6b3d;border-color:#a9c7a9}
   select[data-v="rembourse"]    {color:#6b6157;border-color:var(--trait)}
   .vide{padding:44px;text-align:center;color:var(--encre-doux)}
+  .pied-historique{text-align:center;padding:6px 0 28px;color:var(--encre-doux);
+    font-size:15px}
+  .pied-historique button{margin-top:8px}
   .connexion{max-width:400px;margin:14vh auto;text-align:center;padding:0 20px}
   .connexion h1{font-size:25px;margin:0 0 20px}
   .connexion button{
@@ -456,6 +459,7 @@
     <div class="criteres" id="criteres"></div>
     <div class="compte-res" id="compteRes" hidden></div>
     <div id="liste"><div class="vide">Chargement…</div></div>
+    <div class="pied-historique" id="piedHistorique" hidden></div>
   </main>
 </div>
 
@@ -559,6 +563,16 @@ const FENETRE_JOURS = 10;
 const VUES = ["nouvelles", "actives", "impayees", "toutes"];
 const vueDemandee = new URLSearchParams(location.search).get("vue");
 let commandes = [], filtre = VUES.includes(vueDemandee) ? vueDemandee : "actives";
+
+/* Par défaut on ne charge pas tout l'historique : chaque commande lue est
+   facturée, et la collection grossit chaque jour. On lit les commandes encore
+   ouvertes (quelle que soit leur date) et celles dont le retrait tombe dans
+   les JOURS_RECENTS derniers jours ou plus tard. Le bouton « Charger les
+   commandes plus anciennes » passe en lecture complète, jusqu'au
+   rechargement de la page. */
+const JOURS_RECENTS = 30;
+const STATUTS_OUVERTS = ["nouvelle", "confirmee", "en production", "prete"];
+let historiqueComplet = false;
 let joursFermes = [];   // 0 = lundi
 let optionsRetrait = []; // options de retrait/livraison — pour la modification
 let catalogue = {};     // { code : { nom, prix_vente, rayon } } — pour la modification
@@ -662,6 +676,47 @@ onAuthStateChanged(auth, async (user) => {
 });
 
 /* ---------- Chargement ---------- */
+async function lireCommandes() {
+  const col = collection(db, "commandes");
+  if (historiqueComplet) {
+    const tout = await getDocs(col);
+    return tout.docs.map(d => ({ id: d.id, ...d.data() }));
+  }
+  const limite = new Date();
+  limite.setDate(limite.getDate() - JOURS_RECENTS);
+  const [recentes, ouvertes] = await Promise.all([
+    getDocs(query(col, where("date_retrait", ">=", iso(limite)))),
+    getDocs(query(col, where("statut", "in", STATUTS_OUVERTS)))
+  ]);
+  const parId = new Map();
+  [...recentes.docs, ...ouvertes.docs]
+    .forEach(d => parId.set(d.id, { id: d.id, ...d.data() }));
+  return [...parId.values()];
+}
+
+// Nombre réel de commandes en base, pour le guetteur de nouvelles : la liste
+// chargée n'en contient plus qu'une partie.
+async function compterCommandes() {
+  try {
+    return (await getCountFromServer(collection(db, "commandes"))).data().count;
+  } catch (e) { console.warn("Comptage impossible :", e.message); return 0; }
+}
+
+function majPiedHistorique() {
+  const pied = $("piedHistorique");
+  if (historiqueComplet) { pied.hidden = true; return; }
+  pied.hidden = false;
+  pied.innerHTML = "Commandes ouvertes et des " + JOURS_RECENTS +
+    " derniers jours." +
+    '<br><button type="button" class="mineur" id="btnHistorique">' +
+    "Charger les commandes plus anciennes</button>";
+  $("btnHistorique").onclick = () => {
+    historiqueComplet = true;
+    $("btnHistorique").disabled = true;
+    charger();
+  };
+}
+
 async function charger() {
   try {
     // Quels produits ont un stock à décompter ?
@@ -724,9 +779,7 @@ async function charger() {
       sco.forEach(d => comptes.push({ id: d.id, ...d.data() }));
     } catch (e) { console.error(e); comptes = []; }
 
-    const s = await getDocs(collection(db, "commandes"));
-    commandes = [];
-    s.forEach(d => commandes.push({ id: d.id, ...d.data() }));
+    commandes = await lireCommandes();
     trierCommandes();
     const crees = await materialiserAbonnements();
     if (crees) {
@@ -737,7 +790,7 @@ async function charger() {
     /* Référence du guetteur, posée après la génération d'abonnements : ces
        commandes-là viennent d'être créées ici même, les annoncer comme
        nouvelles au prochain retour sur l'onglet n'aurait aucun sens. */
-    dernierCompte = commandes.length;
+    dernierCompte = await compterCommandes();
     $("maj").hidden = true;
 
     majListesFiltres();
@@ -765,11 +818,22 @@ async function charger() {
 // évidence un instant — sans quoi, en fin de liste, elle se noierait
 // exactement comme depuis la page d'accueil, ce qui annulerait l'intérêt
 // du lien.
-function allerVersCommandeCiblee() {
+async function allerVersCommandeCiblee() {
   const id = new URLSearchParams(location.search).get("commande");
   if (!id) return;
 
-  const cible = commandes.find(c => c.id === id);
+  let cible = commandes.find(c => c.id === id);
+  if (!cible) {
+    // Commande plus ancienne que la période chargée : on va la chercher seule.
+    try {
+      const un = await getDoc(doc(db, "commandes", id));
+      if (un.exists()) {
+        cible = { id: un.id, ...un.data() };
+        commandes.push(cible);
+        trierCommandes();
+      }
+    } catch (e) { console.warn("Commande ciblée introuvable :", e.message); }
+  }
   if (!cible) return;
 
   if (filtre !== "toutes") {
@@ -970,6 +1034,7 @@ function afficher(reclasser = true) {
   const liste = $("liste");
   majCompteurNouvelles();
   majRappelImport();
+  majPiedHistorique();
   peindreCriteres();
   let vues = commandes.filter(retenue).filter(correspond).filter(passeCriteres);
 
@@ -997,8 +1062,11 @@ function afficher(reclasser = true) {
   if (!vues.length) {
     liste.innerHTML = critereActif()
       ? '<div class="vide">Aucune commande ne correspond aux critères.' +
-        '<br><br>Les filtres portent sur tout l\'historique : si rien ne sort, ' +
-        'c\'est que la commande cherchée n\'existe pas sous cette forme.</div>'
+        (historiqueComplet
+          ? '<br><br>Les filtres portent sur tout l\'historique : si rien ne sort, ' +
+            'c\'est que la commande cherchée n\'existe pas sous cette forme.</div>'
+          : '<br><br>Seules les commandes récentes sont chargées : pour une commande ' +
+            'plus ancienne, utilisez « Charger les commandes plus anciennes » en bas de page.</div>')
       : '<div class="vide">Aucune commande dans cette vue.</div>';
     return;
   }
@@ -2026,6 +2094,15 @@ async function materialiserAbonnements() {
     // sa date est décalée ensuite, donc pas de doublon à la génération suivante.
     const id = "ABO-" + a.id + "-" + String(rang).padStart(2, "0");
     if (commandes.some(c => c.id === id)) continue;   // déjà générée
+    /* La liste chargée ne remonte pas toute l'histoire : une commande déjà
+       générée mais ancienne en est absente. On vérifie en base avant de la
+       recréer, sinon elle reviendrait en double. */
+    try {
+      if ((await getDoc(doc(db, "commandes", id))).exists()) continue;
+    } catch (e) {
+      console.warn("Vérification impossible, génération sautée :", id, e.message);
+      continue;
+    }
 
     const sousTotal = (a.panier || []).reduce((t, l) => t + (l.qte || 0) * (l.prix || 0), 0);
 
