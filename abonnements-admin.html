@@ -299,7 +299,10 @@ function carte(a) {
   const el = document.createElement("div");
   el.className = "abo " + (a.statut === "nouveau" ? "nouveau" : a.statut === "actif" ? "actif" : "");
   const reste = restantes(a);
-  const prochaine = (a.echeances || []).find(e => e.statut === "planifiee");
+  // La plus proche par la date, pas la première du tableau : une livraison
+  // déplacée garde sa ligne (son rang) mais plus sa place dans le temps.
+  const prochaine = (a.echeances || []).filter(e => e.statut === "planifiee")
+    .sort((x, y) => String(x.date).localeCompare(String(y.date)))[0];
 
   el.innerHTML = `
     <div class="tete">
@@ -346,7 +349,11 @@ function carte(a) {
 
   // Échéances
   const ze = el.querySelector(".echeances");
-  (a.echeances || []).forEach((e, i) => {
+  // Affichées dans l'ordre des dates ; i reste le rang réel dans le tableau,
+  // celui dont les actions ont besoin.
+  (a.echeances || []).map((e, i) => ({ e, i }))
+    .sort((x, y) => String(x.e.date).localeCompare(String(y.e.date)))
+    .forEach(({ e, i }) => {
     const ligne = document.createElement("div");
     ligne.className = "ech " + e.statut;
     ligne.innerHTML = `
