@@ -2646,13 +2646,26 @@ async function enregistrerModification(c, panier, date, option) {
 
   const changeLivraison = option && option.nom !== c.option?.nom;
 
+  /* Le crédit ne peut jamais dépasser le total. Si la commande baisse sous
+     le crédit utilisé, on le plafonne ; s'il avait déjà été débité, la
+     différence retourne au solde du client. Si le total monte, le crédit ne
+     bouge : le client paie simplement la différence. */
+  const creditAvant = Number(c.credit_utilise) || 0;
+  const creditApres = creditAvant > 0 ? Math.min(creditAvant, r.total) : 0;
+  const creditRendu = creditAvant - creditApres;
+  const rendreAuSolde = creditRendu > 0 && !!c.credit_deduit && !!c.compte_uid;
+
   const resume = [
     `${(c.panier || []).length} ligne(s) → ${r.lignes.length}`,
     `total ${peso(c.total)} → ${peso(r.total)}`,
     c.date_retrait !== date ? `date ${c.date_retrait} → ${date}` : null,
     changeLivraison ? `mode ${c.option?.nom || "—"} → ${option.nom}` : null,
     toucherStock && Object.keys(ecarts).length
-      ? "le stock sera ajusté en conséquence" : null
+      ? "le stock sera ajusté en conséquence" : null,
+    creditRendu > 0
+      ? `crédit client ${peso(creditAvant)} → ${peso(creditApres)}` +
+        (rendreAuSolde ? ` (${peso(creditRendu)} rendus au solde du client)` : "")
+      : null
   ].filter(Boolean).join("\n");
 
   if (!confirm("Enregistrer ces modifications ?\n\n" + resume)) return;
@@ -2688,6 +2701,24 @@ async function enregistrerModification(c, panier, date, option) {
       });
     }
 
+    if (creditRendu > 0) {
+      const champsCredit = { credit_utilise: creditApres };
+      // Commande réglée par le crédit : le montant payé suit le nouveau total.
+      if (c.paiement?.methode === "credit" && c.paiement?.statut === "paye")
+        champsCredit["paiement.montant_paye"] = r.total;
+      paquet.update(doc(db, "commandes", c.id), champsCredit);
+      if (rendreAuSolde) {
+        paquet.set(doc(collection(db, "comptes", c.compte_uid, "mouvements")), {
+          type: "remboursement",
+          montant: creditRendu,
+          note: "Commande " + (c.numero || c.id) + " modifiée",
+          quand: new Date().toISOString(),
+          par: auth.currentUser.email
+        });
+        paquet.update(doc(db, "comptes", c.compte_uid), { solde: increment(creditRendu) });
+      }
+    }
+
     await paquet.commit();
 
     // Mise à jour de la copie locale, sans recharger toute la page.
@@ -2702,15 +2733,20 @@ async function enregistrerModification(c, panier, date, option) {
       c.frais_a_confirmer = r.frais_a_confirmer;
     }
 
+    if (creditRendu > 0) {
+      c.credit_utilise = creditApres;
+      if (c.paiement?.methode === "credit" && c.paiement?.statut === "paye")
+        c.paiement = { ...c.paiement, montant_paye: r.total };
+    }
+
     trierCommandes();
 
     afficher(false);
     publierProduction();
     publierCharges();
 
-    const credit = Number(c.credit_utilise) || 0;
-    signaler(credit > 0
-      ? "Commande modifiée. Vérifiez le crédit du client, il n'a pas été ajusté."
+    signaler(rendreAuSolde
+      ? "Commande modifiée. " + peso(creditRendu) + " rendus au solde du client."
       : "Commande modifiée.", "ok");
   } catch (e) {
     console.error(e);
