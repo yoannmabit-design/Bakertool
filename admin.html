@@ -272,7 +272,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, collection, getDocs, doc, getDoc }
+import { getFirestore, collection, getDocs, doc, getDoc, query, where }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getFunctions, httpsCallable }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
@@ -506,15 +506,28 @@ async function charger() {
     rendre(cache.commandes);
   }
 
-  // 2. Lecture réelle. Les deux collections partent ensemble : elles ne
-  //    dépendent pas l'une de l'autre, les enchaîner doublait l'attente.
+  /* 2. Lecture réelle. Pas toute la collection : chaque commande lue est
+        facturée. Les chiffres de l'accueil n'ont besoin que de trois
+        familles — celles dont le retrait tombe dans les 30 derniers jours
+        ou plus tard (ticket moyen, mois, jour, semaine à venir), celles
+        encore ouvertes (« à traiter ») et celles non payées (« reste à
+        encaisser »). Les trois requêtes partent ensemble avec les produits. */
   let commandes = [];
   try {
-    const [sCommandes] = await Promise.all([
-      getDocs(collection(db, "commandes")),
+    const col = collection(db, "commandes");
+    const limite = new Date();
+    limite.setDate(limite.getDate() - 30);
+    const [recentes, ouvertes, impayees] = await Promise.all([
+      getDocs(query(col, where("date_retrait", ">=", iso(limite)))),
+      getDocs(query(col, where("statut", "in",
+        ["nouvelle", "confirmee", "en production", "prete"]))),
+      getDocs(query(col, where("paiement.statut", "==", "en attente"))),
       chargerProduits()
     ]);
-    sCommandes.forEach(d => commandes.push({ id: d.id, ...d.data() }));
+    const parId = new Map();
+    [recentes, ouvertes, impayees].forEach(s =>
+      s.forEach(d => parId.set(d.id, { id: d.id, ...d.data() })));
+    commandes = [...parId.values()];
   } catch (e) {
     console.error(e);
     if (!cache) {   // avec un cache affiché, mieux vaut le garder qu'un message d'erreur

@@ -567,7 +567,9 @@ let commandes = [], filtre = VUES.includes(vueDemandee) ? vueDemandee : "actives
 /* Par défaut on ne charge pas tout l'historique : chaque commande lue est
    facturée, et la collection grossit chaque jour. On lit les commandes encore
    ouvertes (quelle que soit leur date) et celles dont le retrait tombe dans
-   les JOURS_RECENTS derniers jours ou plus tard. Le bouton « Charger les
+   les JOURS_RECENTS derniers jours ou plus tard, plus toutes celles dont le
+   paiement est encore en attente (une commande remise mais non payée depuis
+   deux mois doit rester visible dans « Impayées »). Le bouton « Charger les
    commandes plus anciennes » passe en lecture complète, jusqu'au
    rechargement de la page. */
 const JOURS_RECENTS = 30;
@@ -684,12 +686,13 @@ async function lireCommandes() {
   }
   const limite = new Date();
   limite.setDate(limite.getDate() - JOURS_RECENTS);
-  const [recentes, ouvertes] = await Promise.all([
+  const [recentes, ouvertes, impayees] = await Promise.all([
     getDocs(query(col, where("date_retrait", ">=", iso(limite)))),
-    getDocs(query(col, where("statut", "in", STATUTS_OUVERTS)))
+    getDocs(query(col, where("statut", "in", STATUTS_OUVERTS))),
+    getDocs(query(col, where("paiement.statut", "==", "en attente")))
   ]);
   const parId = new Map();
-  [...recentes.docs, ...ouvertes.docs]
+  [...recentes.docs, ...ouvertes.docs, ...impayees.docs]
     .forEach(d => parId.set(d.id, { id: d.id, ...d.data() }));
   return [...parId.values()];
 }
@@ -706,7 +709,7 @@ function majPiedHistorique() {
   const pied = $("piedHistorique");
   if (historiqueComplet) { pied.hidden = true; return; }
   pied.hidden = false;
-  pied.innerHTML = "Commandes ouvertes et des " + JOURS_RECENTS +
+  pied.innerHTML = "Commandes ouvertes, impayées et des " + JOURS_RECENTS +
     " derniers jours." +
     '<br><button type="button" class="mineur" id="btnHistorique">' +
     "Charger les commandes plus anciennes</button>";
