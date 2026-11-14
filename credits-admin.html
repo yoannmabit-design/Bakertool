@@ -78,6 +78,12 @@
   .mvt .val{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
   .mvt .val.plus{color:var(--ok)}
   .mvt .val.moins{color:var(--alerte)}
+  /* Aperçu du mouvement en cours de saisie : vert s'il ajoute, rouge s'il
+     retire. Occupe toute la largeur pour ne pas déplacer le bouton. */
+  .m-apercu{flex-basis:100%;font-size:16.5px;font-weight:600;
+    font-variant-numeric:tabular-nums;min-height:1.4em}
+  .m-apercu.plus{color:var(--ok)}
+  .m-apercu.moins,.m-apercu.alerte{color:var(--alerte)}
 
   .vide{padding:40px;text-align:center;color:var(--encre-doux)}
   .etat{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);
@@ -146,8 +152,37 @@ const MOTIFS = {
   rechargement: "Rechargement",
   depense: "Dépense",
   remboursement: "Remboursement",
-  correction: "Correction"
+  correction: "Correction",
+  // Ancienne écriture de l'excédent d'abonnement, encore présente dans
+  // des historiques.
+  recharge: "Rechargement"
 };
+
+/* Ce que propose le formulaire. Chaque choix annonce son sens, parce qu'un
+   mot seul ne le dit pas : « remboursement » peut vouloir dire rendre du
+   crédit au client ou lui rendre son argent, et ce sont deux mouvements
+   opposés. Ici, « sens » est ce que le choix fait AU SOLDE DU CLIENT.
+
+   La correction existe dans les deux sens : avant, elle ne savait
+   qu'ajouter, et une erreur en trop se rattrapait par une fausse dépense. */
+const ACTIONS = {
+  "rechargement":    { type: "rechargement",  sens:  1, libelle: "+ Rechargement — le client a payé d'avance" },
+  "correction-plus": { type: "correction",    sens:  1, libelle: "+ Correction — ajouter au solde" },
+  "depense":         { type: "depense",       sens: -1, libelle: "− Dépense — une commande réglée avec le crédit" },
+  "remboursement":   { type: "remboursement", sens: -1, libelle: "− Remboursement — je rends l'argent, le crédit baisse" },
+  "correction-moins":{ type: "correction",    sens: -1, libelle: "− Correction — retirer du solde" }
+};
+
+/* Libellé d'une ligne d'historique. Le type « remboursement » sert aussi
+   quand une commande annulée rend son crédit au compte : même mot, sens
+   inverse. Le signe du montant tranche. */
+function libelleMouvement(m) {
+  if (m.type === "remboursement")
+    return m.montant >= 0 ? "Crédit rendu (commande annulée)" : "Remboursé au client";
+  if (m.type === "correction")
+    return m.montant >= 0 ? "Correction (ajout)" : "Correction (retrait)";
+  return MOTIFS[m.type] || m.type;
+}
 
 let comptes = [];
 
@@ -334,8 +369,8 @@ function carte(c) {
         <div>
           <label>Type</label>
           <select class="m-type">
-            ${Object.entries(MOTIFS).map(([v, t]) =>
-              `<option value="${v}">${t}</option>`).join("")}
+            ${Object.entries(ACTIONS).map(([v, a]) =>
+              `<option value="${v}">${a.libelle}</option>`).join("")}
           </select>
         </div>
         <div>
@@ -347,6 +382,9 @@ function carte(c) {
           <input type="text" class="m-note" placeholder="GCash reçu le 17/08">
         </div>
         <button class="action m-valider">Enregistrer</button>
+        <!-- Le résultat avant de valider : le sens se lit sur les chiffres,
+             sans avoir à interpréter le nom du mouvement. -->
+        <div class="m-apercu" aria-live="polite"></div>
       </div>
       <div class="histo"><div class="vide">Chargement de l'historique…</div></div>
     </div>`;
@@ -402,6 +440,8 @@ function carte(c) {
   el.querySelector(".g-groupe").onclick  = () => appliquerAuGroupe(c, el);
 
   el.querySelector(".m-valider").onclick = () => enregistrerMouvement(c, el);
+  el.querySelector(".m-type").onchange   = () => apercuMouvement(c, el);
+  el.querySelector(".m-montant").oninput = () => apercuMouvement(c, el);
   return el;
 }
 
@@ -530,7 +570,7 @@ function afficherMouvements(c, el) {
   zone.innerHTML = c.mouvements.map(m => {
     const plus = m.montant >= 0;
     return `<div class="mvt">
-      <span>${ech(MOTIFS[m.type] || m.type)}
+      <span>${ech(libelleMouvement(m))}
         ${m.note ? `<span class="quand">· ${ech(m.note)}</span>` : ""}
         <span class="quand">· ${ech((m.quand || "").slice(0, 10))}</span></span>
       <span class="val ${plus ? "plus" : "moins"}">${plus ? "+" : ""}${peso(m.montant)}</span>
@@ -541,24 +581,42 @@ function afficherMouvements(c, el) {
 /* ---------- Écriture d'un mouvement ----------
    Le mouvement et le solde partent ensemble : jamais l'un sans l'autre.
    Le solde n'est qu'un cumul, l'historique reste la référence. */
-async function enregistrerMouvement(c, el) {
-  const type = el.querySelector(".m-type").value;
+/* Lit le formulaire et rend le mouvement qu'il décrit, ou null s'il est
+   incomplet. Sert à l'aperçu comme à l'enregistrement : ce qui est montré
+   est exactement ce qui sera écrit. */
+function lireMouvement(c, el) {
+  const action = ACTIONS[el.querySelector(".m-type").value];
   const brut = Number(el.querySelector(".m-montant").value) || 0;
+  if (!action || brut <= 0) return null;
+  const montant = action.sens * brut;
+  return { action, brut, montant, nouveau: Math.round((c.solde + montant) * 100) / 100 };
+}
+
+function apercuMouvement(c, el) {
+  const zone = el.querySelector(".m-apercu");
+  const m = lireMouvement(c, el);
+  if (!m) { zone.textContent = ""; zone.className = "m-apercu"; return; }
+  zone.textContent = "Solde : " + peso(c.solde) + " → " + peso(m.nouveau) +
+    " (" + (m.montant >= 0 ? "+" : "−") + peso(m.brut) + ")" +
+    (m.nouveau < 0 ? " — le solde deviendrait négatif" : "");
+  zone.className = "m-apercu " + (m.nouveau < 0 ? "alerte" : (m.montant >= 0 ? "plus" : "moins"));
+}
+
+async function enregistrerMouvement(c, el) {
   const note = el.querySelector(".m-note").value.trim();
   const bouton = el.querySelector(".m-valider");
+  const m = lireMouvement(c, el);
 
-  if (brut <= 0) return signaler("Indiquez un montant.");
+  if (!m) return signaler("Indiquez un montant.");
+  const { action, brut, montant, nouveau } = m;
+  const type = action.type;
 
-  // Un rechargement augmente le solde ; dépense et remboursement le diminuent.
-  const signe = (type === "rechargement" || type === "correction") ? 1 : -1;
-  const montant = signe * brut;
-  const nouveau = c.solde + montant;
-
-  if (nouveau < 0 && !confirm(
-      `Ce mouvement rendrait le solde négatif (${peso(nouveau)}).\n\nContinuer ?`)) return;
-
-  if (!confirm(`${MOTIFS[type]} de ${peso(brut)} pour ${c.nom || c.email} ?\n\n` +
-               `Nouveau solde : ${peso(nouveau)}`)) return;
+  // Une seule question, qui dit le sens en clair et montre le résultat.
+  if (!confirm(
+      (montant >= 0 ? "AJOUTER " : "RETIRER ") + peso(brut) +
+      (montant >= 0 ? " au" : " du") + " solde de " + (c.nom || c.email) + " ?\n\n" +
+      "Solde : " + peso(c.solde) + " → " + peso(nouveau) +
+      (nouveau < 0 ? "\n\nAttention : le solde deviendrait négatif." : ""))) return;
 
   bouton.disabled = true;
   signaler("Enregistrement…");

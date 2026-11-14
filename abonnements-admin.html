@@ -417,7 +417,7 @@ async function encaisser(a) {
     // client identifié : un abonnement sans compte n'a pas de solde.
     if (surplus > 0 && a.client?.uid) {
       paquet.set(doc(collection(db, "comptes", a.client.uid, "mouvements")), {
-        type: "recharge", montant: surplus,
+        type: "rechargement", montant: surplus,
         note: "Arrondi sur l'abonnement du " + (a.cree_le || "").slice(0, 10),
         quand: new Date().toISOString(), par: auth.currentUser?.email || ""
       });
