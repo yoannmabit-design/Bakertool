@@ -521,9 +521,27 @@ const PAIEMENTS = { "en attente":"En attente", "paye":"Payé", "rembourse":"Remb
    badge COD plutôt que "À encaisser". Les autres attendent une preuve
    (GCash, Maya, virement) et gardent le badge rouge existant. */
 const MOYENS_PAIEMENT = {
-  gcash: "GCash", maya: "Maya", virement: "Virement", especes: "Cash"
+  gcash: "GCash", maya: "Maya", virement: "Virement", especes: "Cash",
+  credit: "Crédit client"
 };
 function estCOD(c) { return c.paiement?.methode === "especes"; }
+
+/* L'étiquette dit où en est le crédit, pas seulement son montant :
+   « à débiter » tant que la commande n'est pas acceptée, « débité » ensuite,
+   « rendu » après une annulation. Une commande acceptée dont le crédit
+   n'a pas été prélevé ressort en rouge : c'est de l'argent non compté. */
+function etiquetteCredit(c) {
+  const m = Number(c.credit_utilise) || 0;
+  if (!(m > 0)) return "";
+  const deduit = !!c.credit_deduit;
+  if (deduit)
+    return `<span class="etiq verte">crédit ${peso(m)} débité</span>`;
+  if (c.statut === "annulee")
+    return `<span class="etiq">crédit ${peso(m)} non débité</span>`;
+  if (STATUTS_DEBIT.includes(c.statut))
+    return `<span class="etiq rouge" title="Commande acceptée mais crédit jamais prélevé : repassez-la sur son statut pour le débiter.">crédit ${peso(m)} NON débité</span>`;
+  return `<span class="etiq">crédit ${peso(m)} à débiter</span>`;
+}
 
 // « en production » contient une espace : on la retire pour en faire une classe.
 const CLASSE_STATUT = {
@@ -1232,7 +1250,7 @@ function carte(c) {
       ${c.abonnement_id ? `<span class="etiq bleue">Abonnement${
         c.abonnement_rang ? " " + c.abonnement_rang +
           (c.abonnement_total ? "/" + c.abonnement_total : "") : ""}</span>` : ""}
-      ${c.credit_utilise > 0 ? `<span class="etiq">crédit ${peso(c.credit_utilise)}</span>` : ""}
+      ${etiquetteCredit(c)}
       ${c.client?.adresse_ponctuelle ? `<span class="etiq ponctuelle"
         title="Livraison ailleurs pour cette commande — le point GPS de la fiche ne s'applique pas"
         >Adresse ponctuelle</span>` : ""}
@@ -2291,14 +2309,22 @@ function ajustementsStock(c, nouveauStatut) {
   return { lignes, signe, drapeau: doitDeduire };
 }
 
-// Un crédit annoncé au checkout n'est réellement débité qu'à la confirmation,
-// et restitué si la commande est annulée.
+/* Un crédit annoncé au checkout n'est réellement débité qu'une fois la
+   commande acceptée, et restitué si elle est annulée.
+
+   « Acceptée » veut dire n'importe quel statut à partir de Confirmée, pas
+   Confirmée seulement : une commande passée directement de Nouvelle à
+   Prête ou à Remise sautait le débit, et le client gardait son crédit
+   tout en ayant sa commande. Le drapeau credit_deduit garantit un seul
+   débit quel que soit le chemin suivi. */
+const STATUTS_DEBIT = ["confirmee", "en production", "prete", "remise"];
+
 function appliquerCredit(paquet, c, nouveauStatut) {
   const montant = Number(c.credit_utilise) || 0;
   if (!montant || !c.compte_uid) return null;
 
   const deja = !!c.credit_deduit;
-  const debiter = nouveauStatut === "confirmee" && !deja;
+  const debiter = STATUTS_DEBIT.includes(nouveauStatut) && !deja;
   const rendre  = nouveauStatut === "annulee" && deja;
   if (!debiter && !rendre) return null;
 
@@ -2918,6 +2944,9 @@ $("lotAppliquer").onclick = async () => {
     // Firestore limite un lot à 500 écritures ; on découpe par prudence.
     for (let i = 0; i < ids.length; i += 400) {
       const paquet = writeBatch(db);
+      // Drapeaux de crédit à reporter sur la copie affichée une fois le
+      // paquet écrit — même raison que dans enregistrer().
+      const creditMaj = {};
       ids.slice(i, i + 400).forEach(id => {
         const c = commandes.find(x => x.id === id);
         const champs = {};
@@ -2927,11 +2956,15 @@ $("lotAppliquer").onclick = async () => {
           const a = ajustementsStock(c, statut);
           if (a) champs.stock_deduit = appliquerStock(paquet, c, statut);
           const credit = appliquerCredit(paquet, c, statut);
-          if (credit !== null) champs.credit_deduit = credit;
+          if (credit !== null) { champs.credit_deduit = credit; creditMaj[id] = credit; }
         }
         paquet.update(doc(db, "commandes", id), champs);
       });
       await paquet.commit();
+      Object.entries(creditMaj).forEach(([id, v]) => {
+        const c = commandes.find(x => x.id === id);
+        if (c) c.credit_deduit = v;
+      });
     }
 
     ids.forEach(id => {
@@ -3132,6 +3165,11 @@ async function enregistrer(c, champs) {
       paquet.update(doc(db, "commandes", c.id), maj);
       await paquet.commit();
       if (a) c.stock_deduit = deduit;
+      /* Le drapeau doit suivre dans la copie affichée, pas seulement en
+         base : sans cela, confirmer puis annuler sans recharger la page ne
+         rendait pas le crédit, et repasser par Confirmée le débitait une
+         seconde fois. */
+      if (credit !== null) c.credit_deduit = credit;
     } else {
       await updateDoc(doc(db, "commandes", c.id), champs);
     }
