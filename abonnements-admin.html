@@ -25,6 +25,11 @@
     padding:8px 13px;border-radius:var(--r);font-size:15px;cursor:pointer}
   main{max-width:860px;margin:0 auto;padding:20px 16px 60px}
 
+  /* Hors de l'en-tête : celui-ci peut être replié d'un balayage, et le
+     bouton disparaissait avec lui. */
+  .barre-absence{display:flex;justify-content:flex-end;margin-bottom:12px}
+  .barre-absence button{background:var(--encre);color:var(--creme);border:none;
+    padding:10px 16px;border-radius:var(--r);font-size:16px;cursor:pointer}
   .filtres{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:18px}
   .filtres button{border:1px solid var(--trait);background:transparent;
     color:var(--encre-doux);padding:8px 15px;border-radius:var(--r);
@@ -122,11 +127,13 @@
   <header>
     <h1>Abonnements</h1>
     <span class="qui" id="qui"></span>
-    <button id="btnAbsence">Je m'absente…</button>
     <button id="btnRecharger">Actualiser</button>
     <button id="btnDeconnexion">Quitter</button>
   </header>
   <main>
+    <div class="barre-absence">
+      <button id="btnAbsence">Je m'absente…</button>
+    </div>
     <div class="filtres" id="filtres">
       <button data-f="encours" aria-pressed="true">En cours</button>
       <button data-f="nouveaux" aria-pressed="false">À valider</button>
