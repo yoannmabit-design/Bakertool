@@ -2561,24 +2561,39 @@ function jourFerme(iso) {
    (liens Google Maps complets ou « lat, lng »). Les liens courts ne portent
    pas les coordonnées : refusés plutôt que d'enregistrer un point faux. */
 function lirePointGps(texte) {
-  const t = (texte || "").trim();
+  let t = (texte || "").trim();
   if (!t) return { etat: "vide" };
-  if (/maps\.app\.goo\.gl|goo\.gl\/maps/i.test(t)) return { etat: "court" };
-  const motifs = [
-    /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/,
-    /@(-?\d+\.\d+),(-?\d+\.\d+)/,
-    /[?&]q=(-?\d+\.\d+),\s*(-?\d+\.\d+)/,
-    /^(-?\d+\.\d+),\s*(-?\d+\.\d+)$/
-  ];
-  for (const m of motifs) {
-    const r = t.match(m);
-    if (r) {
-      const lat = parseFloat(r[1]), lng = parseFloat(r[2]);
-      if (lat < 13 || lat > 16 || lng < 120 || lng > 122) return { etat: "hors_zone", lat, lng };
-      return { etat: "ok", lat, lng };
+  if (/maps\.app\.goo\.gl|goo\.gl\/maps|g\.co\/kgs/i.test(t)) return { etat: "court" };
+
+  // Messenger et Viber enveloppent les liens (l.facebook.com/l.php?u=…) : les
+  // coordonnées y sont encodées, parfois deux fois (%252C pour la virgule).
+  for (let i = 0; i < 2; i++) {
+    try { const d = decodeURIComponent(t); if (d === t) break; t = d; } catch (e) { break; }
+  }
+
+  const dms = t.match(/(\d{1,3})\s*°\s*(\d{1,2})\s*['′]\s*(\d{1,2}(?:\.\d+)?)\s*["″]?\s*([NS])[\s,;]+(\d{1,3})\s*°\s*(\d{1,2})\s*['′]\s*(\d{1,2}(?:\.\d+)?)\s*["″]?\s*([EW])/i);
+  let lat, lng;
+  if (dms) {
+    lat = (+dms[1] + dms[2] / 60 + dms[3] / 3600) * (/S/i.test(dms[4]) ? -1 : 1);
+    lng = (+dms[5] + dms[6] / 60 + dms[7] / 3600) * (/W/i.test(dms[8]) ? -1 : 1);
+  } else {
+    const N = "(-?\\d+\\.\\d+)";
+    const motifs = [
+      new RegExp("!3d" + N + "!4d" + N),                                    // point exact désigné par Maps
+      new RegExp("[?&/](?:q|query|ll|destination|daddr|center)=\\s*" + N + "\\s*,\\s*" + N),
+      new RegExp("@" + N + "," + N),                                        // centre de la vue
+      new RegExp("/place/" + N + "," + N),
+      new RegExp("^\\s*" + N + "\\s*°?\\s*N?\\s*[,;\\s]\\s*" + N + "\\s*°?\\s*E?\\s*$", "i")  // collé à la main
+    ];
+    for (const m of motifs) {
+      const r = t.match(m);
+      if (r) { lat = parseFloat(r[1]); lng = parseFloat(r[2]); break; }
     }
   }
-  return { etat: "illisible" };
+  if (lat === undefined || isNaN(lat) || isNaN(lng)) return { etat: "illisible" };
+  lat = Math.round(lat * 1e6) / 1e6; lng = Math.round(lng * 1e6) / 1e6;
+  if (lat < 13 || lat > 16 || lng < 120 || lng > 122) return { etat: "hors_zone", lat, lng };
+  return { etat: "ok", lat, lng };
 }
 
 /* ---------- Écran de modification ---------- */
@@ -2792,27 +2807,43 @@ function ouvrirModification(c, el) {
         etat.style.color = "";
         etat.textContent = "Recherche…";
         try {
-          // « Metro Manila » ajouté d'office, comme sur l'écran Clients : sans
-          // lui, Nominatim part sur une rue homonyme à l'autre bout du monde.
-          const r = await fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&q="
-            + encodeURIComponent(q + ", Metro Manila, Philippines"),
-            { headers: { "Accept": "application/json" } });
-          const j = await r.json();
-          if (!Array.isArray(j) || !j.length) {
+          /* Une adresse philippine complète (« Unit 4B, 99 Rizal St, Quezon City »)
+             échoue souvent telle quelle : le numéro d'unité n'existe pas dans
+             OpenStreetMap. On retente sans les premiers morceaux, ce qui pose
+             le point sur la rue : à ajuster, mais bien mieux que rien. */
+          const parties = q.split(",").map(x => x.trim()).filter(Boolean);
+          const essais = [parties.join(", ")];
+          for (let i = 1; i <= 2 && parties.length - i >= 2; i++)
+            essais.push(parties.slice(i).join(", "));
+
+          let trouve = null, rang = 0;
+          for (let i = 0; i < essais.length && !trouve; i++) {
+            if (i) await new Promise(r => setTimeout(r, 1100));   // 1 requête/s max
+            // « Metro Manila » ajouté d'office, comme sur l'écran Clients.
+            const r = await fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=ph&q="
+              + encodeURIComponent(essais[i] + ", Metro Manila, Philippines"),
+              { headers: { "Accept": "application/json" } });
+            const j = await r.json();
+            if (Array.isArray(j) && j.length) { trouve = j[0]; rang = i; }
+          }
+
+          if (!trouve) {
             etat.style.color = "var(--alerte)";
-            etat.textContent = "Adresse introuvable : collez un lien Google Maps de la position.";
+            etat.textContent = "Adresse introuvable : ouvrez-la dans Google Maps, puis collez le lien de la page (ou les coordonnées).";
           } else {
-            lienP = parseFloat(j[0].lat).toFixed(6) + ", " + parseFloat(j[0].lon).toFixed(6);
+            lienP = parseFloat(trouve.lat).toFixed(6) + ", " + parseFloat(trouve.lon).toFixed(6);
             champLien.value = lienP;
             montrer();
-            etat.innerHTML += " <b>Vérifiez : la recherche peut se tromper de rue.</b>";
+            etat.innerHTML += rang
+              ? " <b>Adresse exacte introuvable : point posé sur « " + echapper(essais[rang]) + " ». Vérifiez et ajustez.</b>"
+              : " <b>Vérifiez : la recherche peut se tromper de rue.</b>";
           }
         } catch (e) {
           console.error(e);
           etat.style.color = "var(--alerte)";
-          etat.textContent = "Recherche impossible.";
+          etat.textContent = "Recherche impossible (connexion ?). Collez un lien Google Maps ou les coordonnées.";
         } finally {
-          setTimeout(() => { btn.disabled = false; }, 1100);   // 1 requête/s max
+          setTimeout(() => { btn.disabled = false; }, 1100);
         }
       };
     }
