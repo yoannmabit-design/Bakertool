@@ -260,6 +260,9 @@
   .edition .edit-ponctuelle .edit-case input{margin-top:3px}
   .edition .edit-ponctuelle .edit-pon-adresse{width:100%;margin-top:8px;padding:9px 10px;
     border:1px solid var(--trait);border-radius:var(--r);font:inherit;font-size:16px}
+  .edition .edit-pon-gps{margin-top:10px;padding-top:10px;border-top:1px dotted var(--trait)}
+  .edition .edit-pon-gps .edit-pon-lien{width:100%;padding:9px 10px;margin-bottom:8px;
+    border:1px solid var(--trait);border-radius:var(--r);font:inherit;font-size:16px}
   .edition .edit-ponctuelle .edit-aide{margin:7px 0 0;font-size:14px;
     color:var(--encre-doux);line-height:1.4}
   .edition .edit-livraison-champ select{
@@ -1215,7 +1218,13 @@ function coordonneesDe(c) {
      endroit sans que rien ne le signale. Pas de coordonnées, donc pas de
      course automatique : la commande sort des tournées et le bloc Lalamove
      explique pourquoi (voir monterLalamove). */
-  if (c.client?.adresse_ponctuelle) return null;
+  if (c.client?.adresse_ponctuelle) {
+    /* Sauf si un point GPS a été posé pour cette commande (formulaire de
+       modification) : c'est alors lui, et jamais celui de la fiche, qui part
+       à Lalamove. */
+    const cp = c.client.coordonnees_ponctuelle;
+    return (cp && cp.lat && cp.lng) ? cp : null;
+  }
   const k = cleTel(c.client?.telephone);
   if (!k) return null;
   const fiche = clients.find(x => cleTel(x.telephone || x.id) === k);
@@ -1867,12 +1876,13 @@ function monterLalamove(c, el) {
   /* Adresse ponctuelle : dire pourquoi il n'y a pas de bouton, sinon son
      absence passe pour une panne et on cherche ailleurs. La course reste
      possible depuis l'application Lalamove, en tapant l'adresse à la main. */
-  if (c.client?.adresse_ponctuelle) {
+  if (c.client?.adresse_ponctuelle && !coordonneesDe(c)) {
     zone.hidden = false;
     zone.innerHTML = `
       <div class="info"><b>Adresse ponctuelle</b> — le client a demandé une
-        livraison ailleurs pour cette commande. Le point GPS enregistré sur sa
-        fiche ne correspond pas : pas de course automatique, à commander à la
+        livraison ailleurs pour cette commande. Le point GPS de sa fiche ne
+        correspond pas : pas de course automatique. Posez un point GPS dans
+        « Modifier la commande » pour l'activer, ou commandez la course à la
         main sur l'adresse ci-dessus.</div>`;
     return;
   }
@@ -2547,6 +2557,30 @@ function jourFerme(iso) {
   return joursFermes.includes((d.getDay() + 6) % 7);
 }
 
+/* Point GPS d'une adresse ponctuelle : même lecture que l'écran Clients
+   (liens Google Maps complets ou « lat, lng »). Les liens courts ne portent
+   pas les coordonnées : refusés plutôt que d'enregistrer un point faux. */
+function lirePointGps(texte) {
+  const t = (texte || "").trim();
+  if (!t) return { etat: "vide" };
+  if (/maps\.app\.goo\.gl|goo\.gl\/maps/i.test(t)) return { etat: "court" };
+  const motifs = [
+    /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/,
+    /@(-?\d+\.\d+),(-?\d+\.\d+)/,
+    /[?&]q=(-?\d+\.\d+),\s*(-?\d+\.\d+)/,
+    /^(-?\d+\.\d+),\s*(-?\d+\.\d+)$/
+  ];
+  for (const m of motifs) {
+    const r = t.match(m);
+    if (r) {
+      const lat = parseFloat(r[1]), lng = parseFloat(r[2]);
+      if (lat < 13 || lat > 16 || lng < 120 || lng > 122) return { etat: "hors_zone", lat, lng };
+      return { etat: "ok", lat, lng };
+    }
+  }
+  return { etat: "illisible" };
+}
+
 /* ---------- Écran de modification ---------- */
 function ouvrirModification(c, el) {
   // Copie de travail : rien n'est touché tant que l'on n'enregistre pas.
@@ -2568,6 +2602,9 @@ function ouvrirModification(c, el) {
      tournée et le bouton de course l'honorent (voir adresseLivraison). */
   let ponctuelle = !!c.client?.adresse_ponctuelle;
   let adresseP = ponctuelle ? (c.client?.adresse || "") : "";
+  const cp0 = ponctuelle ? c.client?.coordonnees_ponctuelle : null;
+  let pointP = (cp0 && cp0.lat && cp0.lng) ? { lat: cp0.lat, lng: cp0.lng } : null;
+  let lienP = pointP ? pointP.lat + ", " + pointP.lng : "";
   const livraisonAvecAdresse = (o) =>
     !!o && (!!o.demander_adresse || o.type === "livraison");
 
@@ -2622,6 +2659,13 @@ function ouvrirModification(c, el) {
           ? "La fiche client n'est pas modifiée. Pas de course Lalamove automatique : à commander à la main sur cette adresse."
           : (c.notes ? "Notes du client : <i>" + echapper(c.notes) + "</i>"
                      : "Cochez si le client a demandé une autre adresse.")}</p>
+        ${ponctuelle ? `
+        <div class="edit-pon-gps">
+          <input type="text" class="edit-pon-lien" value="${echapper(lienP)}"
+                 placeholder="Point GPS : lien Google Maps ou « 14.5547, 121.0244 »">
+          <button type="button" class="mineur edit-pon-chercher">Chercher l'adresse</button>
+          <p class="edit-aide edit-pon-etat"></p>
+        </div>` : ""}
       </div>` : ""}
 
       <div class="edit-bilan">
@@ -2716,6 +2760,63 @@ function ouvrirModification(c, el) {
       zone.querySelector(".edit-pon-adresse").oninput = (e) => { adresseP = e.target.value; };
     }
 
+    const champLien = zone.querySelector(".edit-pon-lien");
+    if (champLien) {
+      const etat = zone.querySelector(".edit-pon-etat");
+      const verifier = (lat, lng) =>
+        ` <a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank" rel="noopener">Vérifier sur la carte ↗</a>`;
+      const montrer = () => {
+        const l = lirePointGps(lienP);
+        pointP = l.etat === "ok" ? { lat: l.lat, lng: l.lng } : null;
+        etat.style.color = "";
+        if (l.etat === "ok")
+          etat.innerHTML = "✓ Point " + l.lat + ", " + l.lng + " — la course Lalamove partira ici." + verifier(l.lat, l.lng);
+        else if (l.etat === "vide")
+          etat.textContent = "Facultatif. Sans point GPS, pas de course automatique : à commander à la main.";
+        else {
+          etat.style.color = "var(--alerte)";
+          etat.textContent = l.etat === "court"
+            ? "Lien court non lisible : ouvrez-le dans le navigateur et copiez l'adresse complète, ou utilisez « Chercher l'adresse »."
+            : l.etat === "hors_zone" ? "Point hors de Metro Manila : vérifiez le lien."
+            : "Lien illisible. Collez un lien Google Maps complet ou « latitude, longitude ».";
+        }
+      };
+      champLien.oninput = () => { lienP = champLien.value; montrer(); };
+      montrer();
+
+      const btn = zone.querySelector(".edit-pon-chercher");
+      btn.onclick = async () => {
+        const q = adresseP.trim();
+        if (!q) { etat.style.color = "var(--alerte)"; etat.textContent = "Saisissez d'abord l'adresse."; return; }
+        btn.disabled = true;
+        etat.style.color = "";
+        etat.textContent = "Recherche…";
+        try {
+          // « Metro Manila » ajouté d'office, comme sur l'écran Clients : sans
+          // lui, Nominatim part sur une rue homonyme à l'autre bout du monde.
+          const r = await fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&q="
+            + encodeURIComponent(q + ", Metro Manila, Philippines"),
+            { headers: { "Accept": "application/json" } });
+          const j = await r.json();
+          if (!Array.isArray(j) || !j.length) {
+            etat.style.color = "var(--alerte)";
+            etat.textContent = "Adresse introuvable : collez un lien Google Maps de la position.";
+          } else {
+            lienP = parseFloat(j[0].lat).toFixed(6) + ", " + parseFloat(j[0].lon).toFixed(6);
+            champLien.value = lienP;
+            montrer();
+            etat.innerHTML += " <b>Vérifiez : la recherche peut se tromper de rue.</b>";
+          }
+        } catch (e) {
+          console.error(e);
+          etat.style.color = "var(--alerte)";
+          etat.textContent = "Recherche impossible.";
+        } finally {
+          setTimeout(() => { btn.disabled = false; }, 1100);   // 1 requête/s max
+        }
+      };
+    }
+
     zone.querySelector(".edit-annuler").onclick = () => {
       zone.hidden = true;
       zone.innerHTML = "";
@@ -2751,14 +2852,15 @@ function ouvrirModification(c, el) {
     zone.querySelector(".edit-ok").onclick = () =>
       enregistrerModification(c, panier, date, optionCourante, {
         actif: livraisonAvecAdresse(optionCourante) && ponctuelle,
-        texte: adresseP.trim()
+        texte: adresseP.trim(),
+        point: pointP
       });
   }
 
   dessiner();
 }
 
-async function enregistrerModification(c, panier, date, option, pon = { actif: false, texte: "" }) {
+async function enregistrerModification(c, panier, date, option, pon = { actif: false, texte: "", point: null }) {
   if (!panier.length)
     return signaler("Une commande ne peut pas être vide. Annulez-la plutôt.", "err");
   if (!date)
@@ -2767,8 +2869,10 @@ async function enregistrerModification(c, panier, date, option, pon = { actif: f
     return signaler("Saisissez l'adresse ponctuelle, ou décochez la case.", "err");
 
   const etaitPonctuelle = !!c.client?.adresse_ponctuelle;
+  const pointAvant = c.client?.coordonnees_ponctuelle || null;
+  const memePoint = (a, b) => (!a && !b) || (a && b && Number(a.lat) === Number(b.lat) && Number(a.lng) === Number(b.lng));
   const changePonctuelle = pon.actif !== etaitPonctuelle ||
-    (pon.actif && pon.texte !== (c.client?.adresse || ""));
+    (pon.actif && (pon.texte !== (c.client?.adresse || "") || !memePoint(pon.point, pointAvant)));
 
   const r = recalculer(c, panier, option);
   const ecarts = ecartsStock(c.panier, r.lignes);
@@ -2792,7 +2896,10 @@ async function enregistrerModification(c, panier, date, option, pon = { actif: f
     c.date_retrait !== date ? `date ${c.date_retrait} → ${date}` : null,
     changeLivraison ? `mode ${c.option?.nom || "—"} → ${option.nom}` : null,
     changePonctuelle
-      ? (pon.actif ? `adresse ponctuelle : ${pon.texte}` : "retour à l'adresse de la fiche client")
+      ? (pon.actif
+          ? `adresse ponctuelle : ${pon.texte}` +
+            (pon.point ? ` (GPS ${pon.point.lat}, ${pon.point.lng})` : " (sans point GPS : course à la main)")
+          : "retour à l'adresse de la fiche client")
       : null,
     toucherStock && Object.keys(ecarts).length
       ? "le stock sera ajusté en conséquence" : null,
@@ -2835,12 +2942,14 @@ async function enregistrerModification(c, panier, date, option, pon = { actif: f
             "client.adresse_ponctuelle": true,
             "client.adresse": pon.texte,
             "client.adresse_detail": { rue: pon.texte },
+            "client.coordonnees_ponctuelle": pon.point || null,
             // L'adresse tapée au checkout est gardée, pour pouvoir revenir en arrière.
             "client.adresse_initiale": etaitPonctuelle
               ? (c.client?.adresse_initiale || "") : (c.client?.adresse || "")
           }
         : {
             "client.adresse_ponctuelle": false,
+            "client.coordonnees_ponctuelle": null,
             "client.adresse": c.client?.adresse_initiale || c.client?.adresse || ""
           };
       paquet.update(doc(db, "commandes", c.id), champsAdresse);
@@ -2888,9 +2997,10 @@ async function enregistrerModification(c, panier, date, option, pon = { actif: f
       c.client = pon.actif
         ? { ...c.client, adresse_ponctuelle: true, adresse: pon.texte,
             adresse_detail: { rue: pon.texte },
+            coordonnees_ponctuelle: pon.point || null,
             adresse_initiale: etaitPonctuelle
               ? (c.client?.adresse_initiale || "") : (c.client?.adresse || "") }
-        : { ...c.client, adresse_ponctuelle: false,
+        : { ...c.client, adresse_ponctuelle: false, coordonnees_ponctuelle: null,
             adresse: c.client?.adresse_initiale || c.client?.adresse || "" };
     }
 
