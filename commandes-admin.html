@@ -253,6 +253,15 @@
     display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:14px;
   }
   .edition .edit-livraison-champ label{font-size:15px;color:var(--encre-doux)}
+  .edition .edit-ponctuelle{margin:2px 0 14px;padding:10px 12px;
+    border:1px dashed var(--trait);border-radius:var(--r)}
+  .edition .edit-ponctuelle .edit-case{display:flex;gap:9px;align-items:flex-start;
+    font-size:16px;color:var(--encre);cursor:pointer}
+  .edition .edit-ponctuelle .edit-case input{margin-top:3px}
+  .edition .edit-ponctuelle .edit-pon-adresse{width:100%;margin-top:8px;padding:9px 10px;
+    border:1px solid var(--trait);border-radius:var(--r);font:inherit;font-size:16px}
+  .edition .edit-ponctuelle .edit-aide{margin:7px 0 0;font-size:14px;
+    color:var(--encre-doux);line-height:1.4}
   .edition .edit-livraison-champ select{
     padding:8px 10px;border:1px solid var(--trait);border-radius:var(--r);
     font:inherit;font-size:16.5px;background:#fff;min-width:220px;
@@ -2554,6 +2563,14 @@ function ouvrirModification(c, el) {
     !optionsRetrait.some(o => o.nom === optionCourante.nom)
     ? [optionCourante, ...optionsRetrait] : optionsRetrait;
 
+  /* Adresse ponctuelle : livrer ailleurs que sur la fiche client, pour cette
+     commande seulement. Marquer la commande suffit à ce que l'étiquette, la
+     tournée et le bouton de course l'honorent (voir adresseLivraison). */
+  let ponctuelle = !!c.client?.adresse_ponctuelle;
+  let adresseP = ponctuelle ? (c.client?.adresse || "") : "";
+  const livraisonAvecAdresse = (o) =>
+    !!o && (!!o.demander_adresse || o.type === "livraison");
+
   const zone = el.querySelector(".edition");
   zone.hidden = false;
 
@@ -2592,6 +2609,20 @@ function ouvrirModification(c, el) {
             (Number(o.tarif) > 0 ? " — " + peso(Number(o.tarif)) : "")}</option>`).join("")}
         </select>
       </div>
+
+      ${livraisonAvecAdresse(optionCourante) ? `
+      <div class="edit-ponctuelle">
+        <label class="edit-case">
+          <input type="checkbox" class="edit-pon-case"${ponctuelle ? " checked" : ""}>
+          <span><b>Adresse ponctuelle</b> — livrer ailleurs pour cette commande</span>
+        </label>
+        <input type="text" class="edit-pon-adresse" placeholder="Adresse complète de livraison"
+               value="${echapper(adresseP)}"${ponctuelle ? "" : " hidden"}>
+        <p class="edit-aide">${ponctuelle
+          ? "La fiche client n'est pas modifiée. Pas de course Lalamove automatique : à commander à la main sur cette adresse."
+          : (c.notes ? "Notes du client : <i>" + echapper(c.notes) + "</i>"
+                     : "Cochez si le client a demandé une autre adresse.")}</p>
+      </div>` : ""}
 
       <div class="edit-bilan">
         <div class="l"><span>Sous-total</span><span>${peso(r.sous_total)}</span></div>
@@ -2674,6 +2705,17 @@ function ouvrirModification(c, el) {
       dessiner();
     };
 
+    const caseP = zone.querySelector(".edit-pon-case");
+    if (caseP) {
+      caseP.onchange = () => {
+        ponctuelle = caseP.checked;
+        // Première fois : on propose l'adresse des notes si elle y est, à recopier.
+        dessiner();
+        if (ponctuelle) zone.querySelector(".edit-pon-adresse").focus();
+      };
+      zone.querySelector(".edit-pon-adresse").oninput = (e) => { adresseP = e.target.value; };
+    }
+
     zone.querySelector(".edit-annuler").onclick = () => {
       zone.hidden = true;
       zone.innerHTML = "";
@@ -2707,17 +2749,26 @@ function ouvrirModification(c, el) {
     }
 
     zone.querySelector(".edit-ok").onclick = () =>
-      enregistrerModification(c, panier, date, optionCourante);
+      enregistrerModification(c, panier, date, optionCourante, {
+        actif: livraisonAvecAdresse(optionCourante) && ponctuelle,
+        texte: adresseP.trim()
+      });
   }
 
   dessiner();
 }
 
-async function enregistrerModification(c, panier, date, option) {
+async function enregistrerModification(c, panier, date, option, pon = { actif: false, texte: "" }) {
   if (!panier.length)
     return signaler("Une commande ne peut pas être vide. Annulez-la plutôt.", "err");
   if (!date)
     return signaler("La date de retrait est obligatoire.", "err");
+  if (pon.actif && !pon.texte)
+    return signaler("Saisissez l'adresse ponctuelle, ou décochez la case.", "err");
+
+  const etaitPonctuelle = !!c.client?.adresse_ponctuelle;
+  const changePonctuelle = pon.actif !== etaitPonctuelle ||
+    (pon.actif && pon.texte !== (c.client?.adresse || ""));
 
   const r = recalculer(c, panier, option);
   const ecarts = ecartsStock(c.panier, r.lignes);
@@ -2740,6 +2791,9 @@ async function enregistrerModification(c, panier, date, option) {
     `total ${peso(c.total)} → ${peso(r.total)}`,
     c.date_retrait !== date ? `date ${c.date_retrait} → ${date}` : null,
     changeLivraison ? `mode ${c.option?.nom || "—"} → ${option.nom}` : null,
+    changePonctuelle
+      ? (pon.actif ? `adresse ponctuelle : ${pon.texte}` : "retour à l'adresse de la fiche client")
+      : null,
     toucherStock && Object.keys(ecarts).length
       ? "le stock sera ajusté en conséquence" : null,
     creditRendu > 0
@@ -2774,6 +2828,23 @@ async function enregistrerModification(c, panier, date, option) {
       modifiee_le: new Date().toISOString(),
       modifiee_par: auth.currentUser?.email || ""
     });
+
+    if (changePonctuelle) {
+      const champsAdresse = pon.actif
+        ? {
+            "client.adresse_ponctuelle": true,
+            "client.adresse": pon.texte,
+            "client.adresse_detail": { rue: pon.texte },
+            // L'adresse tapée au checkout est gardée, pour pouvoir revenir en arrière.
+            "client.adresse_initiale": etaitPonctuelle
+              ? (c.client?.adresse_initiale || "") : (c.client?.adresse || "")
+          }
+        : {
+            "client.adresse_ponctuelle": false,
+            "client.adresse": c.client?.adresse_initiale || c.client?.adresse || ""
+          };
+      paquet.update(doc(db, "commandes", c.id), champsAdresse);
+    }
 
     if (toucherStock) {
       Object.entries(ecarts).forEach(([code, d]) => {
@@ -2811,6 +2882,16 @@ async function enregistrerModification(c, panier, date, option) {
       c.option = { nom: option.nom, type: option.type, lieu: option.lieu || "" };
       c.frais_livraison = r.frais_livraison;
       c.frais_a_confirmer = r.frais_a_confirmer;
+    }
+
+    if (changePonctuelle) {
+      c.client = pon.actif
+        ? { ...c.client, adresse_ponctuelle: true, adresse: pon.texte,
+            adresse_detail: { rue: pon.texte },
+            adresse_initiale: etaitPonctuelle
+              ? (c.client?.adresse_initiale || "") : (c.client?.adresse || "") }
+        : { ...c.client, adresse_ponctuelle: false,
+            adresse: c.client?.adresse_initiale || c.client?.adresse || "" };
     }
 
     if (creditRendu > 0) {
